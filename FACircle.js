@@ -42,7 +42,7 @@ class ErrorBoundary extends Component {
 
 
 
-const Circle = (props) => {
+export const Circle = (props) => {
   // console.log(`active ${props.text} is ${props.active}`);
   // console.log(`${props.active != null}`);
   // console.log(`${props.active == true}`);
@@ -57,8 +57,22 @@ const Circle = (props) => {
   );
 }
 
+export const Second = (props) => {
 
-export default function FACircle() {
+  const nextScreen = () => {
+    props.navigation.push('FACircle');
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.text}>Welcome to the Second Screen</Text>
+      <TouchableOpacity style={styles.button} onPress={nextScreen}>
+        <Text style={styles.buttonText}>Next Screen</Text>
+      </TouchableOpacity>
+    </View>);
+}
+
+export const FACircle = (props) => {
   const [thisName, setThisName] = useState("DotWolf");
   const [size, setSize] = useState(0);
   const [activeState, setActiveState] = useState(0);
@@ -70,6 +84,10 @@ export default function FACircle() {
     } else {
       setThisName("Flux");
     }
+  }
+
+  const nextScreen = () => {
+    props.navigation.push("Second");
   }
 
   return (
@@ -84,12 +102,17 @@ export default function FACircle() {
       <TouchableOpacity style={styles.button} onPress={onPress}>
         <Text style={styles.buttonText}>Press Me</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={styles.button} onPress={nextScreen}>
+        <Text style={styles.buttonText}>Next Screen</Text>
+      </TouchableOpacity>
       <StatusBar style="status" />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+
+
+export const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
