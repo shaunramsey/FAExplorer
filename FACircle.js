@@ -1,8 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { styles } from "./Styles";
 import { useState, Component } from 'react';
-
-
+// import { TextInput } from 'react-native-gesture-handler';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -40,9 +40,47 @@ class ErrorBoundary extends Component {
   }
 }
 
+class Item {
+  constructor() {
+    this.name = "";
+    this.dmg = 12;
+  }
+
+  static from(v) {
+    let n = new Item();
+    n.name = v.name;
+    n.dmg = v.dmg;
+    return n;
+  }
+
+  set(name, dmg) {
+    this.name = name;
+    this.dmg = dmg;
+  }
+
+  print(st) {
+    console.log(`st: ${st}: name: ${this.name}   dmg: ${this.dmg}`);
+  }
+
+  clone(old) {
+    this.name = old.name;
+    this.dmg = old.dmg;
+  }
+}
 
 
 export const Circle = (props) => {
+  let v = new Item();
+  v.set("help", 10);
+  v.print("1");//
+  let c = Object.create(v);
+  //let c = Item.from(v);
+  c.dmg = 12;
+  c.name = "me";
+  v.set("h2", 11);
+  console.log("about to print c");
+  c.print("2");
+  v.print("3");
   // console.log(`active ${props.text} is ${props.active}`);
   // console.log(`${props.active != null}`);
   // console.log(`${props.active == true}`);
@@ -55,21 +93,6 @@ export const Circle = (props) => {
       </View>
     </View>
   );
-}
-
-export const Second = (props) => {
-
-  const nextScreen = () => {
-    props.navigation.push('FACircle');
-  }
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Welcome to the Second Screen</Text>
-      <TouchableOpacity style={styles.button} onPress={nextScreen}>
-        <Text style={styles.buttonText}>Next Screen</Text>
-      </TouchableOpacity>
-    </View>);
 }
 
 export const FACircle = (props) => {
@@ -112,86 +135,3 @@ export const FACircle = (props) => {
 
 
 
-export const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-    color: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  text: {
-    color: '#fff',
-  },
-  circles: {
-    flexDirection: 'row',
-    display: 'flex',
-  },
-  circle: {
-    justifyContent: 'center',
-    textAlign: 'center',
-    borderColor: '#f90',
-    borderWidth: '1px',
-    backgroundColor: '#fff',
-    color: '#000',
-    borderRadius: '50%',
-    height: '50px',
-    width: '50px',
-
-  },
-  circleText: {
-
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: '24px',
-    fontWeight: 'bold',
-  },
-  status: {
-    color: '#f0f',
-  },
-  button: {
-    margin: '40px',
-    paddingHorizontal: '30px',
-    paddingTop: '1px',
-    paddingBottom: '5px',
-    borderColor: '#fff',
-    borderStyle: 'solid',
-    borderWidth: '2px',
-    backgroundColor: '#383',
-    borderRadius: '20px',
-
-    color: '#afa',
-    fontSize: '24px',
-    fontWeight: '400',
-  },
-  inactive: {
-    margin: '4px',
-    borderWidth: '2px',
-    borderColor: '#000',
-    borderRadius: '50%',
-    backgroundColor: '#fff',
-  },
-  active: {
-    margin: '4px',
-    borderWidth: '2px',
-    borderColor: '#0ff',
-    borderRadius: '50%',
-    backgroundColor: '#fff',
-  }
-});
-
-
-
-const getPadding = (inputPadding) => {
-  let p = inputPadding.split(' ');
-  return {
-    paddingTop: p[0],
-    paddingRight: p[1],
-    paddingBottom: p[2],
-    paddingLeft: p[3],
-    borderColor: "#fff",
-    borderWidth: "1px",
-  };
-}
-const buttonStyle = StyleSheet.flatten([getPadding("10px 20px 30px 40px"), styles.button]);
