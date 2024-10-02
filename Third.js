@@ -1,74 +1,115 @@
-import React, { useState } from 'react';
+import React, { Component } from "react";
 import {
-    FlatList,
-    SafeAreaView,
-    StatusBar,
+    Animated,
+    Dimensions,
+    ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
-} from 'react-native';
+    View
+} from "react-native";
+import { styles as styles2 } from "./Styles";
 
-const DATA = [
-    {
-        id: 'bd7acbea-c1b1-46c2-aed5-3ad53abb28ba',
-        title: 'First Item',
-    },
-    {
-        id: '3ac68afc-c605-48d3-a4f8-fbd91aa97f63',
-        title: 'Second Item',
-    },
-    {
-        id: '58694a0f-3da1-471f-bd96-145571e29d72',
-        title: 'Third Item',
-    },
-];
+const SCREEN_WIDTH = Dimensions.get("window").width;
 
-const Item = ({ item, onPress, backgroundColor, textColor }) => (
-    <TouchableOpacity onPress={onPress} style={[styles.item, { backgroundColor }]}>
-        <Text style={[styles.title, { color: textColor }]}>{item.title}</Text>
-    </TouchableOpacity>
-);
+const xOffset = new Animated.Value(0);
 
-export const Third = () => {
-    const [selectedId, setSelectedId] = useState();
-
-    const renderItem = ({ item }) => {
-        const backgroundColor = item.id === selectedId ? '#6e3b6e' : '#f9c2ff';
-        const color = item.id === selectedId ? 'white' : 'black';
-
-        return (
-            <Item
-                item={item}
-                onPress={() => setSelectedId(item.id)}
-                backgroundColor={backgroundColor}
-                textColor={color}
-            />
-        );
-    };
-
+const Screen = props => {
     return (
-        <SafeAreaView style={styles.container}>
-            <FlatList
-                data={DATA}
-                renderItem={renderItem}
-                keyExtractor={item => item.id}
-                extraData={selectedId}
-            />
-        </SafeAreaView>
+        <View style={styles.scrollPage}>
+            <Animated.View style={[styles.screen, transitionAnimation(props.index)]}>
+                <Text style={styles.text}>{props.text}</Text>
+            </Animated.View>
+        </View>
     );
 };
 
+const transitionAnimation = index => {
+    return {
+        transform: [
+            { perspective: 800 },
+            {
+                scale: xOffset.interpolate({
+                    inputRange: [
+                        (index - 1) * SCREEN_WIDTH,
+                        index * SCREEN_WIDTH,
+                        (index + 1) * SCREEN_WIDTH
+                    ],
+                    outputRange: [0.25, 1, 0.25]
+                })
+            },
+            {
+                rotateX: xOffset.interpolate({
+                    inputRange: [
+                        (index - 1) * SCREEN_WIDTH,
+                        index * SCREEN_WIDTH,
+                        (index + 1) * SCREEN_WIDTH
+                    ],
+                    outputRange: ["45deg", "0deg", "45deg"]
+                })
+            },
+            {
+                rotateY: xOffset.interpolate({
+                    inputRange: [
+                        (index - 1) * SCREEN_WIDTH,
+                        index * SCREEN_WIDTH,
+                        (index + 1) * SCREEN_WIDTH
+                    ],
+                    outputRange: ["-45deg", "0deg", "45deg"]
+                })
+            }
+        ]
+    };
+};
+
+
+//export class Third extends Component {
+export const Third = (props) => {
+    const nextScreen = () => {
+        props.navigation.push('FACircle');
+    }
+
+    return (
+        <View>
+            <Animated.ScrollView
+                scrollEventThrottle={16}
+                onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { x: xOffset } } }],
+                    { useNativeDriver: true }
+                )}
+                horizontal
+                pagingEnabled
+                style={styles.scrollView}
+            >
+                <Screen text="Screen 1" index={0} />
+                <Screen text="Screen 2" index={1} />
+                <Screen text="Screen 3" index={2} />
+            </Animated.ScrollView>
+            <TouchableOpacity style={styles2.button} onPress={nextScreen}>
+                <Text style={styles2.buttonText}>Home Screen</Text>
+            </TouchableOpacity>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        marginTop: StatusBar.currentHeight || 0,
+    scrollView: {
+        flexDirection: "row",
+        backgroundColor: "#00d4ff"
     },
-    item: {
-        padding: 20,
-        marginVertical: 8,
-        marginHorizontal: 16,
+    scrollPage: {
+        width: SCREEN_WIDTH,
+        padding: 20
     },
-    title: {
-        fontSize: 32,
+    screen: {
+        height: 600,
+        justifyContent: "center",
+        alignItems: "center",
+        borderRadius: 25,
+        backgroundColor: "white"
     },
+    text: {
+        fontSize: 45,
+        fontWeight: "bold"
+    }
 });

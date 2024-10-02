@@ -12,7 +12,7 @@ const Stack = createStackNavigator();
 export default function App() {
     return (
         < NavigationContainer >
-            <Stack.Navigator initialRouteName="Second"
+            <Stack.Navigator initialRouteName="FACircle"
                 screenOptions={{
                     headerMode: 'screen',
                     headerTintColor: 'white',

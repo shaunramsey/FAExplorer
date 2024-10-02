@@ -5,8 +5,15 @@ export const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#000',
         color: '#fff',
-        alignItems: 'center',
         justifyContent: 'center',
+    },
+    horizontalScrollContainer: {
+        backgroundColor: '#333',
+        color: '#fff',
+        margin: 10,
+        justifyContent: 'center',
+        maxWidth: 600,
+        padding: 10,
     },
     text: {
         color: '#fff',
