@@ -7,12 +7,13 @@ class Line extends CustomPainter {
   late Offset nodeB;
 
   late double parallelPart = 0.5;
-  late double perpendicularPart = 0.1;
+  final double perpendicularPart;
   late double lineAngleAdjust = 0.0;
 
   Line({
     required this.nodeA,
     required this.nodeB,
+    required this.perpendicularPart,
   });
 
   //aOrB is TRUE for A, and FALSE for B
@@ -62,6 +63,17 @@ class Line extends CustomPainter {
     //debugPrint("getAnchorPoint: Node A: (${nodeA.dx}, ${nodeA.dy}), Node B: (${nodeB.dx}, ${nodeB.dy})");
     //debugPrint("Anchor point: ($x, $y) ($dx, $dy), perp: $perpendicularPart, scale: $scale");
     return Offset(x, y);
+
+  }
+
+
+ bool containsPoint(double x, double y) {
+    Offset position = getAnchorPoint();
+    if (pow(x - position.dx, 2) + pow(y - position.dy, 2) < pow(50, 2)) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
   void getEndPointsAndCircle() {
@@ -77,21 +89,21 @@ class Line extends CustomPainter {
       endX = end[0];
       endY = end[1];
     } else {
-      debugPrint("Calculating circle...");
+      //debugPrint("Calculating circle...");
       Offset anchor = getAnchorPoint();
       List<double> circle = circleFromThreePoints(nodeA.dx, nodeA.dy, nodeB.dx,
           nodeB.dy, anchor.dx, anchor.dy);
       isReversed = (perpendicularPart > 0);
-
+    
       reverseScale = isReversed ? 1 : -1;
       startAngle = atan2(nodeA.dy - circle[1], nodeA.dx - circle[0])
           - reverseScale * 50 / circle[2];
 
       endAngle = atan2(nodeB.dy - circle[1], nodeB.dx - circle[0])
           - reverseScale * 50 / circle[2];
-      while (startAngle < 0) {
-        startAngle += 2 * pi;
-      }
+      // while (startAngle < 0) {
+      //   startAngle += 2 * pi;
+      // }
       while (endAngle < startAngle) {
         endAngle += 2 * pi;
       }
@@ -136,13 +148,20 @@ class Line extends CustomPainter {
 
     if (hasCircle) {
       double sweepAngle = 0;
-
-      sweepAngle = -reverseScale * (startAngle - endAngle);
       // canvas.drawArc(Rect.fromCircle(
       //     center: Offset(circleX, circleY),
       //     radius: circleRdaius),
       //     startAngle, sweepAngle, false, paint);
- 
+      if (perpendicularPart > 0) {
+        sweepAngle = -reverseScale * (startAngle - endAngle);
+      } else {
+        debugPrint("Calculating sweep angle: startAngle: $startAngle, endAngle: $endAngle, reverseScale: $reverseScale");
+        sweepAngle = -reverseScale * (startAngle - endAngle);
+        if (reverseScale < 0) {
+          //sweepAngle = 2*pi - sweepAngle;
+          sweepAngle = -reverseScale * (endAngle - 2 * pi - startAngle);
+        }
+      }
       canvas.drawArc(Rect.fromCircle( center: Offset(circleX, circleY), radius: circleRadius), startAngle, sweepAngle, false, paint);
       drawArrow(canvas, endX, endY, endAngle + reverseScale * (pi / 2));
     } else {
