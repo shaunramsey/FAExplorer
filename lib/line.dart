@@ -145,7 +145,7 @@ class Line extends CustomPainter {
     // The path is constructed by moving to the tip of the arrow (x, y) and then drawing two lines to create the arrowhead. The first line goes in the direction opposite to the arrow's direction (using -num1 * dx and -num1 * dy) and is offset by a perpendicular component (using num2 * dy and num2 * dx) to create the two sides of the arrowhead.
     path.moveTo(x, y);
     path.lineTo(x - num1 * dx + num2 * dy, y - num1 * dy - num2 * dx);
-    path.lineTo(x - num1 * dx - num2 * dy,y - num1 * dy + num2 * dx);
+    path.lineTo(x - num1 * dx - num2 * dy, y - num1 * dy + num2 * dx);
 
     canvas.drawPath(path, fillPaint);
   }
@@ -175,7 +175,7 @@ class Line extends CustomPainter {
       canvas.drawArc(Rect.fromCircle( center: Offset(circleX, circleY), radius: circleRadius), startAngle, sweepAngle, false, paint);
       drawArrow(canvas, endX, endY, endAngle + reverseScale * (pi / 2));
     } else {
-      canvas.drawLine(nodeA, nodeB, paint);
+      canvas.drawLine(Offset(startX, startY), Offset(endX, endY), paint);
       drawArrow(canvas, endX, endY, atan2(endY - startY, endX - startX));
     }
   }
@@ -198,6 +198,10 @@ class LineWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     Offset anchor = line.getAnchorPoint();
 
+    // Width of the text box; used to center it on the anchor point
+    const double boxWidth = 160;
+    const double boxHeight = 100;
+
     return Stack(
       children: [
         CustomPaint(
@@ -206,18 +210,27 @@ class LineWidget extends StatelessWidget {
         ),
 
         Positioned(
-          left: anchor.dx,
-          top: anchor.dy - 20,
+          left: anchor.dx - boxWidth / 2,
+          top: anchor.dy - boxHeight / 2,
           child: SizedBox(
-            width: 120,
-            child: Material(
-              elevation: 2,
-              borderRadius: BorderRadius.circular(8),
+            width: boxWidth,
+            height: boxHeight,
               child: TextField(
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
                 controller: line.controller,
                 textAlign: TextAlign.center,
-                decoration: InputDecoration(
-                ),
+              style: const TextStyle(fontSize: 18),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8),
               ),
             ),
           ),

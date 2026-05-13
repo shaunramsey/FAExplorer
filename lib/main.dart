@@ -26,9 +26,7 @@ class MovableNodeScreen extends StatefulWidget {
   State<MovableNodeScreen> createState() => _MovableNodeScreenState();
 }
 
-class _MovableNodeScreenState
-    extends State<MovableNodeScreen> {
-
+class _MovableNodeScreenState extends State<MovableNodeScreen> {
   void _reset() {
     setState(() {
       positions = [];
@@ -51,7 +49,7 @@ class _MovableNodeScreenState
     selectLines = [];
 
     for (int i = 0; i < positions.length; i++) {
-      nodes.add(Node(position: Offset(positions[i][0],positions[i][1])));
+      nodes.add(Node(position: Offset(positions[i][0], positions[i][1])));
     }
 
     for (int i = 0; i < lineIndices.length; i++) {
@@ -120,7 +118,9 @@ class _MovableNodeScreenState
     //double screen_width = MediaQuery.of(context).size.width;    // Screen width
     //double screen_height = MediaQuery.of(context).size.height;  // Screen height
     return Scaffold(
-      floatingActionButton: FloatingActionButton(onPressed: () {toggleLineMode();
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          toggleLineMode();
       },
       ),
       appBar: AppBar(
@@ -136,19 +136,25 @@ class _MovableNodeScreenState
 
           }
           if (event is KeyDownEvent) {
-            if (HardwareKeyboard.instance.isAltPressed) {setState(() {lineMode = true;});
+            if (HardwareKeyboard.instance.isAltPressed) {
+              setState(() {
+                lineMode = true;
+              });
             }
             //debugPrint('Key pressed: ${event.logicalKey.debugName}');
           }
         },
-        child: Stack(
-          children: [
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {FocusManager.instance.primaryFocus?.unfocus();},
+          child: Stack(
+            children: [
             //Add node on double tap, reset on long press
-            GestureDetector(
+              GestureDetector(
               onDoubleTapDown: (details) {
                 setState(() {
                   Offset position = details.localPosition;
-                  positions.add([position.dx - 50,position.dy - 50,]);
+                    positions.add([position.dx - 50,position.dy - 50,]);
                 });
                 //debugPrint("Positions: $positions");
               },
@@ -161,7 +167,7 @@ class _MovableNodeScreenState
             IgnorePointer(
               ignoring: false,
               child: GestureDetector(
-                //Select which nodes is dragged
+                
                 onPanStart: (details) {
                   resetSelected();
 
@@ -171,7 +177,10 @@ class _MovableNodeScreenState
                     selectedLineIndex = -1;}
 
                   for (int i = 0; i < selectLines.length; i++) {
-                    if (selectLines[i].containsPoint(details.localPosition.dx,details.localPosition.dy,)) {
+                    if (selectLines[i].containsPoint(
+                      details.localPosition.dx,
+                      details.localPosition.dy,
+                    )) {
                       selectedLineIndex = i;
                     }
                   }
@@ -227,6 +236,7 @@ class _MovableNodeScreenState
               ),
             ),
           ],
+        ),
         ),
       ),
     );
