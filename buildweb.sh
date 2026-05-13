@@ -8,7 +8,8 @@ CURRENT_DATE=$(date "+%Y-%m-%d")
 CURRENT_TIME=$(date "+%H:%M:%S")
 
 flutter build web --release --base-href=/FAExplorer/build/web/
-echo "Generated on: **$CURRENT_DATE** at **$CURRENT_TIME**" > "$OUTPUT_FILE"
+echo "# Status of Finite Automata Designer"  > "$OUTPUT_FILE"
+echo "* Generated on: **$CURRENT_DATE** at **$CURRENT_TIME**" > "$OUTPUT_FILE"
 
 
 FILE="counter.txt"
@@ -20,6 +21,6 @@ NUM=$(cat "$FILE" 2>/dev/null || echo 0)
 NEW_NUM=$((NUM + 1))
 
 # Write back to file
-echo "Build Number: **$NEW_NUM**" > "$FILE"
-echo "Build number **$NEW_NUM**"
+echo "$NEW_NUM" > "$FILE"
+echo "* Build number **$NEW_NUM**" >> "$OUTPUT_FILE"
 echo "Output successfully written to $OUTPUT_FILE"
