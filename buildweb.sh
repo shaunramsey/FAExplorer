@@ -23,5 +23,7 @@ NEW_NUM=$((NUM + 1))
 # Write back to file
 echo "$NEW_NUM" > "$FILE"
 echo "* Build number **$NEW_NUM**" >> "$OUTPUT_FILE"
-echo "# [Go Back](README.md)"  >> "$OUTPUT_FILE"
+echo "* [Go Back](README.md) - go to the Readme"  >> "$OUTPUT_FILE"
+echo "* [Latest Build](build/web/index.html) - go to the last build"  >> "$OUTPUT_FILE"
+
 echo "Output successfully written to $OUTPUT_FILE"

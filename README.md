@@ -1,7 +1,7 @@
 # Automata Designer
 
-* See the build at [the last build](build/web/index.html)
+* [The Latest Build](build/web/index.html) - See the build at [the last build](build/web/index.html)
 
-* Please see the [build number and status](status.md)
+* [Status](status.md) - Please see the [build number and status](status.md)
 
-* For a changeme see [the Changelog](Changelog.md)
+* [Changelog](Changelog.md) - For a changelog see [the changelog](Changelog.md)
