@@ -88,12 +88,15 @@ class _NodeState extends State<Node> {
           children: [
             Center(
               child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                    _enabler();
+                  },
                 onDoubleTap: () {
                   setState(() {
                     internalvisibility = !internalvisibility;
+                    _enabler();
                   });
-                  debugPrint("Visibility: $internalvisibility");
+                  //debugPrint("Visibility: $internalvisibility");
                 },
                 child: TextField(
                   style: TextStyle(
@@ -102,10 +105,10 @@ class _NodeState extends State<Node> {
                       fontSize: 30,
                       color: borderColor),
                   textAlign: TextAlign.center,
-                  focusNode: focusNode,
+                  focusNode: focusNode, 
                   onEditingComplete: () => _disabler(),
                   onTapOutside: (PointerDownEvent event) => _disabler(),
-                  onTap: () => _enabler(),
+                  onTap: () => _enabler(), // This is not getting tapped, that needs to be fixed
                   decoration: null, //Removes text-field designs
                 ),
             ),
@@ -117,11 +120,16 @@ class _NodeState extends State<Node> {
                   child: Visibility(
                     visible: internalvisibility, //TODO: add accept state toggle
                     child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
                         onDoubleTap: () {
                           setState(() {
                             internalvisibility = !internalvisibility;
+                            _enabler();
                           });
-                          debugPrint("Visibility: $internalvisibility");
+                          //debugPrint("Visibility: $internalvisibility");
+                        },
+                        onTap: () { 
+                          _enabler();
                         },
                         child: Container(
                           width: 80,

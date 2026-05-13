@@ -1,6 +1,8 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import "node.dart";
 import "line.dart";
+import "package:flutter/services.dart";
 
 void main() {
   runApp(const MyApp());
@@ -9,7 +11,7 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
+  // This w root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -32,48 +34,58 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
     setState(() {
       positions = [];
       lineIndices = [];
+      linePerpendicularParts = [];
     });
   }
 
   List<Node> nodes = [];
   List<List<double>> positions = [];
 
+  List<Line> selectLines = [];
   List<CustomPaint> lines = [];
   List<List<int>> lineIndices = [];
+  List<double> linePerpendicularParts = [];
 
   //Creates lists to display nodes and lines as children in stack
   void _buildScreen() {
     nodes = [];
     lines = [];
+    selectLines = [];
+ 
     for (int i = 0; i < positions.length; i++) {
       nodes.add(Node(position: Offset(positions[i][0], positions[i][1])));
     }
-
+    
     for (int i = 0; i < lineIndices.length; i++) {
-      lines.add(
-        CustomPaint(
-
-          painter: Line(
-            nodeA: Offset(
-              positions[lineIndices[i][0]][0] + 50,
-              positions[lineIndices[i][0]][1] + 50,
-            ),
-            nodeB: Offset(
-              positions[lineIndices[i][1]][0] + 50,
-              positions[lineIndices[i][1]][1] + 50,
-            ),
-          ),
+      final perp = i < linePerpendicularParts.length
+          ? linePerpendicularParts[i]
+          : 0.0;
+      selectLines.add(Line(
+        nodeA: Offset(
+          positions[lineIndices[i][0]][0] + 50,
+          positions[lineIndices[i][0]][1] + 50,
         ),
+        nodeB: Offset(
+          positions[lineIndices[i][1]][0] + 50,
+          positions[lineIndices[i][1]][1] + 50,
+        ),
+        perpendicularPart: perp,
+      ));
+      lines.add(
+        CustomPaint( painter: selectLines[i])
       );
     }
   }
 
   int selectedIndex = -1;
   int selectedIndex2 = -1;
+  int selectedLineIndex = -1;
+
 
   void resetSelected() {
     selectedIndex = -1;
     selectedIndex2 = -1;
+    selectedLineIndex = -1;
   }
 
   bool lineMode = false;
@@ -108,7 +120,24 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
       appBar: AppBar(
         title: const Text("Automata Designer"),
       ),
-      body: Stack(
+      body: KeyboardListener(
+        focusNode: FocusNode()..requestFocus(), // Must have focus to receive events
+              autofocus: true,
+              onKeyEvent: (event) {
+                if(event is KeyUpEvent) {
+                  if(event.logicalKey == LogicalKeyboardKey.altLeft || event.logicalKey == LogicalKeyboardKey.altRight) {
+                      setState(() {lineMode = false;});
+                  }
+                  //debugPrint('Key up: ${event.logicalKey.debugName}');
+                }
+                if (event is KeyDownEvent) {
+                  if(HardwareKeyboard.instance.isAltPressed) {
+                    setState(() {lineMode = true;});
+                  }
+                  //debugPrint('Key pressed: ${event.logicalKey.debugName}');
+                }
+              },
+      child: Stack(
         children: [
           GestureDetector(
             //Add node on double tap
@@ -117,7 +146,7 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
                 Offset position = details.localPosition;
                 positions.add([position.dx-50, position.dy-50]);
               });
-              debugPrint("Positions: $positions");
+              //debugPrint("Positions: $positions");
             },
             onLongPress: () => _reset(),
           ),
@@ -141,31 +170,57 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
               //Select which nodes is dragged
               onPanStart: (details) {
                 resetSelected();
-                Offset position = details.localPosition;
-                selectedIndex = _selectIndex(position);
+                selectedIndex = _selectIndex(details.localPosition);
+                // Only reset line index if we're dragging a node, not a line
+                if (selectedIndex != -1) {
+                  selectedLineIndex = -1;}
+                for (int i = 0; i < selectLines.length; i++) {
+                if (selectLines[i].containsPoint(details.localPosition.dx, details.localPosition.dy)) {
+                  selectedLineIndex = i;
+                  }
+              };
               },
+          
               //Deselect when stopped dragging
               onPanEnd: (details) {
                 if (lineMode) {
-                  Offset position = details.localPosition;
-                  selectedIndex2 = _selectIndex(position);
-                  }
-                  if (selectedIndex != -1 && selectedIndex2 != -1) {
+                  selectedIndex2 = _selectIndex(details.localPosition);                
+                  if (selectedIndex != -1 && selectedIndex2 != -1 && selectedIndex != selectedIndex2) {
                     lineIndices.add([selectedIndex, selectedIndex2]);
+                    linePerpendicularParts.add(0.0);
                     setState(() {});
                   }
-                },
+                  if (selectedIndex != -1 && selectedIndex2 != -1 && selectedIndex == selectedIndex2) {
+                    lineIndices.removeWhere((element) => element[0] == selectedIndex && element[1] == selectedIndex2);
+                    linePerpendicularParts.removeAt(lineIndices.indexWhere((element) => element[0] == selectedIndex && element[1] == selectedIndex2));
+                    setState(() {});
+                  }
+                }
+              },
               //Drag node
               onPanUpdate: (details) {
                 if (selectedIndex != -1 && !lineMode) {
                   positions[selectedIndex][0] += details.delta.dx;
                   positions[selectedIndex][1] += details.delta.dy;
-                  setState(() {});
+                  setState(() {});}
+                if (selectedLineIndex != -1) {
+                  Line line = selectLines[selectedLineIndex];
+                  double dx = line.nodeB.dx - line.nodeA.dx;
+                  double dy = line.nodeB.dy - line.nodeA.dy;
+                  double length = sqrt(dx * dx + dy * dy);
+                  if (length != 0) {
+                    double perpDx = dy / length;
+                    double perpDy = -dx / length;
+                    linePerpendicularParts[selectedLineIndex] +=
+                        details.delta.dx * perpDx + details.delta.dy * perpDy;
+                    setState(() {});
+                  }
                 }
               },
-            ),
+          ),
           ),
         ],
+      ),
       ),
     );
   }
