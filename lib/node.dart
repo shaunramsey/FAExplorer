@@ -78,7 +78,7 @@ class _NodeState extends State<Node> {
         height: 100,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white,
+          color: Colors.transparent,
           border: Border.all(
             color: borderColor,
             width: 4.0,

@@ -1,10 +1,13 @@
+
 import 'package:flutter/material.dart';
-import "utility_math.dart";
-import "dart:math";
+import 'utility_math.dart';
+import 'dart:math';
 
 class Line extends CustomPainter {
   late Offset nodeA;
   late Offset nodeB;
+
+  final TextEditingController controller = TextEditingController();
 
   late double parallelPart = 0.5;
   final double perpendicularPart;
@@ -63,11 +66,9 @@ class Line extends CustomPainter {
     //debugPrint("getAnchorPoint: Node A: (${nodeA.dx}, ${nodeA.dy}), Node B: (${nodeB.dx}, ${nodeB.dy})");
     //debugPrint("Anchor point: ($x, $y) ($dx, $dy), perp: $perpendicularPart, scale: $scale");
     return Offset(x, y);
-
   }
 
-
- bool containsPoint(double x, double y) {
+  bool containsPoint(double x, double y) {
     Offset position = getAnchorPoint();
     if (pow(x - position.dx, 2) + pow(y - position.dy, 2) < pow(50, 2)) {
       return true;
@@ -91,56 +92,68 @@ class Line extends CustomPainter {
     } else {
       //debugPrint("Calculating circle...");
       Offset anchor = getAnchorPoint();
-      List<double> circle = circleFromThreePoints(nodeA.dx, nodeA.dy, nodeB.dx,
-          nodeB.dy, anchor.dx, anchor.dy);
+
+      List<double> circle = circleFromThreePoints(
+        nodeA.dx,
+        nodeA.dy,
+        nodeB.dx,
+        nodeB.dy,
+        anchor.dx,
+        anchor.dy,
+      );
+
       isReversed = (perpendicularPart > 0);
-    
+
       reverseScale = isReversed ? 1 : -1;
+
       startAngle = atan2(nodeA.dy - circle[1], nodeA.dx - circle[0])
-          - reverseScale * 50 / circle[2];
+          + reverseScale * 50 / circle[2];
 
       endAngle = atan2(nodeB.dy - circle[1], nodeB.dx - circle[0])
           - reverseScale * 50 / circle[2];
-      // while (startAngle < 0) {
-      //   startAngle += 2 * pi;
-      // }
+
       while (endAngle < startAngle) {
         endAngle += 2 * pi;
       }
+
       startX = circle[0] + circle[2] * cos(startAngle);
       startY = circle[1] + circle[2] * sin(startAngle);
 
       endX = circle[0] + circle[2] * cos(endAngle);
       endY = circle[1] + circle[2] * sin(endAngle);
+
       hasCircle = true;
       circleX = circle[0];
       circleY = circle[1];
       circleRadius = circle[2];
     }
   }
- // The equivalent to drawArrow in Evans code
+
+  // The equivalent to drawArrow in Evans code
   void drawArrow(Canvas canvas, double x, double y, double angle) {
     Path path = Path();
     Paint fillPaint = Paint()
-      .. color = Colors.black
-      .. style = PaintingStyle.fill;
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+
     // The dx and dy values are calculated using the cosine and sine of the angle, respectively. These values represent the direction of the arrowhead based on the angle provided. The angle is typically calculated from the line's direction, ensuring that the arrowhead points in the correct direction.
     double dx = cos(angle);
     double dy = sin(angle);
-
     // The numbers 15 and 9 are arbitrary values that control the size of the arrowhead. You can adjust them to make the arrowhead larger or smaller as needed. 
     int num1 = 15;
     int num2 = 9;
     // The path is constructed by moving to the tip of the arrow (x, y) and then drawing two lines to create the arrowhead. The first line goes in the direction opposite to the arrow's direction (using -num1 * dx and -num1 * dy) and is offset by a perpendicular component (using num2 * dy and num2 * dx) to create the two sides of the arrowhead.
     path.moveTo(x, y);
     path.lineTo(x - num1 * dx + num2 * dy, y - num1 * dy - num2 * dx);
-    path.lineTo(x - num1 * dx - num2 * dy, y - num1 * dy + num2 * dx);
+    path.lineTo(x - num1 * dx - num2 * dy,y - num1 * dy + num2 * dx);
+
     canvas.drawPath(path, fillPaint);
   }
 
   @override
   void paint(Canvas canvas, Size size) {
     getEndPointsAndCircle();
+
     final Paint paint = Paint()
       ..style = PaintingStyle.stroke
       ..color = Colors.black
@@ -148,20 +161,17 @@ class Line extends CustomPainter {
 
     if (hasCircle) {
       double sweepAngle = 0;
-      // canvas.drawArc(Rect.fromCircle(
-      //     center: Offset(circleX, circleY),
-      //     radius: circleRdaius),
-      //     startAngle, sweepAngle, false, paint);
-      if (perpendicularPart > 0) {
-        sweepAngle = -reverseScale * (startAngle - endAngle);
-      } else {
+
+      if (perpendicularPart > 0) {sweepAngle = -reverseScale * (startAngle - endAngle);
+      } else { 
         //debugPrint("Calculating sweep angle: startAngle: $startAngle, endAngle: $endAngle, reverseScale: $reverseScale");
         sweepAngle = -reverseScale * (startAngle - endAngle);
+
         if (reverseScale < 0) {
-          //sweepAngle = 2*pi - sweepAngle;
           sweepAngle = -reverseScale * (endAngle - 2 * pi - startAngle);
         }
       }
+
       canvas.drawArc(Rect.fromCircle( center: Offset(circleX, circleY), radius: circleRadius), startAngle, sweepAngle, false, paint);
       drawArrow(canvas, endX, endY, endAngle + reverseScale * (pi / 2));
     } else {
@@ -171,7 +181,48 @@ class Line extends CustomPainter {
   }
 
   @override
-  shouldRepaint(covariant CustomPainter oldPainter) {
-    return false;
+  bool shouldRepaint(covariant CustomPainter oldPainter) {
+    return true;
+  }
+}
+
+class LineWidget extends StatelessWidget {
+  final Line line;
+
+  const LineWidget({
+    super.key,
+    required this.line,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Offset anchor = line.getAnchorPoint();
+
+    return Stack(
+      children: [
+        CustomPaint(
+          painter: line,
+          size: const Size(double.infinity, double.infinity),
+        ),
+
+        Positioned(
+          left: anchor.dx,
+          top: anchor.dy - 20,
+          child: SizedBox(
+            width: 120,
+            child: Material(
+              elevation: 2,
+              borderRadius: BorderRadius.circular(8),
+              child: TextField(
+                controller: line.controller,
+                textAlign: TextAlign.center,
+                decoration: InputDecoration(
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
