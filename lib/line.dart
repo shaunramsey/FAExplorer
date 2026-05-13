@@ -155,7 +155,7 @@ class Line extends CustomPainter {
       if (perpendicularPart > 0) {
         sweepAngle = -reverseScale * (startAngle - endAngle);
       } else {
-        debugPrint("Calculating sweep angle: startAngle: $startAngle, endAngle: $endAngle, reverseScale: $reverseScale");
+        //debugPrint("Calculating sweep angle: startAngle: $startAngle, endAngle: $endAngle, reverseScale: $reverseScale");
         sweepAngle = -reverseScale * (startAngle - endAngle);
         if (reverseScale < 0) {
           //sweepAngle = 2*pi - sweepAngle;

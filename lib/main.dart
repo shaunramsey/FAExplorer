@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import "node.dart";
 import "line.dart";
+import "package:flutter/services.dart";
 
 void main() {
   runApp(const MyApp());
@@ -84,6 +85,7 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
   void resetSelected() {
     selectedIndex = -1;
     selectedIndex2 = -1;
+    selectedLineIndex = -1;
   }
 
   bool lineMode = false;
@@ -118,7 +120,24 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
       appBar: AppBar(
         title: const Text("Automata Designer"),
       ),
-      body: Stack(
+      body: KeyboardListener(
+        focusNode: FocusNode()..requestFocus(), // Must have focus to receive events
+              autofocus: true,
+              onKeyEvent: (event) {
+                if(event is KeyUpEvent) {
+                  if(event.logicalKey == LogicalKeyboardKey.altLeft || event.logicalKey == LogicalKeyboardKey.altRight) {
+                      setState(() {lineMode = false;});
+                  }
+                  //debugPrint('Key up: ${event.logicalKey.debugName}');
+                }
+                if (event is KeyDownEvent) {
+                  if(HardwareKeyboard.instance.isAltPressed) {
+                    setState(() {lineMode = true;});
+                  }
+                  //debugPrint('Key pressed: ${event.logicalKey.debugName}');
+                }
+              },
+      child: Stack(
         children: [
           GestureDetector(
             //Add node on double tap
@@ -149,24 +168,19 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
             child: GestureDetector(
               //TODO: Implement Line Drawing
               //Select which nodes is dragged
-              onTapDown: (details) {
-                selectedLineIndex = -1;
-                for (int i = 0; i < selectLines.length; i++) {
-                  if (selectLines[i].containsPoint(details.localPosition.dx, details.localPosition.dy)) {
-                    selectedLineIndex = i;
-                    debugPrint("We selected line $i with indices ${lineIndices[i]} selectLines length: ${selectLines.length}");
-                    break;
-                  }
-                }
-              },
               onPanStart: (details) {
                 resetSelected();
                 selectedIndex = _selectIndex(details.localPosition);
                 // Only reset line index if we're dragging a node, not a line
                 if (selectedIndex != -1) {
-                  selectedLineIndex = -1;
-                }
+                  selectedLineIndex = -1;}
+                for (int i = 0; i < selectLines.length; i++) {
+                if (selectLines[i].containsPoint(details.localPosition.dx, details.localPosition.dy)) {
+                  selectedLineIndex = i;
+                  }
+              };
               },
+          
               //Deselect when stopped dragging
               onPanEnd: (details) {
                 if (lineMode) {
@@ -206,6 +220,7 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
           ),
           ),
         ],
+      ),
       ),
     );
   }
