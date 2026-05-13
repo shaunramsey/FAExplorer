@@ -126,7 +126,7 @@ class _NodeState extends State<Node> {
                             internalvisibility = !internalvisibility;
                             _enabler();
                           });
-                          debugPrint("Visibility: $internalvisibility");
+                          //debugPrint("Visibility: $internalvisibility");
                         },
                         onTap: () { 
                           _enabler();
