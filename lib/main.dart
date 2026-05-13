@@ -161,7 +161,11 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
               },
               onPanStart: (details) {
                 resetSelected();
-                selectedIndex = _selectIndex(details.localPosition);       
+                selectedIndex = _selectIndex(details.localPosition);
+                // Only reset line index if we're dragging a node, not a line
+                if (selectedIndex != -1) {
+                  selectedLineIndex = -1;
+                }
               },
               //Deselect when stopped dragging
               onPanEnd: (details) {
@@ -170,6 +174,11 @@ class _MovableNodeScreenState extends State<MovableNodeScreen> {
                   if (selectedIndex != -1 && selectedIndex2 != -1 && selectedIndex != selectedIndex2) {
                     lineIndices.add([selectedIndex, selectedIndex2]);
                     linePerpendicularParts.add(0.0);
+                    setState(() {});
+                  }
+                  if (selectedIndex != -1 && selectedIndex2 != -1 && selectedIndex == selectedIndex2) {
+                    lineIndices.removeWhere((element) => element[0] == selectedIndex && element[1] == selectedIndex2);
+                    linePerpendicularParts.removeAt(lineIndices.indexWhere((element) => element[0] == selectedIndex && element[1] == selectedIndex2));
                     setState(() {});
                   }
                 }
