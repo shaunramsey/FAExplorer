@@ -1,226 +1,441 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
-import "node.dart";
-import "line.dart";
-import "package:flutter/services.dart";
+import 'package:flutter/services.dart';
+import 'dart:math';
 
-void main() {
-  runApp(const MyApp());
-}
+import 'models.dart';
+import 'node.dart';
+import 'line.dart';
+
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This w root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: MovableNodeScreen(),
+    return const MaterialApp(
+      title: 'Automata Designer',
+      home: AutomataScreen(),
     );
   }
 }
 
-class MovableNodeScreen extends StatefulWidget {
-  const MovableNodeScreen({super.key});
+class AutomataScreen extends StatefulWidget {
+  const AutomataScreen({super.key});
 
   @override
-  State<MovableNodeScreen> createState() => _MovableNodeScreenState();
+  State<AutomataScreen> createState() => _AutomataScreenState();
 }
 
-class _MovableNodeScreenState extends State<MovableNodeScreen> {
+class _AutomataScreenState extends State<AutomataScreen> {
+  final Map<String, NodeData> _nodes = {};
+  final Map<String, LineData> _lines = {};
 
-  //Resets the screen to blank
+  bool _lineMode = false;
+
+  String? _draggingNodeId;
+  String? _draggingLineId;
+  String? _lineSourceNodeId;
+
+  Offset? _lastPanPosition;
+  Offset? _lastTapPosition;
+
+  int _idCounter = 0;
+
+  String _nextId(String prefix) {
+    return '$prefix${_idCounter++}';
+  }
+
+  // ─────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────
+
   void _reset() {
     setState(() {
-      positions = [];
-      lineIndices = [];
-      linePerpendicularParts = [];
+      _nodes.clear();
+      _lines.clear();
+
+      _draggingNodeId = null;
+      _draggingLineId = null;
+      _lineSourceNodeId = null;
     });
   }
 
-  List<Node> nodes = [];
-  List<List<double>> positions = [];
-
-  List<Line> selectLines = [];
-  List<CustomPaint> lines = [];
-  List<List<int>> lineIndices = [];
-  List<double> linePerpendicularParts = [];
-
-  //Creates lists to display nodes and lines as children in stack
-  void _buildScreen() {
-    nodes = [];
-    lines = [];
-    selectLines = [];
- 
-    for (int i = 0; i < positions.length; i++) {
-      nodes.add(Node(position: Offset(positions[i][0], positions[i][1])));
-    }
-    
-    for (int i = 0; i < lineIndices.length; i++) {
-      final perp = i < linePerpendicularParts.length
-          ? linePerpendicularParts[i]
-          : 0.0;
-      selectLines.add(Line(
-        nodeA: Offset(
-          positions[lineIndices[i][0]][0] + 50,
-          positions[lineIndices[i][0]][1] + 50,
-        ),
-        nodeB: Offset(
-          positions[lineIndices[i][1]][0] + 50,
-          positions[lineIndices[i][1]][1] + 50,
-        ),
-        perpendicularPart: perp,
-      ));
-      lines.add(
-        CustomPaint( painter: selectLines[i])
-      );
-    }
+  void _setLineMode(bool value) {
+    setState(() {
+      _lineMode = value;
+    });
   }
 
-  int selectedIndex = -1;
-  int selectedIndex2 = -1;
-  int selectedLineIndex = -1;
-
-
-  void resetSelected() {
-    selectedIndex = -1;
-    selectedIndex2 = -1;
-    selectedLineIndex = -1;
-  }
-
-  bool lineMode = false;
-
-  void toggleLineMode() {
-    lineMode = !lineMode;
-    setState(() {});
-  }
-
-  //Returns the index of a given node
-  int _selectIndex(Offset position) {
-    double y = position.dy - 50;
-    double x = position.dx - 50;
-    for (int i = 0; i < positions.length; i++) {
-      if (nodes[i].containsPoint(x, y)) {
-        return i;
+  NodeData? _nodeAt(Offset point) {
+    for (final node in _nodes.values) {
+      if (node.containsPoint(point)) {
+        return node;
       }
     }
-    return -1;
+
+    return null;
   }
+
+  LineData? _lineAt(Offset point) {
+    for (final line in _lines.values) {
+      final nodeA = _nodes[line.nodeAId]!;
+      final nodeB = _nodes[line.nodeBId]!;
+
+      if (
+        line.containsPoint(
+          point,
+          nodeA.center,
+          nodeB.center,
+        )
+      ) {
+        return line;
+      }
+    }
+
+    return null;
+  }
+
+  // ─────────────────────────────────────────────
+  // Gestures
+  // ─────────────────────────────────────────────
+
+  void _onDoubleTapDown(TapDownDetails details) {
+    if (_lineMode) return;
+
+    final clickedNode = _nodeAt(details.localPosition);
+
+    // Double-clicking node should NOT create node
+    if (clickedNode != null) {
+      return;
+    }
+
+    setState(() {
+      final pos =
+          details.localPosition - const Offset(50, 50);
+
+      final id = _nextId('n');
+
+      _nodes[id] = NodeData(
+        id: id,
+        position: pos,
+      );
+    });
+  }
+
+  void _onPanStart(DragStartDetails details) {
+  final pos = details.localPosition;
+
+  _draggingNodeId = null;
+  _draggingLineId = null;
+
+  final node = _nodeAt(pos);
+
+  if (node != null) {
+    if (_lineMode) {
+      _lineSourceNodeId = node.id;
+    } else {
+      _draggingNodeId = node.id;
+    }
+  } else {
+    final line = _lineAt(pos);
+
+    if (line != null) {
+      _draggingLineId = line.id;
+    }
+  }
+}
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    if (_draggingNodeId != null) {
+      setState(() {
+        final node = _nodes[_draggingNodeId!]!;
+
+        node.position =
+            node.position + details.delta;
+      });
+    }
+
+    else if (_draggingLineId != null) {
+      setState(() {
+        final line =
+            _lines[_draggingLineId!]!;
+
+        final nodeA =
+            _nodes[line.nodeAId]!;
+
+        final nodeB =
+            _nodes[line.nodeBId]!;
+
+        final dx =
+            nodeB.center.dx - nodeA.center.dx;
+
+        final dy =
+            nodeB.center.dy - nodeA.center.dy;
+
+        final length =
+            sqrt(dx * dx + dy * dy);
+
+        if (length != 0) {
+          final perpDx = dy / length;
+          final perpDy = -dx / length;
+
+          line.perpendicularPart +=
+              details.delta.dx * perpDx +
+              details.delta.dy * perpDy;
+        }
+      });
+    }
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    if (
+      _lineMode &&
+      _lineSourceNodeId != null
+    ) {
+      final destNode =
+          _lastPanPosition != null
+          ? _nodeAt(_lastPanPosition!)
+          : null;
+
+      if (destNode != null) {
+        final srcId =
+            _lineSourceNodeId!;
+
+        final destId =
+            destNode.id;
+
+        final alreadyExists =
+            _lines.values.any(
+          (l) =>
+              l.nodeAId == srcId &&
+              l.nodeBId == destId,
+        );
+
+        if (!alreadyExists) {
+          setState(() {
+            final id =
+                _nextId('l');
+
+            final line = LineData(
+              id: id,
+              nodeAId: srcId,
+              nodeBId: destId,
+            );
+
+            _lines[id] = line;
+
+            _nodes[srcId]
+                ?.connectedLineIds
+                .add(id);
+
+            _nodes[destId]
+                ?.connectedLineIds
+                .add(id);
+          });
+        }
+      }
+
+      _lineSourceNodeId = null;
+    }
+
+    _draggingNodeId = null;
+    _draggingLineId = null;
+    _lastPanPosition = null;
+  }
+
+  void _onPanUpdateWithTracking(
+    DragUpdateDetails details,
+  ) {
+    _lastPanPosition =
+        details.localPosition;
+
+    _onPanUpdate(details);
+  }
+
+  // ─────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    _buildScreen();
-    //Might be needed for screen size
-    //double screen_width = MediaQuery.of(context).size.width;    // Screen width
-    //double screen_height = MediaQuery.of(context).size.height;  // Screen height
     return Scaffold(
-      floatingActionButton: FloatingActionButton(onPressed: () {
-        toggleLineMode();
-      }),
       appBar: AppBar(
-        title: const Text("Automata Designer"),
+        title: const Text(
+          'Automata Designer',
+        ),
       ),
-      body: KeyboardListener(
-        focusNode: FocusNode()..requestFocus(), // Must have focus to receive events
-              autofocus: true,
-              onKeyEvent: (event) {
-                if(event is KeyUpEvent) {
-                  if(event.logicalKey == LogicalKeyboardKey.altLeft || event.logicalKey == LogicalKeyboardKey.altRight) {
-                      setState(() {lineMode = false;});
-                  }
-                  //debugPrint('Key up: ${event.logicalKey.debugName}');
-                }
-                if (event is KeyDownEvent) {
-                  if(HardwareKeyboard.instance.isAltPressed) {
-                    setState(() {lineMode = true;});
-                  }
-                  //debugPrint('Key pressed: ${event.logicalKey.debugName}');
-                }
-              },
-      child: Stack(
-        children: [
-          GestureDetector(
-            //Add node on double tap
-            onDoubleTapDown: (details) {
-              setState(() {
-                Offset position = details.localPosition;
-                positions.add([position.dx-50, position.dy-50]);
-              });
-              //debugPrint("Positions: $positions");
-            },
-            onLongPress: () => _reset(),
-          ),
 
-          Stack(
-            children: lines,
-          ),
-          Stack(
-            children: nodes,
-          ),
-          /*
-          TODO:
-          Rework this to be toggles on
-          by a floating point button.
-          Useless as of current
-           */
-          IgnorePointer(
-            ignoring: false,
-            child: GestureDetector(
-              //TODO: Implement Line Drawing
-              //Select which nodes is dragged
-              onPanStart: (details) {
-                resetSelected();
-                selectedIndex = _selectIndex(details.localPosition);
-                // Only reset line index if we're dragging a node, not a line
-                if (selectedIndex != -1) {
-                  selectedLineIndex = -1;}
-                for (int i = 0; i < selectLines.length; i++) {
-                if (selectLines[i].containsPoint(details.localPosition.dx, details.localPosition.dy)) {
-                  selectedLineIndex = i;
-                  }
-              };
-              },
-          
-              //Deselect when stopped dragging
-              onPanEnd: (details) {
-                if (lineMode) {
-                  selectedIndex2 = _selectIndex(details.localPosition);                
-                  if (selectedIndex != -1 && selectedIndex2 != -1 && selectedIndex != selectedIndex2) {
-                    lineIndices.add([selectedIndex, selectedIndex2]);
-                    linePerpendicularParts.add(0.0);
-                    setState(() {});
-                  }
-                  if (selectedIndex != -1 && selectedIndex2 != -1 && selectedIndex == selectedIndex2) {
-                    lineIndices.removeWhere((element) => element[0] == selectedIndex && element[1] == selectedIndex2);
-                    linePerpendicularParts.removeAt(lineIndices.indexWhere((element) => element[0] == selectedIndex && element[1] == selectedIndex2));
-                    setState(() {});
-                  }
-                }
-              },
-              //Drag node
-              onPanUpdate: (details) {
-                if (selectedIndex != -1 && !lineMode) {
-                  positions[selectedIndex][0] += details.delta.dx;
-                  positions[selectedIndex][1] += details.delta.dy;
-                  setState(() {});}
-                if (selectedLineIndex != -1) {
-                  Line line = selectLines[selectedLineIndex];
-                  double dx = line.nodeB.dx - line.nodeA.dx;
-                  double dy = line.nodeB.dy - line.nodeA.dy;
-                  double length = sqrt(dx * dx + dy * dy);
-                  if (length != 0) {
-                    double perpDx = dy / length;
-                    double perpDy = -dx / length;
-                    linePerpendicularParts[selectedLineIndex] +=
-                        details.delta.dx * perpDx + details.delta.dy * perpDy;
-                    setState(() {});
-                  }
-                }
-              },
-          ),
-          ),
-        ],
+      floatingActionButton:
+          FloatingActionButton(
+        tooltip: _lineMode
+            ? 'Exit line mode'
+            : 'Enter line mode',
+
+        backgroundColor:
+            _lineMode
+            ? Colors.lightBlueAccent
+            : null,
+
+        onPressed: () {
+          _setLineMode(!_lineMode);
+        },
+
+        child: Icon(
+          _lineMode
+              ? Icons.timeline
+              : Icons.add_link,
+        ),
       ),
+
+      body: KeyboardListener(
+        focusNode:
+            FocusNode()..requestFocus(),
+
+        autofocus: true,
+
+        onKeyEvent: (event) {
+          if (
+            event is KeyDownEvent &&
+            HardwareKeyboard
+                .instance
+                .isAltPressed
+          ) {
+            _setLineMode(true);
+          }
+
+          if (
+            event is KeyUpEvent &&
+            (
+              event.logicalKey ==
+                  LogicalKeyboardKey.altLeft ||
+              event.logicalKey ==
+                  LogicalKeyboardKey.altRight
+            )
+          ) {
+            _setLineMode(false);
+          }
+        },
+
+        child: GestureDetector(
+          behavior:
+              HitTestBehavior.opaque,
+
+          onTapDown: (details) {
+            _lastTapPosition = details.localPosition;
+          },
+
+          onTap: () {
+            // Only unfocus (deselect everything) when the tap is on empty
+            // canvas — not on a node.  Tapping a node fires both the node's
+            // own GestureDetector (selects it) and this one (because the
+            // node uses HitTestBehavior.translucent); calling unfocus here
+            // would immediately cancel the selection we just made.
+            // Note: _lastPanPosition is null outside of a pan, so we use a
+            // separate field for the last tap position.
+            if (_lastTapPosition == null ||
+                _nodeAt(_lastTapPosition!) == null) {
+              FocusManager.instance.primaryFocus?.unfocus();
+            }
+            _lastTapPosition = null;
+          },
+
+          onDoubleTapDown:
+              _onDoubleTapDown,
+
+          onLongPress: _reset,
+
+          onPanStart: _onPanStart,
+
+          onPanUpdate:
+              _onPanUpdateWithTracking,
+
+          onPanEnd: _onPanEnd,
+
+          child: Stack(
+            children: [
+              // ─────────────────────
+              // Lines
+              // ─────────────────────
+
+              ..._lines.values.map(
+                (line) {
+                  final nodeA =
+                      _nodes[line.nodeAId];
+
+                  final nodeB =
+                      _nodes[line.nodeBId];
+
+                  if (
+                    nodeA == null ||
+                    nodeB == null
+                  ) {
+                    return const SizedBox
+                        .shrink();
+                  }
+
+                  return KeyedSubtree(
+  key: ValueKey(line.id),
+
+  child: Positioned.fill(
+    child: LineWidget(
+      data: line,
+
+      centerA:
+          nodeA.center,
+
+      centerB:
+          nodeB.center,
+
+      onLabelChanged:
+          (text) {
+        setState(() {
+          line.label = text;
+        });
+      },
+    ),
+  ),
+);
+                },
+              ),
+
+              // ─────────────────────
+              // Nodes
+              // ─────────────────────
+
+              ..._nodes.values.map(
+                (node) => Node(
+                  key: ValueKey(node.id),
+
+                  data: node,
+
+                  lineMode: _lineMode,
+
+                  onLabelChanged:
+                      (text) {
+                    setState(() {
+                      node.label = text;
+                    });
+                  },
+
+                  onLineModeSelect: () {
+                    if (_lineMode) {
+                      _lineSourceNodeId =
+                          node.id;
+                    }
+                  },
+
+                  onDoubleTap: () {
+                    setState(() {
+                      node.isAccept =
+                          !node.isAccept;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

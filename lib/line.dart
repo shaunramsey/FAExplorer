@@ -1,177 +1,185 @@
 import 'package:flutter/material.dart';
-import "utility_math.dart";
-import "dart:math";
+import 'dart:math';
+import 'models.dart';
 
-class Line extends CustomPainter {
-  late Offset nodeA;
-  late Offset nodeB;
+class LinePainter extends CustomPainter {
+  final LineGeometry geometry;
 
-  late double parallelPart = 0.5;
-  final double perpendicularPart;
-  late double lineAngleAdjust = 0.0;
+  const LinePainter({required this.geometry});
 
-  Line({
-    required this.nodeA,
-    required this.nodeB,
-    required this.perpendicularPart,
-  });
+  void _drawArrow(Canvas canvas, Offset tip, double angle) {
+    const len  = 15;
+    const wing = 9;
+    final dx = cos(angle);
+    final dy = sin(angle);
 
-  //aOrB is TRUE for A, and FALSE for B
-  List<double> closestPointOnCircle(bool aOrB, double x, double y) {
-    double dx;
-    double dy;
-    double finalX;
-    double finalY;
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(tip.dx - len * dx + wing * dy, tip.dy - len * dy - wing * dx)
+      ..lineTo(tip.dx - len * dx - wing * dy, tip.dy - len * dy + wing * dx)
+      ..close();
 
-    if (aOrB) {
-      dx = x - nodeA.dx;
-      dy = y - nodeA.dy;
-      double scale = sqrt(dx * dx + dy * dy);
-      finalX = nodeA.dx + dx * 50 / scale;
-      finalY = nodeA.dy + dy * 50 / scale;
-    } else {
-      dx = x - nodeB.dx;
-      dy = y - nodeB.dy;
-      double scale = sqrt(dx * dx + dy * dy);
-      finalX = nodeB.dx + dx * 50 / scale;
-      finalY = nodeB.dy + dy * 50 / scale;
-    }
-    return [finalX, finalY];
-  }
-
-  late bool hasCircle = false;
-  late double startX;
-  late double startY;
-  late double endX;
-  late double endY;
-
-  late double startAngle;
-  late double endAngle;
-  late double circleX;
-  late double circleY;
-  late double circleRadius;
-  late double reverseScale;
-  late bool isReversed;
-
-  Offset getAnchorPoint() {
-    double dx = nodeB.dx - nodeA.dx;
-    double dy = nodeB.dy - nodeA.dy;
-    double scale = sqrt(dx * dx + dy * dy);
-
-    double x = nodeA.dx + dx * parallelPart + dy * perpendicularPart / scale;
-    double y = nodeA.dy + dy * parallelPart - dx * perpendicularPart / scale;
-    //debugPrint("getAnchorPoint: Node A: (${nodeA.dx}, ${nodeA.dy}), Node B: (${nodeB.dx}, ${nodeB.dy})");
-    //debugPrint("Anchor point: ($x, $y) ($dx, $dy), perp: $perpendicularPart, scale: $scale");
-    return Offset(x, y);
-
-  }
-
-
- bool containsPoint(double x, double y) {
-    Offset position = getAnchorPoint();
-    if (pow(x - position.dx, 2) + pow(y - position.dy, 2) < pow(50, 2)) {
-      return true;
-    } else {
-      return false;
-    }
-  }
-
-  void getEndPointsAndCircle() {
-    if (perpendicularPart == 0.0) {
-      double midX = (nodeA.dx + nodeB.dx) / 2;
-      double midY = (nodeA.dy + nodeB.dy) / 2;
-      List<double> start = closestPointOnCircle(true, midX, midY);
-      List<double> end = closestPointOnCircle(false, midX, midY);
-
-      hasCircle = false;
-      startX = start[0];
-      startY = start[1];
-      endX = end[0];
-      endY = end[1];
-    } else {
-      //debugPrint("Calculating circle...");
-      Offset anchor = getAnchorPoint();
-      List<double> circle = circleFromThreePoints(nodeA.dx, nodeA.dy, nodeB.dx,
-          nodeB.dy, anchor.dx, anchor.dy);
-      isReversed = (perpendicularPart > 0);
-    
-      reverseScale = isReversed ? 1 : -1;
-      startAngle = atan2(nodeA.dy - circle[1], nodeA.dx - circle[0])
-          - reverseScale * 50 / circle[2];
-
-      endAngle = atan2(nodeB.dy - circle[1], nodeB.dx - circle[0])
-          - reverseScale * 50 / circle[2];
-      // while (startAngle < 0) {
-      //   startAngle += 2 * pi;
-      // }
-      while (endAngle < startAngle) {
-        endAngle += 2 * pi;
-      }
-      startX = circle[0] + circle[2] * cos(startAngle);
-      startY = circle[1] + circle[2] * sin(startAngle);
-
-      endX = circle[0] + circle[2] * cos(endAngle);
-      endY = circle[1] + circle[2] * sin(endAngle);
-      hasCircle = true;
-      circleX = circle[0];
-      circleY = circle[1];
-      circleRadius = circle[2];
-    }
-  }
- // The equivalent to drawArrow in Evans code
-  void drawArrow(Canvas canvas, double x, double y, double angle) {
-    Path path = Path();
-    Paint fillPaint = Paint()
-      .. color = Colors.black
-      .. style = PaintingStyle.fill;
-    // The dx and dy values are calculated using the cosine and sine of the angle, respectively. These values represent the direction of the arrowhead based on the angle provided. The angle is typically calculated from the line's direction, ensuring that the arrowhead points in the correct direction.
-    double dx = cos(angle);
-    double dy = sin(angle);
-
-    // The numbers 15 and 9 are arbitrary values that control the size of the arrowhead. You can adjust them to make the arrowhead larger or smaller as needed. 
-    int num1 = 15;
-    int num2 = 9;
-    // The path is constructed by moving to the tip of the arrow (x, y) and then drawing two lines to create the arrowhead. The first line goes in the direction opposite to the arrow's direction (using -num1 * dx and -num1 * dy) and is offset by a perpendicular component (using num2 * dy and num2 * dx) to create the two sides of the arrowhead.
-    path.moveTo(x, y);
-    path.lineTo(x - num1 * dx + num2 * dy, y - num1 * dy - num2 * dx);
-    path.lineTo(x - num1 * dx - num2 * dy, y - num1 * dy + num2 * dx);
-    canvas.drawPath(path, fillPaint);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.fill,
+    );
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    getEndPointsAndCircle();
-    final Paint paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..color = Colors.black
-      ..strokeWidth = 4.0;
+    final paint = Paint()
+      ..style       = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..color       = Colors.black;
 
-    if (hasCircle) {
-      double sweepAngle = 0;
-      // canvas.drawArc(Rect.fromCircle(
-      //     center: Offset(circleX, circleY),
-      //     radius: circleRdaius),
-      //     startAngle, sweepAngle, false, paint);
-      if (perpendicularPart > 0) {
-        sweepAngle = -reverseScale * (startAngle - endAngle);
-      } else {
-        //debugPrint("Calculating sweep angle: startAngle: $startAngle, endAngle: $endAngle, reverseScale: $reverseScale");
-        sweepAngle = -reverseScale * (startAngle - endAngle);
-        if (reverseScale < 0) {
-          //sweepAngle = 2*pi - sweepAngle;
-          sweepAngle = -reverseScale * (endAngle - 2 * pi - startAngle);
-        }
-      }
-      canvas.drawArc(Rect.fromCircle( center: Offset(circleX, circleY), radius: circleRadius), startAngle, sweepAngle, false, paint);
-      drawArrow(canvas, endX, endY, endAngle + reverseScale * (pi / 2));
+    if (geometry.hasCircle) {
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: geometry.circleCenter!,
+          radius: geometry.circleRadius!,
+        ),
+        geometry.startAngle!,
+        geometry.sweepAngle!,
+        false,
+        paint,
+      );
+      _drawArrow(canvas, geometry.endPoint, geometry.arrowAngle!);
     } else {
-      canvas.drawLine(nodeA, nodeB, paint);
-      drawArrow(canvas, endX, endY, atan2(endY - startY, endX - startX));
+      canvas.drawLine(geometry.startPoint, geometry.endPoint, paint);
+      _drawArrow(
+        canvas,
+        geometry.endPoint,
+        atan2(
+          geometry.endPoint.dy - geometry.startPoint.dy,
+          geometry.endPoint.dx - geometry.startPoint.dx,
+        ),
+      );
     }
   }
 
   @override
-  shouldRepaint(covariant CustomPainter oldPainter) {
-    return false;
+  bool shouldRepaint(LinePainter oldDelegate) =>
+      oldDelegate.geometry != geometry;
+}
+
+class LineWidget extends StatefulWidget {
+  final LineData data;
+  final Offset centerA;
+  final Offset centerB;
+  final ValueChanged<String> onLabelChanged;
+
+  const LineWidget({
+    super.key,
+    required this.data,
+    required this.centerA,
+    required this.centerB,
+    required this.onLabelChanged,
+  });
+
+  @override
+  State<LineWidget> createState() => _LineWidgetState();
+}
+
+class _LineWidgetState extends State<LineWidget> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.data.label);
+    _focusNode  = FocusNode()..addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    final focused = _focusNode.hasFocus;
+    setState(() => _editing = focused);
+    if (!focused) widget.onLabelChanged(_controller.text);
+  }
+
+  @override
+  void didUpdateWidget(LineWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Don't clobber text the user is actively typing
+    if (!_editing && widget.data.label != _controller.text) {
+      _controller.text = widget.data.label;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final geometry = widget.data.computeGeometry(widget.centerA, widget.centerB);
+    final mid      = geometry.midPoint;
+
+    const double boxWidth  = 120;
+    const double boxHeight = 40;
+
+    return Stack(
+      children: [
+        // ── Arc / straight line + arrowhead ──────────────────────────
+        // MUST be transparent to pointer events so it does not swallow
+        // pan gestures on the canvas or block hit-testing of other lines.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: LinePainter(geometry: geometry),
+            ),
+          ),
+        ),
+
+// ── Floating label ────────────────────────────────────────────
+Positioned(
+  left: mid.dx - boxWidth / 2,
+  top: mid.dy - boxHeight / 2,
+  child: SizedBox(
+    width: boxWidth,
+    height: boxHeight,
+    child: GestureDetector(
+      behavior: HitTestBehavior.translucent,
+
+      // ONLY handle taps here
+      onTap: () {
+        if (!_focusNode.hasFocus) {
+          FocusScope.of(context).requestFocus(_focusNode);
+        }
+      },
+
+      // Do NOT define pan handlers here.
+      // This allows drag gestures to reach the parent canvas.
+
+      child: AbsorbPointer(
+        // Prevent TextField itself from swallowing drags.
+        // We manually focus it via GestureDetector above.
+        absorbing: true,
+
+        child: TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 18),
+          decoration: const InputDecoration(
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            isDense: true,
+                ),
+          onTapOutside: (_) => _focusNode.unfocus(),
+              ),
+             ),
+           ),
+          ),
+        ),
+      ],
+    );
   }
 }
