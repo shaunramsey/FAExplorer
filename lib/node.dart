@@ -24,20 +24,27 @@ class Node extends StatefulWidget {
 class _NodeState extends State<Node> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
+
   bool _selected = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.data.label);
-    _focusNode  = FocusNode()..addListener(_onFocusChange);
+
+    _controller = TextEditingController(
+      text: widget.data.label,
+    );
+
+    _focusNode = FocusNode()
+      ..addListener(_onFocusChange);
   }
 
   @override
   void didUpdateWidget(Node oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Only overwrite the field when we are not the active editor
-    if (!_selected && widget.data.label != _controller.text) {
+
+    if (!_selected &&
+        widget.data.label != _controller.text) {
       _controller.text = widget.data.label;
     }
   }
@@ -58,31 +65,181 @@ class _NodeState extends State<Node> {
 
   void _deselect() {
     setState(() => _selected = false);
-    widget.onLabelChanged(_controller.text);
+
+    widget.onLabelChanged(
+      _controller.text,
+    );
   }
 
   void _onFocusChange() {
-    if (!_focusNode.hasFocus) _deselect();
+    if (!_focusNode.hasFocus) {
+      _deselect();
+    }
   }
 
   Color get _borderColor =>
-      _selected ? Colors.lightBlueAccent : Colors.black;
+      _selected
+          ? Colors.lightBlueAccent
+          : Colors.black;
+
+  // ─────────────────────────────────────────────
+  // TOKEN PARSER
+  // ─────────────────────────────────────────────
+
+  static const Map<String, String> _replacements = {
+    // Control
+    '\\0': '∅',
+
+    // Greek lowercase
+    'ALPHA': 'α',
+    'BETA': 'β',
+    'GAMMA': 'γ',
+    'ZETA': 'ζ',
+    'ETA': 'η',
+    'THETA': 'θ',
+    'IOTA': 'ι',
+    'KAPPA': 'κ',
+    'LAMDA': 'λ',
+    'DELTA': 'δ',
+    'EPSILON': 'ε',
+    'MU': 'μ',
+    'PI': 'π',
+    'SIGMA': 'σ',
+    'OMEGA': 'ω',
+
+    // Greek uppercase
+    'GAMMA_CAP': 'Γ',
+    'DELTA_CAP': 'Δ',
+    'PI_CAP': 'Π',
+    'SIGMA_CAP': 'Σ',
+    'OMEGA_CAP': 'Ω',
+
+    // Math
+    'INFINITY': '∞',
+    'SQRT': '√',
+    'PLUSMINUS': '±',
+    'NOTEQUAL': '≠',
+    'LESSEQ': '≤',
+    'GREATEREQ': '≥',
+    'APPROX': '≈',
+    'MULTIPLY': '×',
+    'DIVIDE': '÷',
+
+    // Arrows
+    'LEFT': '←',
+    'RIGHT': '→',
+    'UP': '↑',
+    'DOWN': '↓',
+    'LEFTRIGHT': '↔',
+
+    // Misc
+    'CHECK': '✓',
+    'X': '✗',
+    'STAR': '★',
+    'HEART': '♥',
+    'BULLET': '•',
+    'QUESTION': '�',
+    'ELLIPSIS': '…',
+    'COPY': '©',
+    'REGISTERED': '®',
+    'TRADEMARK': '™',
+    'DEGREE': '°',
+    'PARAGRAPH': '¶',
+    'SECTION': '§',
+    'CURRENCY': '¤',
+    'PILCROW': '¶',
+    'PEACE': '☮',
+    "YIN YANG": '☯',
+    "SMILEY": '☺',
+    "BLACK SMILEY": '☻',
+    "SUN": '☀',
+    "CLOUD": '☁',
+    "UMBRELLA": '☂',
+    "SNOWFLAKE": '❄',
+    'SKULL': '☠',
+    'SPADE': '♠',
+    'CLUB': '♣',
+    'DIAMOND': '♦',
+    'MUSIC NOTE': '♪',
+    'BEAMED EIGHTH NOTES': '♫',
+    'RADIOACTIVE': '☢',
+    'BIOHAZARD': '☣',
+    'CLOVER': '☘',
+    'HANDS': '☝',
+    'MALE': '♂',
+    'FEMALE': '♀',
+    'STAR AND CRESCENT': '☪',
+    'FALLING STAR': '☫',
+    'HAMMER AND SICKLE': '☭',
+    'HOT SPRINGS': '♨',
+    'HOTEL': '🏨',
+    'HOSPITAL': '🏥',
+    'HOURGLASS': '⌛',
+  };
+
+  String parseNodeText(String input) {
+    return input.replaceAllMapped(
+      RegExp(r'\\?\[\[(.*?)\]\]'),
+      (match) {
+        final full = match.group(0)!;
+
+        // Escaped token support
+        // Example: \[[GAMMA]]
+        if (full.startsWith(r'\')) {
+          return full.substring(1);
+        }
+
+        final key =
+            (match.group(1) ?? '').trim();
+
+        return _replacements[key] ?? full;
+      },
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // NODE ID DISPLAY
+  // ─────────────────────────────────────────────
+
+  String getDisplayId(String rawId) {
+    final number = int.tryParse(
+      rawId.replaceFirst('n', ''),
+    );
+
+    if (number == null || number < 0) {
+      return rawId;
+    }
+
+    int n = number;
+    String result = '';
+
+    do {
+      result =
+          String.fromCharCode(
+            65 + (n % 26),
+          ) +
+          result;
+
+      n = (n ~/ 26) - 1;
+    } while (n >= 0);
+
+    return result;
+  }
 
   @override
   Widget build(BuildContext context) {
-    // The TextField must NEVER participate in the gesture arena unless
-    // the node is actively selected for editing.  If it can receive
-    // pointer-down events it wins the arena and the parent canvas pan
-    // detector never fires, breaking both node drag and line drag.
-    final bool textFieldActive = _selected && !widget.lineMode;
+    final bool textFieldActive =
+        _selected && !widget.lineMode;
+
+    final startText =
+        getDisplayId(widget.data.id);
 
     return Positioned(
-      top:  widget.data.position.dy,
+      top: widget.data.position.dy,
       left: widget.data.position.dx,
-      // translucent: this node's GestureDetector handles tap/doubleTap
-      // but does NOT block the parent GestureDetector from seeing pans.
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
+
         onTap: () {
           if (widget.lineMode) {
             widget.onLineModeSelect?.call();
@@ -90,64 +247,120 @@ class _NodeState extends State<Node> {
             _select();
           }
         },
+
         onDoubleTap: widget.onDoubleTap,
+
         child: SizedBox(
           width: 100,
           height: 100,
+
           child: Stack(
             children: [
-              // ── Outer circle ───────────────────────────────────────
+              // ─────────────────────────────
+              // OUTER CIRCLE
+              // ─────────────────────────────
+
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: _borderColor, width: 4),
+                    border: Border.all(
+                      color: _borderColor,
+                      width: 4,
+                    ),
                   ),
                 ),
               ),
 
-              // ── Accept-state inner ring ────────────────────────────
+              // ─────────────────────────────
+              // ACCEPT STATE INNER RING
+              // ─────────────────────────────
+
               if (widget.data.isAccept)
                 Center(
                   child: IgnorePointer(
                     child: Container(
                       width: 80,
                       height: 80,
+
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: _borderColor, width: 4),
+
+                        border: Border.all(
+                          color: _borderColor,
+                          width: 4,
+                        ),
                       ),
                     ),
                   ),
                 ),
 
-              // ── Label text field ───────────────────────────────────
-              // IgnorePointer when not actively editing so that all
-              // pointer-downs on an unselected node fall through to the
-              // GestureDetector above (and then to the parent canvas pan).
+              // ─────────────────────────────
+              // TEXT FIELD
+              // ─────────────────────────────
+
               Center(
                 child: SizedBox(
                   width: 80,
+
                   child: IgnorePointer(
                     ignoring: !textFieldActive,
+
                     child: TextField(
-                      controller:        _controller,
-                      focusNode:         _focusNode,
+                      controller: _controller,
+                      focusNode: _focusNode,
+
                       style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontStyle:  FontStyle.italic,
-                        fontSize:   30,
-                        color:      _borderColor,
+                        fontWeight:
+                            FontWeight.bold,
+                        fontSize: 30,
+                        fontFamily: 'Courier',
+                        color: _borderColor,
                       ),
-                      textAlign:         TextAlign.center,
-                      onEditingComplete: _deselect,
-                      onTapOutside:      (_) => _deselect(),
-                      decoration: const InputDecoration(
-                        border:        InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        isDense:       true,
-                      ),
+
+                      textAlign: TextAlign.center,
+
+                      onEditingComplete:
+                          _deselect,
+
+                      onTapOutside: (_) =>
+                          _deselect(),
+
+                      // LIVE TOKEN PARSING
+                      onChanged: (value) {
+                        final parsed =
+                            parseNodeText(value);
+
+                        if (parsed != value) {
+                          _controller.value =
+                              TextEditingValue(
+                                text: parsed,
+
+                                selection:
+                                    TextSelection.collapsed(
+                                      offset:
+                                          parsed.length,
+                                    ),
+                              );
+                        }
+                      },
+
+                      decoration:
+                          InputDecoration(
+                            border:
+                                InputBorder.none,
+
+                            enabledBorder:
+                                InputBorder.none,
+
+                            focusedBorder:
+                                InputBorder.none,
+
+                            isDense: true,
+
+                            hintText:
+                                startText,
+                          ),
                     ),
                   ),
                 ),

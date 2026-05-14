@@ -52,10 +52,7 @@ class LineData {
     this.label = '',
   });
 
-  Offset anchorPoint(
-    Offset centerA,
-    Offset centerB,
-  ) {
+  Offset anchorPoint(Offset centerA, Offset centerB) {
     final dx = centerB.dx - centerA.dx;
     final dy = centerB.dy - centerA.dy;
 
@@ -72,18 +69,55 @@ class LineData {
     );
   }
 
-  Offset midPoint(
+  Offset getTextBoxLocation(
     Offset centerA,
     Offset centerB,
+    double width,
+    double height,
+    String label,
   ) {
+    final dx = centerB.dx - centerA.dx;
+    final dy = centerB.dy - centerA.dy;
+
+    final scale = sqrt(dx * dx + dy * dy);
+
+    if (scale == 0) return centerA;
+
+    final perpDx = dy / scale;
+    final perpDy = -dx / scale;
+    double fontSize = 30;
+    double fontScale = 1;
+    if (perpendicularPart < 0) {
+      fontScale = -1;
+    }
+
+    // width/2 when when perpdx is high
+    // width * perpDx().abs() * 0.5
+    Offset wh = Offset(
+      width / 2 
+          - 9 * perpDx * fontScale * label.length 
+          - 25 * perpDx * fontScale
+          ,
+      height / 2,
+    );
+
+    Offset o = Offset(
+      centerA.dx + dx * 0.5 + perpDx * (perpendicularPart) - wh.dx,
+      centerA.dy +
+          dy * 0.5 +
+          perpDy * (perpendicularPart + fontScale * fontSize) -
+          wh.dy,
+    );
+    //debugPrint("perependicularPart is $perpendicularPart, $perpDx, $perpDy");
+    //debugPrint("gettextboclocation offset = $o");
+    return o;
+  }
+
+  Offset midPoint(Offset centerA, Offset centerB) {
     return anchorPoint(centerA, centerB);
   }
 
-  bool containsPoint(
-    Offset point,
-    Offset centerA,
-    Offset centerB,
-  ) {
+  bool containsPoint(Offset point, Offset centerA, Offset centerB) {
     final anchor = anchorPoint(centerA, centerB);
 
     final dx = point.dx - anchor.dx;
@@ -92,10 +126,7 @@ class LineData {
     return dx * dx + dy * dy <= 50 * 50;
   }
 
-  static Offset _closestOnCircle(
-    Offset center,
-    Offset target,
-  ) {
+  static Offset _closestOnCircle(Offset center, Offset target) {
     final dx = target.dx - center.dx;
     final dy = target.dy - center.dy;
 
@@ -103,16 +134,10 @@ class LineData {
 
     if (dist == 0) return center;
 
-    return Offset(
-      center.dx + dx * 50 / dist,
-      center.dy + dy * 50 / dist,
-    );
+    return Offset(center.dx + dx * 50 / dist, center.dy + dy * 50 / dist);
   }
 
-  LineGeometry computeGeometry(
-    Offset centerA,
-    Offset centerB,
-  ) {
+  LineGeometry computeGeometry(Offset centerA, Offset centerB) {
     // Straight line
     if (perpendicularPart.abs() <= 5) {
       final mid = Offset(
@@ -126,34 +151,81 @@ class LineData {
       return LineGeometry.straight(
         startPoint: start,
         endPoint: end,
-        midPoint: Offset(
-          (start.dx + end.dx) / 2,
-          (start.dy + end.dy) / 2,
-        ),
+        midPoint: Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2),
       );
     }
 
     // Arc
     final anchor = anchorPoint(centerA, centerB);
 
-    double det(double a, double b, double c, double d,
-    double e, double f, double g, double h, double i) {
-    return a*e*i + b*f*g + c*d*h - a*f*h - b*d*i - c*e*g;
+    double det(
+      double a,
+      double b,
+      double c,
+      double d,
+      double e,
+      double f,
+      double g,
+      double h,
+      double i,
+    ) {
+      return a * e * i +
+          b * f * g +
+          c * d * h -
+          a * f * h -
+          b * d * i -
+          c * e * g;
     }
 
-    List<double> circleFromThreePoints(double x1, double y1, double x2,
-    double y2, double x3, double y3) {
-  double a = det(x1, y1, 1, x2, y2, 1, x3, y3, 1);
-  double bx = -det(x1*x1 + y1*y1, y1, 1, x2*x2 + y2*y2, y2, 1, x3*x3 + y3*y3, y3, 1);
-  double by = det(x1*x1 + y1*y1, x1, 1, x2*x2 + y2*y2, x2, 1, x3*x3 + y3*y3, x3, 1);
-  double c = -det(x1*x1 + y1*y1, x1, y1, x2*x2 + y2*y2, x2, y2, x3*x3 + y3*y3, x3, y3);
+    List<double> circleFromThreePoints(
+      double x1,
+      double y1,
+      double x2,
+      double y2,
+      double x3,
+      double y3,
+    ) {
+      double a = det(x1, y1, 1, x2, y2, 1, x3, y3, 1);
+      double bx = -det(
+        x1 * x1 + y1 * y1,
+        y1,
+        1,
+        x2 * x2 + y2 * y2,
+        y2,
+        1,
+        x3 * x3 + y3 * y3,
+        y3,
+        1,
+      );
+      double by = det(
+        x1 * x1 + y1 * y1,
+        x1,
+        1,
+        x2 * x2 + y2 * y2,
+        x2,
+        1,
+        x3 * x3 + y3 * y3,
+        x3,
+        1,
+      );
+      double c = -det(
+        x1 * x1 + y1 * y1,
+        x1,
+        y1,
+        x2 * x2 + y2 * y2,
+        x2,
+        y2,
+        x3 * x3 + y3 * y3,
+        x3,
+        y3,
+      );
 
-  double x = (-bx) / (2*a);
-  double y = (-by) / (2*a);
-  double radius = sqrt(bx*bx + by*by - 4*a*c) / (2 * (a).abs());
+      double x = (-bx) / (2 * a);
+      double y = (-by) / (2 * a);
+      double radius = sqrt(bx * bx + by * by - 4 * a * c) / (2 * (a).abs());
 
-  return [x, y, radius];
-}
+      return [x, y, radius];
+    }
 
     final circle = circleFromThreePoints(
       centerA.dx,
@@ -168,14 +240,11 @@ class LineData {
     final cy = circle[1];
     final r = circle[2];
 
-    final direction =
-        perpendicularPart > 0 ? 1.0 : -1.0;
+    final direction = perpendicularPart > 0 ? 1.0 : -1.0;
 
-    double startAngle =
-        atan2(centerA.dy - cy, centerA.dx - cx);
+    double startAngle = atan2(centerA.dy - cy, centerA.dx - cx);
 
-    double endAngle =
-        atan2(centerB.dy - cy, centerB.dx - cx);
+    double endAngle = atan2(centerB.dy - cy, centerB.dx - cx);
 
     startAngle += direction * (50 / r);
     endAngle -= direction * (50 / r);
@@ -196,23 +265,13 @@ class LineData {
       sweepAngle = endAngle - startAngle;
     }
 
-    final startPt = Offset(
-      cx + r * cos(startAngle),
-      cy + r * sin(startAngle),
-    );
+    final startPt = Offset(cx + r * cos(startAngle), cy + r * sin(startAngle));
 
-    final endPt = Offset(
-      cx + r * cos(endAngle),
-      cy + r * sin(endAngle),
-    );
+    final endPt = Offset(cx + r * cos(endAngle), cy + r * sin(endAngle));
 
-    final midAngle =
-        startAngle + sweepAngle / 2;
+    final midAngle = startAngle + sweepAngle / 2;
 
-    final midPt = Offset(
-      cx + r * cos(midAngle),
-      cy + r * sin(midAngle),
-    );
+    final midPt = Offset(cx + r * cos(midAngle), cy + r * sin(midAngle));
 
     return LineGeometry.arc(
       startPoint: startPt,
@@ -222,8 +281,7 @@ class LineData {
       circleRadius: r,
       startAngle: startAngle,
       sweepAngle: sweepAngle,
-      arrowAngle:
-          endAngle + direction * (pi / 2),
+      arrowAngle: endAngle + direction * (pi / 2),
     );
   }
 }
@@ -248,12 +306,12 @@ class LineGeometry {
     required this.startPoint,
     required this.endPoint,
     required this.midPoint,
-  })  : hasCircle = false,
-        circleCenter = null,
-        circleRadius = null,
-        startAngle = null,
-        sweepAngle = null,
-        arrowAngle = null;
+  }) : hasCircle = false,
+       circleCenter = null,
+       circleRadius = null,
+       startAngle = null,
+       sweepAngle = null,
+       arrowAngle = null;
 
   const LineGeometry.arc({
     required this.startPoint,
