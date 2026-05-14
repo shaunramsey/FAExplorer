@@ -1,152 +1,159 @@
 import 'package:flutter/material.dart';
-import "dart:math";
+import 'models.dart';
 
 class Node extends StatefulWidget {
-  final Offset position;
+  final NodeData data;
+  final bool lineMode;
+  final ValueChanged<String> onLabelChanged;
+  final VoidCallback? onLineModeSelect;
+  final VoidCallback? onDoubleTap;
 
   const Node({
     super.key,
-    required this.position,
+    required this.data,
+    required this.lineMode,
+    required this.onLabelChanged,
+    this.onLineModeSelect,
+    this.onDoubleTap,
   });
-
-  bool containsPoint(double x, double y) {
-    if (pow(x - position.dx, 2) + pow(y - position.dy, 2) < pow(50, 2)) {
-      return true;
-    } else {
-      return false;
-    }
-  }
 
   @override
   State<Node> createState() => _NodeState();
 }
 
-bool defaultVisibility = false;
-
 class _NodeState extends State<Node> {
-  late Color borderColor = Colors.black;
-  final FocusNode focusNode = FocusNode();
-  late bool internalvisibility = defaultVisibility;
-
-  //Changes the appearance for selected nodes
-  void _enabler() {
-    setState(() {
-      borderColor = Colors.lightBlueAccent;
-      focusNode.requestFocus();
-    });
-  }
-
-  //Disables selected node appearance
-  void _disabler() {
-    setState(() {
-      borderColor = Colors.black;
-      focusNode.unfocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-    focusNode.dispose();
-  }
-
-  //TODO: Make this useful later
-  //List<double> getPosition () {
-  //  return [top, left];
-  //}
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _selected = false;
 
   @override
   void initState() {
     super.initState();
-    _enabler();
-    focusNode.addListener(_loseFocus);
+    _controller = TextEditingController(text: widget.data.label);
+    _focusNode  = FocusNode()..addListener(_onFocusChange);
   }
 
-  void _loseFocus() {
-    if (!focusNode.hasFocus) {
-      _disabler();
+  @override
+  void didUpdateWidget(Node oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only overwrite the field when we are not the active editor
+    if (!_selected && widget.data.label != _controller.text) {
+      _controller.text = widget.data.label;
     }
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _select() {
+    if (!_selected) {
+      setState(() => _selected = true);
+      _focusNode.requestFocus();
+    }
+  }
+
+  void _deselect() {
+    setState(() => _selected = false);
+    widget.onLabelChanged(_controller.text);
+  }
+
+  void _onFocusChange() {
+    if (!_focusNode.hasFocus) _deselect();
+  }
+
+  Color get _borderColor =>
+      _selected ? Colors.lightBlueAccent : Colors.black;
+
+  @override
   Widget build(BuildContext context) {
+    // The TextField must NEVER participate in the gesture arena unless
+    // the node is actively selected for editing.  If it can receive
+    // pointer-down events it wins the arena and the parent canvas pan
+    // detector never fires, breaking both node drag and line drag.
+    final bool textFieldActive = _selected && !widget.lineMode;
+
     return Positioned(
-      top: widget.position.dy,
-      left: widget.position.dx,
-      child: Container(
-        width: 100,
-        height: 100,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.transparent,
-          border: Border.all(
-            color: borderColor,
-            width: 4.0,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Center(
-              child: GestureDetector(
-                onTap: () {
-                    _enabler();
-                  },
-                onDoubleTap: () {
-                  setState(() {
-                    internalvisibility = !internalvisibility;
-                    _enabler();
-                  });
-                  //debugPrint("Visibility: $internalvisibility");
-                },
-                child: TextField(
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontStyle: FontStyle.italic,
-                      fontSize: 30,
-                      color: borderColor),
-                  textAlign: TextAlign.center,
-                  focusNode: focusNode, 
-                  onEditingComplete: () => _disabler(),
-                  onTapOutside: (PointerDownEvent event) => _disabler(),
-                  onTap: () => _enabler(), // This is not getting tapped, that needs to be fixed
-                  decoration: null, //Removes text-field designs
+      top:  widget.data.position.dy,
+      left: widget.data.position.dx,
+      // translucent: this node's GestureDetector handles tap/doubleTap
+      // but does NOT block the parent GestureDetector from seeing pans.
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          if (widget.lineMode) {
+            widget.onLineModeSelect?.call();
+          } else {
+            _select();
+          }
+        },
+        onDoubleTap: widget.onDoubleTap,
+        child: SizedBox(
+          width: 100,
+          height: 100,
+          child: Stack(
+            children: [
+              // ── Outer circle ───────────────────────────────────────
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: _borderColor, width: 4),
+                  ),
                 ),
-            ),
               ),
-            //Accept state extra circle
-            Center(
-                child: IgnorePointer(
-                  ignoring: false, //TODO: add accept state toggle
-                  child: Visibility(
-                    visible: internalvisibility, //TODO: add accept state toggle
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                        onDoubleTap: () {
-                          setState(() {
-                            internalvisibility = !internalvisibility;
-                            _enabler();
-                          });
-                          //debugPrint("Visibility: $internalvisibility");
-                        },
-                        onTap: () { 
-                          _enabler();
-                        },
-                        child: Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: borderColor,
-                              width: 4.0,
-                            ),
-                          ),
-                        ),
+
+              // ── Accept-state inner ring ────────────────────────────
+              if (widget.data.isAccept)
+                Center(
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _borderColor, width: 4),
+                      ),
                     ),
                   ),
-                )
-            ),
-          ],
+                ),
+
+              // ── Label text field ───────────────────────────────────
+              // IgnorePointer when not actively editing so that all
+              // pointer-downs on an unselected node fall through to the
+              // GestureDetector above (and then to the parent canvas pan).
+              Center(
+                child: SizedBox(
+                  width: 80,
+                  child: IgnorePointer(
+                    ignoring: !textFieldActive,
+                    child: TextField(
+                      controller:        _controller,
+                      focusNode:         _focusNode,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontStyle:  FontStyle.italic,
+                        fontSize:   30,
+                        color:      _borderColor,
+                      ),
+                      textAlign:         TextAlign.center,
+                      onEditingComplete: _deselect,
+                      onTapOutside:      (_) => _deselect(),
+                      decoration: const InputDecoration(
+                        border:        InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        isDense:       true,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
