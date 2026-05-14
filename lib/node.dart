@@ -30,7 +30,7 @@ class _NodeState extends State<Node> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.data.label);
-    _focusNode  = FocusNode()..addListener(_onFocusChange);
+    _focusNode = FocusNode()..addListener(_onFocusChange);
   }
 
   @override
@@ -65,8 +65,7 @@ class _NodeState extends State<Node> {
     if (!_focusNode.hasFocus) _deselect();
   }
 
-  Color get _borderColor =>
-      _selected ? Colors.lightBlueAccent : Colors.black;
+  Color get _borderColor => _selected ? Colors.lightBlueAccent : Colors.black;
 
   @override
   Widget build(BuildContext context) {
@@ -75,9 +74,28 @@ class _NodeState extends State<Node> {
     // pointer-down events it wins the arena and the parent canvas pan
     // detector never fires, breaking both node drag and line drag.
     final bool textFieldActive = _selected && !widget.lineMode;
+    String getDisplayId(String rawId) {
+      // Extract number from ids like "n0", "n26", etc.
+      final number = int.tryParse(rawId.replaceFirst('n', ''));
+
+      if (number == null || number < 0) {
+        return rawId;
+      }
+
+      int n = number;
+      String result = '';
+
+      do {
+        result = String.fromCharCode(65 + (n % 26)) + result;
+        n = (n ~/ 26) - 1;
+      } while (n >= 0);
+
+      return result;
+    }
+    final startText = getDisplayId(widget.data.id);
 
     return Positioned(
-      top:  widget.data.position.dy,
+      top: widget.data.position.dy,
       left: widget.data.position.dx,
       // translucent: this node's GestureDetector handles tap/doubleTap
       // but does NOT block the parent GestureDetector from seeing pans.
@@ -131,22 +149,23 @@ class _NodeState extends State<Node> {
                   child: IgnorePointer(
                     ignoring: !textFieldActive,
                     child: TextField(
-                      controller:        _controller,
-                      focusNode:         _focusNode,
+                      controller: _controller,
+                      focusNode: _focusNode,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize:   30,
+                        fontSize: 30,
                         fontFamily: 'Courier',
-                        color:      _borderColor,
+                        color: _borderColor,
                       ),
-                      textAlign:         TextAlign.center,
+                      textAlign: TextAlign.center,
                       onEditingComplete: _deselect,
-                      onTapOutside:      (_) => _deselect(),
-                      decoration: const InputDecoration(
-                        border:        InputBorder.none,
+                      onTapOutside: (_) => _deselect(),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
-                        isDense:       true,
+                        isDense: true,
+                        hintText: startText,
                       ),
                     ),
                   ),

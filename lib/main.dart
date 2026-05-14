@@ -82,13 +82,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
       final nodeA = _nodes[line.nodeAId]!;
       final nodeB = _nodes[line.nodeBId]!;
 
-      if (
-        line.containsPoint(
-          point,
-          nodeA.center,
-          nodeB.center,
-        )
-      ) {
+      if (line.containsPoint(point, nodeA.center, nodeB.center)) {
         return line;
       }
     }
@@ -111,127 +105,95 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
 
     setState(() {
-      final pos =
-          details.localPosition - const Offset(50, 50);
+      final pos = details.localPosition - const Offset(50, 50);
 
       final id = _nextId('n');
 
-      _nodes[id] = NodeData(
-        id: id,
-        position: pos,
-      );
+      _nodes[id] = NodeData(id: id, position: pos);
     });
   }
 
   void _onPanStart(DragStartDetails details) {
-  final pos = details.localPosition;
+    final pos = details.localPosition;
 
-  _draggingNodeId = null;
-  _draggingLineId = null;
+    _draggingNodeId = null;
+    _draggingLineId = null;
 
-  final node = _nodeAt(pos);
+    final node = _nodeAt(pos);
 
-  if (node != null) {
-    if (_lineMode) {
-      _lineSourceNodeId = node.id;
+    if (node != null) {
+      if (_lineMode) {
+        _lineSourceNodeId = node.id;
+      } else {
+        _draggingNodeId = node.id;
+      }
     } else {
-      _draggingNodeId = node.id;
-    }
-  } else {
-    final line = _lineAt(pos);
+      final line = _lineAt(pos);
 
-    if (line != null) {
-      _draggingLineId = line.id;
+      if (line != null) {
+        _draggingLineId = line.id;
+      }
     }
   }
-}
 
   void _onPanUpdate(DragUpdateDetails details) {
     if (_draggingNodeId != null) {
       setState(() {
         final node = _nodes[_draggingNodeId!]!;
 
-        node.position =
-            node.position + details.delta;
+        node.position = node.position + details.delta;
       });
-    }
-
-    else if (_draggingLineId != null) {
+    } else if (_draggingLineId != null) {
       setState(() {
-        final line =
-            _lines[_draggingLineId!]!;
+        final line = _lines[_draggingLineId!]!;
 
-        final nodeA =
-            _nodes[line.nodeAId]!;
+        final nodeA = _nodes[line.nodeAId]!;
 
-        final nodeB =
-            _nodes[line.nodeBId]!;
+        final nodeB = _nodes[line.nodeBId]!;
 
-        final dx =
-            nodeB.center.dx - nodeA.center.dx;
+        final dx = nodeB.center.dx - nodeA.center.dx;
 
-        final dy =
-            nodeB.center.dy - nodeA.center.dy;
+        final dy = nodeB.center.dy - nodeA.center.dy;
 
-        final length =
-            sqrt(dx * dx + dy * dy);
+        final length = sqrt(dx * dx + dy * dy);
 
         if (length != 0) {
           final perpDx = dy / length;
           final perpDy = -dx / length;
 
           line.perpendicularPart +=
-              details.delta.dx * perpDx +
-              details.delta.dy * perpDy;
+              details.delta.dx * perpDx + details.delta.dy * perpDy;
         }
       });
     }
   }
 
   void _onPanEnd(DragEndDetails details) {
-    if (
-      _lineMode &&
-      _lineSourceNodeId != null
-    ) {
-      final destNode =
-          _lastPanPosition != null
+    if (_lineMode && _lineSourceNodeId != null) {
+      final destNode = _lastPanPosition != null
           ? _nodeAt(_lastPanPosition!)
           : null;
 
       if (destNode != null) {
-        final srcId =
-            _lineSourceNodeId!;
+        final srcId = _lineSourceNodeId!;
 
-        final destId =
-            destNode.id;
+        final destId = destNode.id;
 
-        final alreadyExists =
-            _lines.values.any(
-          (l) =>
-              l.nodeAId == srcId &&
-              l.nodeBId == destId,
+        final alreadyExists = _lines.values.any(
+          (l) => l.nodeAId == srcId && l.nodeBId == destId,
         );
 
         if (!alreadyExists) {
           setState(() {
-            final id =
-                _nextId('l');
+            final id = _nextId('l');
 
-            final line = LineData(
-              id: id,
-              nodeAId: srcId,
-              nodeBId: destId,
-            );
+            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
 
             _lines[id] = line;
 
-            _nodes[srcId]
-                ?.connectedLineIds
-                .add(id);
+            _nodes[srcId]?.connectedLineIds.add(id);
 
-            _nodes[destId]
-                ?.connectedLineIds
-                .add(id);
+            _nodes[destId]?.connectedLineIds.add(id);
           });
         }
       }
@@ -244,11 +206,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
     _lastPanPosition = null;
   }
 
-  void _onPanUpdateWithTracking(
-    DragUpdateDetails details,
-  ) {
-    _lastPanPosition =
-        details.localPosition;
+  void _onPanUpdateWithTracking(DragUpdateDetails details) {
+    _lastPanPosition = details.localPosition;
 
     _onPanUpdate(details);
   }
@@ -260,66 +219,39 @@ class _AutomataScreenState extends State<AutomataScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Automata Designer',
-        ),
-      ),
+      appBar: AppBar(title: const Text('Automata Designer')),
 
-      floatingActionButton:
-          FloatingActionButton(
-        tooltip: _lineMode
-            ? 'Exit line mode'
-            : 'Enter line mode',
+      floatingActionButton: FloatingActionButton(
+        tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
 
-        backgroundColor:
-            _lineMode
-            ? Colors.lightBlueAccent
-            : null,
+        backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
 
         onPressed: () {
           _setLineMode(!_lineMode);
         },
 
-        child: Icon(
-          _lineMode
-              ? Icons.timeline
-              : Icons.add_link,
-        ),
+        child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
       ),
 
       body: KeyboardListener(
-        focusNode:
-            FocusNode()..requestFocus(),
+        focusNode: FocusNode()..requestFocus(),
 
         autofocus: true,
 
         onKeyEvent: (event) {
-          if (
-            event is KeyDownEvent &&
-            HardwareKeyboard
-                .instance
-                .isAltPressed
-          ) {
+          if (event is KeyDownEvent && HardwareKeyboard.instance.isAltPressed) {
             _setLineMode(true);
           }
 
-          if (
-            event is KeyUpEvent &&
-            (
-              event.logicalKey ==
-                  LogicalKeyboardKey.altLeft ||
-              event.logicalKey ==
-                  LogicalKeyboardKey.altRight
-            )
-          ) {
+          if (event is KeyUpEvent &&
+              (event.logicalKey == LogicalKeyboardKey.altLeft ||
+                  event.logicalKey == LogicalKeyboardKey.altRight)) {
             _setLineMode(false);
           }
         },
 
         child: GestureDetector(
-          behavior:
-              HitTestBehavior.opaque,
+          behavior: HitTestBehavior.opaque,
 
           onTapDown: (details) {
             _lastTapPosition = details.localPosition;
@@ -340,15 +272,13 @@ class _AutomataScreenState extends State<AutomataScreen> {
             _lastTapPosition = null;
           },
 
-          onDoubleTapDown:
-              _onDoubleTapDown,
+          onDoubleTapDown: _onDoubleTapDown,
 
           onLongPress: _reset,
 
           onPanStart: _onPanStart,
 
-          onPanUpdate:
-              _onPanUpdateWithTracking,
+          onPanUpdate: _onPanUpdateWithTracking,
 
           onPanEnd: _onPanEnd,
 
@@ -357,52 +287,39 @@ class _AutomataScreenState extends State<AutomataScreen> {
               // ─────────────────────
               // Lines
               // ─────────────────────
+              ..._lines.values.map((line) {
+                final nodeA = _nodes[line.nodeAId];
 
-              ..._lines.values.map(
-                (line) {
-                  final nodeA =
-                      _nodes[line.nodeAId];
+                final nodeB = _nodes[line.nodeBId];
 
-                  final nodeB =
-                      _nodes[line.nodeBId];
+                if (nodeA == null || nodeB == null) {
+                  return const SizedBox.shrink();
+                }
 
-                  if (
-                    nodeA == null ||
-                    nodeB == null
-                  ) {
-                    return const SizedBox
-                        .shrink();
-                  }
+                return KeyedSubtree(
+                  key: ValueKey(line.id),
 
-                  return KeyedSubtree(
-  key: ValueKey(line.id),
+                  child: Positioned.fill(
+                    child: LineWidget(
+                      data: line,
 
-  child: Positioned.fill(
-    child: LineWidget(
-      data: line,
+                      centerA: nodeA.center,
 
-      centerA:
-          nodeA.center,
+                      centerB: nodeB.center,
 
-      centerB:
-          nodeB.center,
-
-      onLabelChanged:
-          (text) {
-        setState(() {
-          line.label = text;
-        });
-      },
-    ),
-  ),
-);
-                },
-              ),
+                      onLabelChanged: (text) {
+                        setState(() {
+                          line.label = text;
+                        });
+                      },
+                    ),
+                  ),
+                );
+              }),
 
               // ─────────────────────
               // Nodes
               // ─────────────────────
-
               ..._nodes.values.map(
                 (node) => Node(
                   key: ValueKey(node.id),
@@ -411,8 +328,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
                   lineMode: _lineMode,
 
-                  onLabelChanged:
-                      (text) {
+                  onLabelChanged: (text) {
                     setState(() {
                       node.label = text;
                     });
@@ -420,15 +336,13 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
                   onLineModeSelect: () {
                     if (_lineMode) {
-                      _lineSourceNodeId =
-                          node.id;
+                      _lineSourceNodeId = node.id;
                     }
                   },
 
                   onDoubleTap: () {
                     setState(() {
-                      node.isAccept =
-                          !node.isAccept;
+                      node.isAccept = !node.isAccept;
                     });
                   },
                 ),
