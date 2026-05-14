@@ -166,12 +166,14 @@ Positioned(
           controller: _controller,
           focusNode: _focusNode,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 18),
+          style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, fontFamily: 'Courier'),
           decoration: const InputDecoration(
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,
             isDense: true,
+            hintText: '~',
+            
                 ),
           onTapOutside: (_) => _focusNode.unfocus(),
               ),

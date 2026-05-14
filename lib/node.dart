@@ -135,8 +135,8 @@ class _NodeState extends State<Node> {
                       focusNode:         _focusNode,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontStyle:  FontStyle.italic,
                         fontSize:   30,
+                        fontFamily: 'Courier',
                         color:      _borderColor,
                       ),
                       textAlign:         TextAlign.center,
