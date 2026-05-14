@@ -119,10 +119,11 @@ class _LineWidgetState extends State<LineWidget> {
   @override
   Widget build(BuildContext context) {
     final geometry = widget.data.computeGeometry(widget.centerA, widget.centerB);
-    final mid      = geometry.midPoint;
-
+    //final Offset mid      = geometry.midPoint;
     const double boxWidth  = 120;
     const double boxHeight = 40;
+    final Offset mid = widget.data.getTextBoxLocation(widget.centerA, widget.centerB, boxWidth, boxHeight, widget.data.label);
+
 
     return Stack(
       children: [
@@ -139,8 +140,8 @@ class _LineWidgetState extends State<LineWidget> {
 
 // ── Floating label ────────────────────────────────────────────
 Positioned(
-  left: mid.dx - boxWidth / 2,
-  top: mid.dy - boxHeight / 2,
+  left: mid.dx,
+  top: mid.dy,
   child: SizedBox(
     width: boxWidth,
     height: boxHeight,

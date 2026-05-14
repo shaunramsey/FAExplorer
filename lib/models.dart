@@ -69,6 +69,50 @@ class LineData {
     );
   }
 
+  Offset getTextBoxLocation(
+    Offset centerA,
+    Offset centerB,
+    double width,
+    double height,
+    String label,
+  ) {
+    final dx = centerB.dx - centerA.dx;
+    final dy = centerB.dy - centerA.dy;
+
+    final scale = sqrt(dx * dx + dy * dy);
+
+    if (scale == 0) return centerA;
+
+    final perpDx = dy / scale;
+    final perpDy = -dx / scale;
+    double fontSize = 30;
+    double fontScale = 1;
+    if (perpendicularPart < 0) {
+      fontScale = -1;
+    }
+
+    // width/2 when when perpdx is high
+    // width * perpDx().abs() * 0.5
+    Offset wh = Offset(
+      width / 2 
+          - 9 * perpDx * fontScale * label.length 
+          - 25 * perpDx * fontScale
+          ,
+      height / 2,
+    );
+
+    Offset o = Offset(
+      centerA.dx + dx * 0.5 + perpDx * (perpendicularPart) - wh.dx,
+      centerA.dy +
+          dy * 0.5 +
+          perpDy * (perpendicularPart + fontScale * fontSize) -
+          wh.dy,
+    );
+    //debugPrint("perependicularPart is $perpendicularPart, $perpDx, $perpDy");
+    //debugPrint("gettextboclocation offset = $o");
+    return o;
+  }
+
   Offset midPoint(Offset centerA, Offset centerB) {
     return anchorPoint(centerA, centerB);
   }
