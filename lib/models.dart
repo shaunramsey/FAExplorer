@@ -94,11 +94,21 @@ class LineData {
         textLength = line.length;
       }
     });
+    int numberOfLines = label.split('\n').length;
 
     // width/2 when when perpdx is high
     // width * perpDx().abs() * 0.5
-    Offset wh = Offset(width / 2 - 9 * perpDx * fontScale * textLength - 25 * perpDx * fontScale, height / 2);
+    // TODO: perhaps fix this to be "precise" when fixed width font is used
+    // or find a way to "get text width and height" exactly for precise placement
 
+    double whw = width / 2 - 9 * perpDx * fontScale * textLength - 25 * perpDx * fontScale;
+    double whh = height / 2 - perpDy * fontScale * fontSize * (numberOfLines) / 2;
+    if (fontScale * perpDy < 0 && numberOfLines > 1) {
+      whh -= perpDy * fontScale * fontSize * (numberOfLines / 4);
+    }
+    // debugPrint('$perpDy, $perpDx, $fontScale, $perpendicularPart');
+
+    Offset wh = Offset(whw, whh);
     Offset o = Offset(
       centerA.dx + dx * 0.5 + perpDx * (perpendicularPart) - wh.dx,
       centerA.dy + dy * 0.5 + perpDy * (perpendicularPart + fontScale * fontSize) - wh.dy,
