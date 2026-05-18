@@ -53,6 +53,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
     if (prefix == 'n') {
       return '$prefix${_nodeCounter++}';
     }
+
     return '$prefix${_lineCounter++}';
   }
 
@@ -90,13 +91,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
     });
   }
 
-  // toggle line mode based on pressed key. When shift is pressed
-  // line mode is toggled on/off
   void _onKeyEvent(KeyEvent event) {
     final isShift =
         event.logicalKey == LogicalKeyboardKey.shiftLeft || event.logicalKey == LogicalKeyboardKey.shiftRight;
-    // event.logicalKey == LogicalKeyboardKey.altLeft ||
-    // event.logicalKey == LogicalKeyboardKey.altRight;
 
     if (!isShift) return;
 
@@ -113,6 +110,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
         return node;
       }
     }
+
     return null;
   }
 
@@ -125,13 +123,19 @@ class _AutomataScreenState extends State<AutomataScreen> {
         return line;
       }
     }
+
     return null;
   }
+
+  // ─────────────────────────────────────────────
+  // START ARROW HIT TEST
+  // ─────────────────────────────────────────────
 
   bool _hitStartArrow(Offset point) {
     if (_startArrow == null) return false;
 
     final node = _nodes[_startArrow!.nodeId];
+
     if (node == null) return false;
 
     final dir = _startArrow!.direction();
@@ -140,19 +144,33 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
     final start = Offset(end.dx - dir.dx * _startArrow!.length, end.dy - dir.dy * _startArrow!.length);
 
-    final mid = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
+    final line = end - start;
 
-    return (point - mid).distance < 40;
+    final lenSq = line.dx * line.dx + line.dy * line.dy;
+
+    if (lenSq == 0) return false;
+
+    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
+
+    t = t.clamp(0.0, 1.0);
+
+    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
+
+    final distance = (point - projection).distance;
+
+    return distance < 30;
   }
 
   void _onDoubleTapDown(TapDownDetails details) {
     if (_lineMode) return;
 
     final clickedNode = _nodeAt(details.localPosition);
+
     if (clickedNode != null) return;
 
     setState(() {
       final pos = details.localPosition - const Offset(50, 50);
+
       final id = _nextId('n');
 
       _nodes[id] = NodeData(id: id, position: pos);
@@ -171,8 +189,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
       if (_placingStartArrow) {
         setState(() {
           _startArrow = StartArrowData(nodeId: node.id);
+
           _placingStartArrow = false;
         });
+
         return;
       }
 
@@ -188,6 +208,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
       }
 
       final line = _lineAt(pos);
+
       if (line != null) {
         _draggingLineId = line.id;
       }
@@ -198,34 +219,38 @@ class _AutomataScreenState extends State<AutomataScreen> {
     if (_draggingNodeId != null) {
       setState(() {
         final node = _nodes[_draggingNodeId!]!;
+
         node.position = node.position + details.delta;
       });
     } else if (_draggingStartArrow && _startArrow != null) {
       setState(() {
         final node = _nodes[_startArrow!.nodeId]!;
+
         final center = node.center;
 
-        final mouse = _lastPanPosition ?? center;
+        final mouse = details.localPosition;
 
         final dir = Offset(mouse.dx - center.dx, mouse.dy - center.dy);
 
         final dist = dir.distance;
 
         if (dist > 10) {
-          // offset stores the direction FROM tail TO node, which is
-          // opposite to the mouse-from-center vector, so negate it.
           _startArrow!.offset = Offset(-dir.dx / dist, -dir.dy / dist);
+
           _startArrow!.length = max(40, dist - 50);
         }
       });
     } else if (_draggingLineId != null) {
       setState(() {
         final line = _lines[_draggingLineId!]!;
+
         final nodeA = _nodes[line.nodeAId]!;
+
         final nodeB = _nodes[line.nodeBId]!;
 
         if (line.nodeAId == line.nodeBId) {
           final center = nodeA.center;
+
           final mouse = _lastPanPosition ?? center;
 
           final previous = mouse - details.delta;
@@ -235,10 +260,12 @@ class _AutomataScreenState extends State<AutomataScreen> {
           final newAngle = atan2(mouse.dy - center.dy, mouse.dx - center.dx);
 
           line.selfLoopAngle += newAngle - oldAngle;
+
           return;
         }
 
         final dx = nodeB.center.dx - nodeA.center.dx;
+
         final dy = nodeB.center.dy - nodeA.center.dy;
 
         final length = sqrt(dx * dx + dy * dy);
@@ -259,18 +286,27 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
       if (destNode != null) {
         final srcId = _lineSourceNodeId!;
+
         final destId = destNode.id;
 
-        setState(() {
-          final id = _nextId('l');
+        // Prevent duplicate
+        // directed edges
 
-          final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+        final alreadyExists = _lines.values.any((line) => line.nodeAId == srcId && line.nodeBId == destId);
 
-          _lines[id] = line;
+        if (!alreadyExists) {
+          setState(() {
+            final id = _nextId('l');
 
-          _nodes[srcId]?.connectedLineIds.add(id);
-          _nodes[destId]?.connectedLineIds.add(id);
-        });
+            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+
+            _lines[id] = line;
+
+            _nodes[srcId]?.connectedLineIds.add(id);
+
+            _nodes[destId]?.connectedLineIds.add(id);
+          });
+        }
       }
 
       _lineSourceNodeId = null;
@@ -286,9 +322,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   void _onPanUpdateWithTracking(DragUpdateDetails details) {
     _lastPanPosition = details.localPosition;
+
     _onPanUpdate(details);
 
-    // Update rubber band end point while drawing a line
     if (_lineSourceNodeId != null) {
       setState(() {
         _rubberBandEnd = details.localPosition;
@@ -300,70 +336,90 @@ class _AutomataScreenState extends State<AutomataScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Automata Designer')),
+
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
+
         children: [
           FloatingActionButton(
             heroTag: 'startArrow',
+
             tooltip: 'Set start state',
+
             backgroundColor: _placingStartArrow ? Colors.orange : null,
+
             onPressed: () {
               setState(() {
                 _placingStartArrow = !_placingStartArrow;
               });
             },
+
             child: const Icon(Icons.play_arrow),
           ),
+
           const SizedBox(height: 12),
+
           FloatingActionButton(
             heroTag: 'lineMode',
+
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
+
             backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
+
             onPressed: () => _setLineMode(!_lineMode),
+
             child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
           ),
         ],
       ),
+
       body: KeyboardListener(
         focusNode: _focusNode,
         autofocus: true,
         onKeyEvent: _onKeyEvent,
+
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
+
           onTapDown: (details) {
             _lastTapPosition = details.localPosition;
           },
+
           onTap: () {
             if (_lastTapPosition == null || _nodeAt(_lastTapPosition!) == null) {
               FocusManager.instance.primaryFocus?.unfocus();
             }
+
             _lastTapPosition = null;
           },
+
           onDoubleTapDown: _onDoubleTapDown,
+
           onLongPress: _reset,
+
           onPanStart: _onPanStart,
           onPanUpdate: _onPanUpdateWithTracking,
           onPanEnd: _onPanEnd,
+
           child: Stack(
             children: [
               if (_startArrow != null && _nodes[_startArrow!.nodeId] != null)
                 Positioned.fill(
                   child: StartArrowWidget(data: _startArrow!, nodeCenter: _nodes[_startArrow!.nodeId]!.center),
                 ),
-              // ── RUBBER BAND: preview line while drawing ──
+
               if (_lineSourceNodeId != null && _rubberBandEnd != null)
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
-                      painter: _RubberBandPainter(
-                        start: _nodes[_lineSourceNodeId!]!.center,
-                        end: _rubberBandEnd!,
-                      ),
+                      painter: _RubberBandPainter(start: _nodes[_lineSourceNodeId!]!.center, end: _rubberBandEnd!),
                     ),
                   ),
                 ),
+
               ..._lines.values.map((line) {
                 final nodeA = _nodes[line.nodeAId];
+
                 final nodeB = _nodes[line.nodeBId];
 
                 if (nodeA == null || nodeB == null) {
@@ -372,11 +428,15 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
                 return KeyedSubtree(
                   key: ValueKey(line.id),
+
                   child: Positioned.fill(
                     child: LineWidget(
                       data: line,
+
                       centerA: nodeA.center,
+
                       centerB: nodeB.center,
+
                       onLabelChanged: (text) {
                         setState(() {
                           line.label = text;
@@ -386,21 +446,27 @@ class _AutomataScreenState extends State<AutomataScreen> {
                   ),
                 );
               }),
+
               ..._nodes.values.map(
                 (node) => Node(
                   key: ValueKey(node.id),
+
                   data: node,
+
                   lineMode: _lineMode,
+
                   onLabelChanged: (text) {
                     setState(() {
                       node.label = text;
                     });
                   },
+
                   onLineModeSelect: () {
                     if (_lineMode) {
                       _lineSourceNodeId = node.id;
                     }
                   },
+
                   onDoubleTap: () {
                     setState(() {
                       node.isAccept = !node.isAccept;
@@ -417,8 +483,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
 }
 
 // ─────────────────────────────────────────────
-//  Rubber Band Painter
+// RUBBER BAND PAINTER
 // ─────────────────────────────────────────────
+
 class _RubberBandPainter extends CustomPainter {
   final Offset start;
   final Offset end;
@@ -434,10 +501,11 @@ class _RubberBandPainter extends CustomPainter {
 
     canvas.drawLine(start, end, paint);
 
-    // Draw small arrowhead at end
     final angle = atan2(end.dy - start.dy, end.dx - start.dx);
+
     const len = 14.0;
     const wing = 8.0;
+
     final dx = cos(angle);
     final dy = sin(angle);
 
@@ -456,5 +524,7 @@ class _RubberBandPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RubberBandPainter old) => old.start != start || old.end != end;
+  bool shouldRepaint(_RubberBandPainter old) {
+    return old.start != start || old.end != end;
+  }
 }
