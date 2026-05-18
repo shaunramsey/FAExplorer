@@ -88,10 +88,16 @@ class LineData {
     if (perpendicularPart < 0) {
       fontScale = -1;
     }
+    int textLength = 0;
+    label.split('\n').forEach((line) {
+      if (line.length > textLength) {
+        textLength = line.length;
+      }
+    });
 
     // width/2 when when perpdx is high
     // width * perpDx().abs() * 0.5
-    Offset wh = Offset(width / 2 - 9 * perpDx * fontScale * label.length - 25 * perpDx * fontScale, height / 2);
+    Offset wh = Offset(width / 2 - 9 * perpDx * fontScale * textLength - 25 * perpDx * fontScale, height / 2);
 
     Offset o = Offset(
       centerA.dx + dx * 0.5 + perpDx * (perpendicularPart) - wh.dx,
