@@ -31,6 +31,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   bool _lineMode = false;
   bool _placingStartArrow = false;
+  bool _deleteMode = false;
 
   StartArrowData? _startArrow;
 
@@ -55,6 +56,34 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
 
     return '$prefix${_lineCounter++}';
+  }
+
+  void _deleteLine(String lineId) {
+    final line = _lines[lineId];
+
+    if (line == null) return;
+
+    _nodes[line.nodeAId]?.connectedLineIds.remove(lineId);
+
+    _nodes[line.nodeBId]?.connectedLineIds.remove(lineId);
+
+    _lines.remove(lineId);
+  }
+
+  void _deleteNode(String nodeId) {
+    final node = _nodes[nodeId];
+
+    if (node == null) return;
+
+    for (final lineId in node.connectedLineIds.toList()) {
+      _deleteLine(lineId);
+    }
+
+    if (_startArrow?.nodeId == nodeId) {
+      _startArrow = null;
+    }
+
+    _nodes.remove(nodeId);
   }
 
   @override
@@ -182,6 +211,31 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
     _draggingNodeId = null;
     _draggingLineId = null;
+
+    // DELETE MODE
+    if (_deleteMode) {
+      final node = _nodeAt(pos);
+
+      if (node != null) {
+        setState(() {
+          _deleteNode(node.id);
+        });
+
+        return;
+      }
+
+      final line = _lineAt(pos);
+
+      if (line != null) {
+        setState(() {
+          _deleteLine(line.id);
+        });
+
+        return;
+      }
+
+      return;
+    }
 
     final node = _nodeAt(pos);
 
@@ -360,6 +414,29 @@ class _AutomataScreenState extends State<AutomataScreen> {
           const SizedBox(height: 12),
 
           FloatingActionButton(
+            heroTag: 'deleteMode',
+
+            tooltip: 'Delete mode',
+
+            backgroundColor: _deleteMode ? Colors.red : null,
+
+            onPressed: () {
+              setState(() {
+                _deleteMode = !_deleteMode;
+
+                if (_deleteMode) {
+                  _lineMode = false;
+                  _placingStartArrow = false;
+                }
+              });
+            },
+
+            child: const Icon(Icons.delete),
+          ),
+
+          const SizedBox(height: 12),
+
+          FloatingActionButton(
             heroTag: 'lineMode',
 
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
@@ -387,7 +464,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
           onTap: () {
             if (_lastTapPosition == null || _nodeAt(_lastTapPosition!) == null) {
-              FocusManager.instance.primaryFocus?.unfocus();
+              _focusNode.requestFocus();
             }
 
             _lastTapPosition = null;
@@ -437,6 +514,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
                       centerB: nodeB.center,
 
+                      deleteMode: _deleteMode,
+
                       onLabelChanged: (text) {
                         setState(() {
                           line.label = text;
@@ -455,6 +534,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
                   lineMode: _lineMode,
 
+                  deleteMode: _deleteMode,
+
                   onLabelChanged: (text) {
                     setState(() {
                       node.label = text;
@@ -470,6 +551,12 @@ class _AutomataScreenState extends State<AutomataScreen> {
                   onDoubleTap: () {
                     setState(() {
                       node.isAccept = !node.isAccept;
+                    });
+                  },
+
+                  onDelete: () {
+                    setState(() {
+                      _deleteNode(node.id);
                     });
                   },
                 ),

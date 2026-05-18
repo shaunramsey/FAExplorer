@@ -7,6 +7,8 @@ class Node extends StatefulWidget {
   final ValueChanged<String> onLabelChanged;
   final VoidCallback? onLineModeSelect;
   final VoidCallback? onDoubleTap;
+  final bool deleteMode;
+  final VoidCallback? onDelete;
 
   const Node({
     super.key,
@@ -15,6 +17,8 @@ class Node extends StatefulWidget {
     required this.onLabelChanged,
     this.onLineModeSelect,
     this.onDoubleTap,
+    required this.deleteMode,
+    this.onDelete,
   });
 
   @override
@@ -31,20 +35,16 @@ class _NodeState extends State<Node> {
   void initState() {
     super.initState();
 
-    _controller = TextEditingController(
-      text: widget.data.label,
-    );
+    _controller = TextEditingController(text: widget.data.label);
 
-    _focusNode = FocusNode()
-      ..addListener(_onFocusChange);
+    _focusNode = FocusNode()..addListener(_onFocusChange);
   }
 
   @override
   void didUpdateWidget(Node oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (!_selected &&
-        widget.data.label != _controller.text) {
+    if (!_selected && widget.data.label != _controller.text) {
       _controller.text = widget.data.label;
     }
   }
@@ -66,9 +66,7 @@ class _NodeState extends State<Node> {
   void _deselect() {
     setState(() => _selected = false);
 
-    widget.onLabelChanged(
-      _controller.text,
-    );
+    widget.onLabelChanged(_controller.text);
   }
 
   void _onFocusChange() {
@@ -77,10 +75,11 @@ class _NodeState extends State<Node> {
     }
   }
 
-  Color get _borderColor =>
-      _selected
-          ? Colors.lightBlueAccent
-          : Colors.black;
+  Color get _borderColor => widget.deleteMode
+      ? Colors.red
+      : _selected
+      ? Colors.lightBlueAccent
+      : Colors.black;
 
   // ─────────────────────────────────────────────
   // TOKEN PARSER
@@ -180,23 +179,19 @@ class _NodeState extends State<Node> {
   };
 
   String parseNodeText(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'\\?\[\[(.*?)\]\]'),
-      (match) {
-        final full = match.group(0)!;
+    return input.replaceAllMapped(RegExp(r'\\?\[\[(.*?)\]\]'), (match) {
+      final full = match.group(0)!;
 
-        // Escaped token support
-        // Example: \[[GAMMA]]
-        if (full.startsWith(r'\')) {
-          return full.substring(1);
-        }
+      // Escaped token support
+      // Example: \[[GAMMA]]
+      if (full.startsWith(r'\')) {
+        return full.substring(1);
+      }
 
-        final key =
-            (match.group(1) ?? '').trim();
+      final key = (match.group(1) ?? '').trim();
 
-        return _replacements[key] ?? full;
-      },
-    );
+      return _replacements[key] ?? full;
+    });
   }
 
   // ─────────────────────────────────────────────
@@ -204,9 +199,7 @@ class _NodeState extends State<Node> {
   // ─────────────────────────────────────────────
 
   String getDisplayId(String rawId) {
-    final number = int.tryParse(
-      rawId.replaceFirst('n', ''),
-    );
+    final number = int.tryParse(rawId.replaceFirst('n', ''));
 
     if (number == null || number < 0) {
       return rawId;
@@ -216,11 +209,7 @@ class _NodeState extends State<Node> {
     String result = '';
 
     do {
-      result =
-          String.fromCharCode(
-            65 + (n % 26),
-          ) +
-          result;
+      result = String.fromCharCode(65 + (n % 26)) + result;
 
       n = (n ~/ 26) - 1;
     } while (n >= 0);
@@ -230,11 +219,9 @@ class _NodeState extends State<Node> {
 
   @override
   Widget build(BuildContext context) {
-    final bool textFieldActive =
-        _selected && !widget.lineMode;
+    final bool textFieldActive = _selected && !widget.lineMode;
 
-    final startText =
-        getDisplayId(widget.data.id);
+    final startText = getDisplayId(widget.data.id);
 
     return Positioned(
       top: widget.data.position.dy,
@@ -243,6 +230,10 @@ class _NodeState extends State<Node> {
         behavior: HitTestBehavior.translucent,
 
         onTap: () {
+          if (widget.deleteMode) {
+            widget.onDelete?.call();
+            return;
+          }
           if (widget.lineMode) {
             widget.onLineModeSelect?.call();
           } else {
@@ -261,15 +252,11 @@ class _NodeState extends State<Node> {
               // ─────────────────────────────
               // OUTER CIRCLE
               // ─────────────────────────────
-
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _borderColor,
-                      width: 4,
-                    ),
+                    border: Border.all(color: _borderColor, width: 4),
                   ),
                 ),
               ),
@@ -277,7 +264,6 @@ class _NodeState extends State<Node> {
               // ─────────────────────────────
               // ACCEPT STATE INNER RING
               // ─────────────────────────────
-
               if (widget.data.isAccept)
                 Center(
                   child: IgnorePointer(
@@ -288,10 +274,7 @@ class _NodeState extends State<Node> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
 
-                        border: Border.all(
-                          color: _borderColor,
-                          width: 4,
-                        ),
+                        border: Border.all(color: _borderColor, width: 4),
                       ),
                     ),
                   ),
@@ -300,7 +283,6 @@ class _NodeState extends State<Node> {
               // ─────────────────────────────
               // TEXT FIELD
               // ─────────────────────────────
-
               Center(
                 child: SizedBox(
                   width: 80,
@@ -313,8 +295,7 @@ class _NodeState extends State<Node> {
                       focusNode: _focusNode,
 
                       style: TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                         fontSize: 30,
                         fontFamily: 'Courier',
                         color: _borderColor,
@@ -322,47 +303,34 @@ class _NodeState extends State<Node> {
 
                       textAlign: TextAlign.center,
 
-                      onEditingComplete:
-                          _deselect,
+                      onEditingComplete: _deselect,
 
-                      onTapOutside: (_) =>
-                          _deselect(),
+                      onTapOutside: (_) => _deselect(),
 
                       // LIVE TOKEN PARSING
                       onChanged: (value) {
-                        final parsed =
-                            parseNodeText(value);
+                        final parsed = parseNodeText(value);
 
                         if (parsed != value) {
-                          _controller.value =
-                              TextEditingValue(
-                                text: parsed,
+                          _controller.value = TextEditingValue(
+                            text: parsed,
 
-                                selection:
-                                    TextSelection.collapsed(
-                                      offset:
-                                          parsed.length,
-                                    ),
-                              );
+                            selection: TextSelection.collapsed(offset: parsed.length),
+                          );
                         }
                       },
 
-                      decoration:
-                          InputDecoration(
-                            border:
-                                InputBorder.none,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
 
-                            enabledBorder:
-                                InputBorder.none,
+                        enabledBorder: InputBorder.none,
 
-                            focusedBorder:
-                                InputBorder.none,
+                        focusedBorder: InputBorder.none,
 
-                            isDense: true,
+                        isDense: true,
 
-                            hintText:
-                                startText,
-                          ),
+                        hintText: startText,
+                      ),
                     ),
                   ),
                 ),

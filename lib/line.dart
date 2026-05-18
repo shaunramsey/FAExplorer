@@ -4,14 +4,11 @@ import 'models.dart';
 
 class LinePainter extends CustomPainter {
   final LineGeometry geometry;
+  final bool deleteMode;
 
-  const LinePainter({required this.geometry});
+  const LinePainter({required this.geometry, this.deleteMode = false});
 
-  void _drawArrow(
-    Canvas canvas,
-    Offset tip,
-    double angle,
-  ) {
+  void _drawArrow(Canvas canvas, Offset tip, double angle) {
     const len = 15;
     const wing = 9;
 
@@ -20,20 +17,14 @@ class LinePainter extends CustomPainter {
 
     final path = Path()
       ..moveTo(tip.dx, tip.dy)
-      ..lineTo(
-        tip.dx - len * dx + wing * dy,
-        tip.dy - len * dy - wing * dx,
-      )
-      ..lineTo(
-        tip.dx - len * dx - wing * dy,
-        tip.dy - len * dy + wing * dx,
-      )
+      ..lineTo(tip.dx - len * dx + wing * dy, tip.dy - len * dy - wing * dx)
+      ..lineTo(tip.dx - len * dx - wing * dy, tip.dy - len * dy + wing * dx)
       ..close();
 
     canvas.drawPath(
       path,
       Paint()
-        ..color = Colors.black
+        ..color = deleteMode ? Colors.red : Colors.black
         ..style = PaintingStyle.fill,
     );
   }
@@ -43,56 +34,38 @@ class LinePainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4
-      ..color = Colors.black;
+      ..color = deleteMode ? Colors.red : Colors.black;
 
     if (geometry.hasCircle) {
       canvas.drawArc(
-        Rect.fromCircle(
-          center: geometry.circleCenter!,
-          radius: geometry.circleRadius!,
-        ),
+        Rect.fromCircle(center: geometry.circleCenter!, radius: geometry.circleRadius!),
         geometry.startAngle!,
         geometry.sweepAngle!,
         false,
         paint,
       );
 
-      _drawArrow(
-        canvas,
-        geometry.endPoint,
-        geometry.arrowAngle!,
-      );
+      _drawArrow(canvas, geometry.endPoint, geometry.arrowAngle!);
     } else {
-      canvas.drawLine(
-        geometry.startPoint,
-        geometry.endPoint,
-        paint,
-      );
+      canvas.drawLine(geometry.startPoint, geometry.endPoint, paint);
 
       _drawArrow(
         canvas,
         geometry.endPoint,
-        atan2(
-          geometry.endPoint.dy -
-              geometry.startPoint.dy,
-          geometry.endPoint.dx -
-              geometry.startPoint.dx,
-        ),
+        atan2(geometry.endPoint.dy - geometry.startPoint.dy, geometry.endPoint.dx - geometry.startPoint.dx),
       );
     }
   }
 
   @override
-  bool shouldRepaint(
-    LinePainter oldDelegate,
-  ) =>
-      oldDelegate.geometry != geometry;
+  bool shouldRepaint(LinePainter oldDelegate) => oldDelegate.geometry != geometry;
 }
 
 class LineWidget extends StatefulWidget {
   final LineData data;
   final Offset centerA;
   final Offset centerB;
+  final bool deleteMode;
   final ValueChanged<String> onLabelChanged;
 
   const LineWidget({
@@ -100,16 +73,15 @@ class LineWidget extends StatefulWidget {
     required this.data,
     required this.centerA,
     required this.centerB,
+    required this.deleteMode,
     required this.onLabelChanged,
   });
 
   @override
-  State<LineWidget> createState() =>
-      _LineWidgetState();
+  State<LineWidget> createState() => _LineWidgetState();
 }
 
-class _LineWidgetState
-    extends State<LineWidget> {
+class _LineWidgetState extends State<LineWidget> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
 
@@ -120,8 +92,7 @@ class _LineWidgetState
   // TOKEN PARSER
   // ─────────────────────────────────────────────
 
-  static const Map<String, String>
-      _replacements = {
+  static const Map<String, String> _replacements = {
     // Control
     '\\0': '∅',
 
@@ -215,37 +186,30 @@ class _LineWidgetState
   };
 
   String parseNodeText(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'\\?\[\[(.*?)\]\]'),
-      (match) {
-        final full = match.group(0)!;
+    return input.replaceAllMapped(RegExp(r'\\?\[\[(.*?)\]\]'), (match) {
+      final full = match.group(0)!;
 
-        // Escaped token support
-        // Example: \[[GAMMA]]
-        if (full.startsWith(r'\')) {
-          return full.substring(1);
-        }
+      // Escaped token support
+      // Example: \[[GAMMA]]
+      if (full.startsWith(r'\')) {
+        return full.substring(1);
+      }
 
-        final key =
-            (match.group(1) ?? '').trim();
+      final key = (match.group(1) ?? '').trim();
 
-        return _replacements[key] ?? full;
-      },
-    );
+      return _replacements[key] ?? full;
+    });
   }
 
   @override
   void initState() {
     super.initState();
 
-    _controller = TextEditingController(
-      text: widget.data.label,
-    );
+    _controller = TextEditingController(text: widget.data.label);
 
     _lineCount = '\n'.allMatches(widget.data.label).length + 1;
 
-    _focusNode = FocusNode()
-      ..addListener(_onFocusChange);
+    _focusNode = FocusNode()..addListener(_onFocusChange);
   }
 
   void _onFocusChange() {
@@ -254,21 +218,16 @@ class _LineWidgetState
     setState(() => _editing = focused);
 
     if (!focused) {
-      widget.onLabelChanged(
-        _controller.text,
-      );
+      widget.onLabelChanged(_controller.text);
     }
   }
 
   @override
-  void didUpdateWidget(
-    LineWidget oldWidget,
-  ) {
+  void didUpdateWidget(LineWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
     // Don't overwrite text while typing
-    if (!_editing &&
-        widget.data.label != _controller.text) {
+    if (!_editing && widget.data.label != _controller.text) {
       _controller.text = widget.data.label;
     }
   }
@@ -283,18 +242,13 @@ class _LineWidgetState
 
   @override
   Widget build(BuildContext context) {
-    final geometry =
-        widget.data.computeGeometry(
-      widget.centerA,
-      widget.centerB,
-    );
+    final geometry = widget.data.computeGeometry(widget.centerA, widget.centerB);
 
     const double boxWidth = 120;
     const double lineHeight = 36.0; // fontSize 30 + padding
     final double boxHeight = lineHeight * _lineCount;
 
-    final Offset mid =
-        widget.data.getTextBoxLocation(
+    final Offset mid = widget.data.getTextBoxLocation(
       widget.centerA,
       widget.centerB,
       boxWidth,
@@ -307,13 +261,10 @@ class _LineWidgetState
         // ─────────────────────────────
         // LINE + ARROW
         // ─────────────────────────────
-
         Positioned.fill(
           child: IgnorePointer(
             child: CustomPaint(
-              painter: LinePainter(
-                geometry: geometry,
-              ),
+              painter: LinePainter(geometry: geometry, deleteMode: widget.deleteMode),
             ),
           ),
         ),
@@ -321,7 +272,6 @@ class _LineWidgetState
         // ─────────────────────────────
         // FLOATING LABEL
         // ─────────────────────────────
-
         Positioned(
           left: mid.dx,
           top: mid.dy,
@@ -330,23 +280,17 @@ class _LineWidgetState
             width: boxWidth,
 
             child: GestureDetector(
-              behavior:
-                  HitTestBehavior
-                      .translucent,
+              behavior: HitTestBehavior.translucent,
 
               // Focus textbox manually
               onTap: () {
                 if (!_focusNode.hasFocus) {
-                  FocusScope.of(context)
-                      .requestFocus(
-                    _focusNode,
-                  );
+                  FocusScope.of(context).requestFocus(_focusNode);
                 }
               },
 
               // No pan gestures here.
               // Parent canvas receives drags.
-
               child: AbsorbPointer(
                 // Prevent TextField from
                 // swallowing drag gestures.
@@ -356,62 +300,41 @@ class _LineWidgetState
                   controller: _controller,
                   focusNode: _focusNode,
 
-                  textAlign:
-                      TextAlign.center,
+                  textAlign: TextAlign.center,
 
                   maxLines: null,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
 
-                  style: const TextStyle(
-                    fontSize: 30,
-                    fontWeight:
-                        FontWeight.bold,
-                    fontFamily:
-                        'Courier',
-                  ),
+                  style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, fontFamily: 'Courier'),
 
                   // LIVE TOKEN PARSING
                   onChanged: (value) {
-                    final parsed =
-                        parseNodeText(
-                      value,
-                    );
+                    final parsed = parseNodeText(value);
 
-                    final newLineCount =
-                        '\n'.allMatches(parsed).length + 1;
+                    final newLineCount = '\n'.allMatches(parsed).length + 1;
 
                     if (newLineCount != _lineCount) {
                       setState(() => _lineCount = newLineCount);
                     }
 
                     if (parsed != value) {
-                      _controller.value =
-                          TextEditingValue(
+                      _controller.value = TextEditingValue(
                         text: parsed,
 
-                        selection:
-                            TextSelection.collapsed(
-                          offset:
-                              parsed.length,
-                        ),
+                        selection: TextSelection.collapsed(offset: parsed.length),
                       );
                     }
                   },
 
-                  onTapOutside: (_) =>
-                      _focusNode.unfocus(),
+                  //onTapOutside: (_) => _focusNode.unfocus(),
 
-                  decoration:
-                      const InputDecoration(
-                    border:
-                        InputBorder.none,
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
 
-                    enabledBorder:
-                        InputBorder.none,
+                    enabledBorder: InputBorder.none,
 
-                    focusedBorder:
-                        InputBorder.none,
+                    focusedBorder: InputBorder.none,
 
                     isDense: true,
 
