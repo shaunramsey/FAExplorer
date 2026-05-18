@@ -40,10 +40,12 @@ class _AutomataScreenState extends State<AutomataScreen> {
   Offset? _lastPanPosition;
   Offset? _lastTapPosition;
 
-  int _idCounter = 0;
+  int _nodeCounter = 0;
+  int _lineCounter = 0;
 
   String _nextId(String prefix) {
-    return '$prefix${_idCounter++}';
+    if (prefix == 'n') return '$prefix${_nodeCounter++}';
+    return '$prefix${_lineCounter++}';
   }
 
   // ─────────────────────────────────────────────
@@ -58,6 +60,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
       _draggingNodeId = null;
       _draggingLineId = null;
       _lineSourceNodeId = null;
+      _nodeCounter = 0;
+      _lineCounter = 0;
     });
   }
 

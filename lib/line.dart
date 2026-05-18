@@ -114,6 +114,7 @@ class _LineWidgetState
   late final FocusNode _focusNode;
 
   bool _editing = false;
+  int _lineCount = 1;
 
   // ─────────────────────────────────────────────
   // TOKEN PARSER
@@ -241,6 +242,8 @@ class _LineWidgetState
       text: widget.data.label,
     );
 
+    _lineCount = '\n'.allMatches(widget.data.label).length + 1;
+
     _focusNode = FocusNode()
       ..addListener(_onFocusChange);
   }
@@ -287,7 +290,8 @@ class _LineWidgetState
     );
 
     const double boxWidth = 120;
-    const double boxHeight = 40;
+    const double lineHeight = 36.0; // fontSize 30 + padding
+    final double boxHeight = lineHeight * _lineCount;
 
     final Offset mid =
         widget.data.getTextBoxLocation(
@@ -324,7 +328,6 @@ class _LineWidgetState
 
           child: SizedBox(
             width: boxWidth,
-            height: boxHeight,
 
             child: GestureDetector(
               behavior:
@@ -356,6 +359,10 @@ class _LineWidgetState
                   textAlign:
                       TextAlign.center,
 
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+
                   style: const TextStyle(
                     fontSize: 30,
                     fontWeight:
@@ -370,6 +377,13 @@ class _LineWidgetState
                         parseNodeText(
                       value,
                     );
+
+                    final newLineCount =
+                        '\n'.allMatches(parsed).length + 1;
+
+                    if (newLineCount != _lineCount) {
+                      setState(() => _lineCount = newLineCount);
+                    }
 
                     if (parsed != value) {
                       _controller.value =
