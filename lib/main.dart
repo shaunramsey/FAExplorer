@@ -464,7 +464,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
           onTap: () {
             if (_lastTapPosition == null || _nodeAt(_lastTapPosition!) == null) {
-              FocusManager.instance.primaryFocus?.unfocus();
+              _focusNode.requestFocus();
             }
 
             _lastTapPosition = null;

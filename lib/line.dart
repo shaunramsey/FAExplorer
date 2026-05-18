@@ -327,7 +327,7 @@ class _LineWidgetState extends State<LineWidget> {
                     }
                   },
 
-                  onTapOutside: (_) => _focusNode.unfocus(),
+                  //onTapOutside: (_) => _focusNode.unfocus(),
 
                   decoration: const InputDecoration(
                     border: InputBorder.none,

@@ -122,7 +122,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     }
                   },
 
-                  onTapOutside: (_) => _focusNode.unfocus(),
+                  //onTapOutside: (_) => _focusNode.unfocus(),
 
                   decoration: const InputDecoration(
                     border: InputBorder.none,
