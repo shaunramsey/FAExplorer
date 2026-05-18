@@ -181,8 +181,8 @@ class LineData {
       final outward = Offset(cos(angle), sin(angle));
 
       // Move the loop center away from the node
-      const loopRadius = 45.0;
-      const centerDistance = 85.0;
+      const loopRadius = 35.0;
+      const centerDistance = 65.0;
 
       final circleCenter = Offset(centerA.dx + outward.dx * centerDistance, centerA.dy + outward.dy * centerDistance);
 
@@ -190,7 +190,7 @@ class LineData {
       final towardNodeAngle = atan2(centerA.dy - circleCenter.dy, centerA.dx - circleCenter.dx);
 
       // Create an almost full-circle loop
-      const gapAngle = 0.45;
+      const gapAngle = 0.85;
 
       final startAngle = towardNodeAngle + gapAngle;
       final sweepAngle = 2 * pi - (gapAngle * 2);
