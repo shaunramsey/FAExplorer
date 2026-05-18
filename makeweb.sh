@@ -7,7 +7,7 @@ OUTPUT_FILE="status.md"
 CURRENT_DATE=$(date "+%Y-%m-%d")
 CURRENT_TIME=$(date "+%H:%M:%S")
 
-flutter build web --release --base-href=/FAExplorer/build/web/
+
 echo "# Status of Finite Automata Designer"  > "$OUTPUT_FILE"
 echo "* Generated on: **$CURRENT_DATE** at **$CURRENT_TIME**" >> "$OUTPUT_FILE"
 
@@ -25,5 +25,11 @@ echo "$NEW_NUM" > "$FILE"
 echo "* Build number **$NEW_NUM**" >> "$OUTPUT_FILE"
 echo "* [Go Back](README.md) - go to the Readme"  >> "$OUTPUT_FILE"
 echo "* [Latest Build](build/web/index.html) - go to the last build"  >> "$OUTPUT_FILE"
+
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    flutter build web --release --base-href //FAExplorer//build//web//
+else 
+    flutter build web --release --base-href=/FAExplorer/build/web/
+fi
 
 echo "Output successfully written to $OUTPUT_FILE"
