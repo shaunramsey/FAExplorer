@@ -42,6 +42,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   Offset? _lastPanPosition;
   Offset? _lastTapPosition;
+  Offset? _rubberBandEnd;
 
   int _nodeCounter = 0;
   int _lineCounter = 0;
@@ -211,7 +212,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
         final dist = dir.distance;
 
         if (dist > 10) {
-          _startArrow!.offset = Offset(dir.dx / dist, dir.dy / dist);
+          // offset stores the direction FROM tail TO node, which is
+          // opposite to the mouse-from-center vector, so negate it.
+          _startArrow!.offset = Offset(-dir.dx / dist, -dir.dy / dist);
           _startArrow!.length = max(40, dist - 50);
         }
       });
@@ -278,11 +281,19 @@ class _AutomataScreenState extends State<AutomataScreen> {
     _draggingStartArrow = false;
 
     _lastPanPosition = null;
+    _rubberBandEnd = null;
   }
 
   void _onPanUpdateWithTracking(DragUpdateDetails details) {
     _lastPanPosition = details.localPosition;
     _onPanUpdate(details);
+
+    // Update rubber band end point while drawing a line
+    if (_lineSourceNodeId != null) {
+      setState(() {
+        _rubberBandEnd = details.localPosition;
+      });
+    }
   }
 
   @override
@@ -339,6 +350,18 @@ class _AutomataScreenState extends State<AutomataScreen> {
                 Positioned.fill(
                   child: StartArrowWidget(data: _startArrow!, nodeCenter: _nodes[_startArrow!.nodeId]!.center),
                 ),
+              // ── RUBBER BAND: preview line while drawing ──
+              if (_lineSourceNodeId != null && _rubberBandEnd != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _RubberBandPainter(
+                        start: _nodes[_lineSourceNodeId!]!.center,
+                        end: _rubberBandEnd!,
+                      ),
+                    ),
+                  ),
+                ),
               ..._lines.values.map((line) {
                 final nodeA = _nodes[line.nodeAId];
                 final nodeB = _nodes[line.nodeBId];
@@ -391,4 +414,47 @@ class _AutomataScreenState extends State<AutomataScreen> {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────
+//  Rubber Band Painter
+// ─────────────────────────────────────────────
+class _RubberBandPainter extends CustomPainter {
+  final Offset start;
+  final Offset end;
+
+  const _RubberBandPainter({required this.start, required this.end});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..color = Colors.lightBlueAccent.withOpacity(0.85);
+
+    canvas.drawLine(start, end, paint);
+
+    // Draw small arrowhead at end
+    final angle = atan2(end.dy - start.dy, end.dx - start.dx);
+    const len = 14.0;
+    const wing = 8.0;
+    final dx = cos(angle);
+    final dy = sin(angle);
+
+    final path = Path()
+      ..moveTo(end.dx, end.dy)
+      ..lineTo(end.dx - len * dx + wing * dy, end.dy - len * dy - wing * dx)
+      ..lineTo(end.dx - len * dx - wing * dy, end.dy - len * dy + wing * dx)
+      ..close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.lightBlueAccent.withOpacity(0.85)
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RubberBandPainter old) => old.start != start || old.end != end;
 }

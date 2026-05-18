@@ -91,13 +91,18 @@ class _StartArrowWidgetState
               widget.data.length,
     );
 
+    // Perpendicular to arrow direction — used to float the label
+    // beside the shaft rather than on top of it.
+    final perp = Offset(-dir.dy, dir.dx);
+
+    const double boxWidth = 120;
+    const double lineHeight = 36.0;
+    final double boxHeight = lineHeight * _lineCount;
+
+    // Anchor label at the tail (start), shifted perpendicularly.
     final labelOffset = Offset(
-      start.dx -
-          120 -
-          dir.dx * 20,
-      start.dy -
-          25 -
-          dir.dy * 20,
+      start.dx + perp.dx * 30 - boxWidth / 2,
+      start.dy + perp.dy * 30 - boxHeight / 2,
     );
 
     return Stack(
@@ -117,67 +122,61 @@ class _StartArrowWidgetState
           top: labelOffset.dy,
 
           child: SizedBox(
-            width: 120,
+            width: boxWidth,
 
-            child: TextField(
-              controller: _controller,
-
-              focusNode: _focusNode,
-
-              maxLines: null,
-
-              keyboardType:
-                  TextInputType.multiline,
-
-              textInputAction:
-                  TextInputAction.newline,
-
-              textAlign:
-                  TextAlign.center,
-
-              style: const TextStyle(
-                fontSize: 30,
-                fontWeight:
-                    FontWeight.bold,
-                fontFamily:
-                    'Courier',
-              ),
-
-              onChanged: (value) {
-                widget.data.label =
-                    value;
-
-                final newLineCount =
-                    '\n'
-                            .allMatches(
-                              value,
-                            )
-                            .length +
-                        1;
-
-                if (newLineCount !=
-                    _lineCount) {
-                  setState(() {
-                    _lineCount =
-                        newLineCount;
-                  });
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              // Tap focuses the field; pan gestures pass through to
+              // the parent canvas because AbsorbPointer stops the
+              // TextField from consuming them.
+              onTap: () {
+                if (!_focusNode.hasFocus) {
+                  FocusScope.of(context).requestFocus(_focusNode);
                 }
               },
 
-              decoration:
-                  const InputDecoration(
-                border:
-                    InputBorder.none,
+              child: AbsorbPointer(
+                // Block the TextField from swallowing drag gestures.
+                absorbing: true,
 
-                enabledBorder:
-                    InputBorder.none,
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _focusNode,
 
-                focusedBorder:
-                    InputBorder.none,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  textAlign: TextAlign.center,
 
-                hintText: '~',
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Courier',
+                  ),
 
-                isDense: true,
+                  onChanged: (value) {
+                    widget.data.label = value;
+
+                    final newLineCount =
+                        '\n'.allMatches(value).length + 1;
+
+                    if (newLineCount != _lineCount) {
+                      setState(() {
+                        _lineCount = newLineCount;
+                      });
+                    }
+                  },
+
+                  onTapOutside: (_) => _focusNode.unfocus(),
+
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    hintText: '~',
+                    isDense: true,
+                  ),
+                ),
               ),
             ),
           ),
