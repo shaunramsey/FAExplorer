@@ -106,6 +106,7 @@ class _NodeState extends State<Node> {
     'PI': 'π',
     'SIGMA': 'σ',
     'OMEGA': 'ω',
+    'PHI': 'φ',
 
     // Greek uppercase
     'GAMMA_CAP': 'Γ',
@@ -113,6 +114,7 @@ class _NodeState extends State<Node> {
     'PI_CAP': 'Π',
     'SIGMA_CAP': 'Σ',
     'OMEGA_CAP': 'Ω',
+    'PHI_CAP': 'Φ',
 
     // Math
     'INFINITY': '∞',
