@@ -5,6 +5,7 @@ import 'dart:math';
 import 'models.dart';
 import 'node.dart';
 import 'line.dart';
+import 'start_arrow.dart';
 
 void main() => runApp(const MyApp());
 
@@ -32,6 +33,11 @@ class _AutomataScreenState extends State<AutomataScreen> {
   final Map<String, LineData> _lines = {};
 
   bool _lineMode = false;
+  bool _placingStartArrow = false;
+
+  StartArrowData? _startArrow;
+
+  bool _draggingStartArrow = false;
 
   String? _draggingNodeId;
   String? _draggingLineId;
@@ -43,14 +49,26 @@ class _AutomataScreenState extends State<AutomataScreen> {
   int _nodeCounter = 0;
   int _lineCounter = 0;
 
+  final FocusNode _focusNode = FocusNode();
+
   String _nextId(String prefix) {
-    if (prefix == 'n') return '$prefix${_nodeCounter++}';
+    if (prefix == 'n') {
+      return '$prefix${_nodeCounter++}';
+    }
     return '$prefix${_lineCounter++}';
   }
 
-  // ─────────────────────────────────────────────
-  // Helpers
-  // ─────────────────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.requestFocus();
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   void _reset() {
     setState(() {
@@ -60,6 +78,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
       _draggingNodeId = null;
       _draggingLineId = null;
       _lineSourceNodeId = null;
+
+      _startArrow = null;
+
       _nodeCounter = 0;
       _lineCounter = 0;
     });
@@ -71,13 +92,26 @@ class _AutomataScreenState extends State<AutomataScreen> {
     });
   }
 
+  void _onKeyEvent(KeyEvent event) {
+    final isAlt =
+        event.logicalKey == LogicalKeyboardKey.altLeft ||
+        event.logicalKey == LogicalKeyboardKey.altRight;
+
+    if (!isAlt) return;
+
+    if (event is KeyDownEvent) {
+      setState(() {
+        _lineMode = !_lineMode;
+      });
+    }
+  }
+
   NodeData? _nodeAt(Offset point) {
     for (final node in _nodes.values) {
       if (node.containsPoint(point)) {
         return node;
       }
     }
-
     return null;
   }
 
@@ -90,30 +124,49 @@ class _AutomataScreenState extends State<AutomataScreen> {
         return line;
       }
     }
-
     return null;
   }
 
-  // ─────────────────────────────────────────────
-  // Gestures
-  // ─────────────────────────────────────────────
+  bool _hitStartArrow(Offset point) {
+    if (_startArrow == null) return false;
+
+    final node = _nodes[_startArrow!.nodeId];
+    if (node == null) return false;
+
+    final dir = _startArrow!.direction();
+
+    final end = Offset(
+      node.center.dx - dir.dx * 50,
+      node.center.dy - dir.dy * 50,
+    );
+
+    final start = Offset(
+      end.dx - dir.dx * _startArrow!.length,
+      end.dy - dir.dy * _startArrow!.length,
+    );
+
+    final mid = Offset(
+      (start.dx + end.dx) / 2,
+      (start.dy + end.dy) / 2,
+    );
+
+    return (point - mid).distance < 40;
+  }
 
   void _onDoubleTapDown(TapDownDetails details) {
     if (_lineMode) return;
 
     final clickedNode = _nodeAt(details.localPosition);
-
-    // Double-clicking node should NOT create node
-    if (clickedNode != null) {
-      return;
-    }
+    if (clickedNode != null) return;
 
     setState(() {
       final pos = details.localPosition - const Offset(50, 50);
-
       final id = _nextId('n');
 
-      _nodes[id] = NodeData(id: id, position: pos);
+      _nodes[id] = NodeData(
+        id: id,
+        position: pos,
+      );
     });
   }
 
@@ -126,14 +179,26 @@ class _AutomataScreenState extends State<AutomataScreen> {
     final node = _nodeAt(pos);
 
     if (node != null) {
+      if (_placingStartArrow) {
+        setState(() {
+          _startArrow = StartArrowData(nodeId: node.id);
+          _placingStartArrow = false;
+        });
+        return;
+      }
+
       if (_lineMode) {
         _lineSourceNodeId = node.id;
       } else {
         _draggingNodeId = node.id;
       }
     } else {
-      final line = _lineAt(pos);
+      if (_hitStartArrow(pos)) {
+        _draggingStartArrow = true;
+        return;
+      }
 
+      final line = _lineAt(pos);
       if (line != null) {
         _draggingLineId = line.id;
       }
@@ -144,65 +209,66 @@ class _AutomataScreenState extends State<AutomataScreen> {
     if (_draggingNodeId != null) {
       setState(() {
         final node = _nodes[_draggingNodeId!]!;
-
         node.position = node.position + details.delta;
+      });
+    } else if (_draggingStartArrow && _startArrow != null) {
+      setState(() {
+        final node = _nodes[_startArrow!.nodeId]!;
+        final center = node.center;
+
+        final mouse = _lastPanPosition ?? center;
+
+        final dir = Offset(
+          mouse.dx - center.dx,
+          mouse.dy - center.dy,
+        );
+
+        final dist = dir.distance;
+
+        if (dist > 10) {
+          _startArrow!.offset = Offset(dir.dx / dist, dir.dy / dist);
+          _startArrow!.length = max(40, dist - 50);
+        }
       });
     } else if (_draggingLineId != null) {
       setState(() {
         final line = _lines[_draggingLineId!]!;
-
         final nodeA = _nodes[line.nodeAId]!;
-
         final nodeB = _nodes[line.nodeBId]!;
 
-        double dx;
-double dy;
+        if (line.nodeAId == line.nodeBId) {
+          final center = nodeA.center;
+          final mouse = _lastPanPosition ?? center;
 
-// Self-loop rotation dragging
-if (line.nodeAId == line.nodeBId) {
-  final center = nodeA.center;
+          final previous = mouse - details.delta;
 
-  final mouse =
-      _lastPanPosition ?? center;
+          final oldAngle = atan2(
+            previous.dy - center.dy,
+            previous.dx - center.dx,
+          );
 
-  final previous =
-      mouse - details.delta;
+          final newAngle = atan2(
+            mouse.dy - center.dy,
+            mouse.dx - center.dx,
+          );
 
-  final oldAngle = atan2(
-    previous.dy - center.dy,
-    previous.dx - center.dx,
-  );
+          line.selfLoopAngle += newAngle - oldAngle;
+          return;
+        }
 
-  final newAngle = atan2(
-    mouse.dy - center.dy,
-    mouse.dx - center.dx,
-  );
+        final dx = nodeB.center.dx - nodeA.center.dx;
+        final dy = nodeB.center.dy - nodeA.center.dy;
 
-  line.selfLoopAngle +=
-      newAngle - oldAngle;
+        final length = sqrt(dx * dx + dy * dy);
 
-  return;
-} else {
-  dx =
-      nodeB.center.dx -
-      nodeA.center.dx;
+        if (length != 0) {
+          final perpDx = dy / length;
+          final perpDy = -dx / length;
 
-  dy =
-      nodeB.center.dy -
-      nodeA.center.dy;
-}
-
-final length =
-    sqrt(dx * dx + dy * dy);
-
-if (length != 0) {
-  final perpDx = dy / length;
-  final perpDy = -dx / length;
-
-  line.perpendicularPart +=
-      details.delta.dx * perpDx +
-      details.delta.dy * perpDy;
-}
+          line.perpendicularPart +=
+              details.delta.dx * perpDx +
+              details.delta.dy * perpDy;
+        }
       });
     }
   }
@@ -215,21 +281,22 @@ if (length != 0) {
 
       if (destNode != null) {
         final srcId = _lineSourceNodeId!;
-
         final destId = destNode.id;
 
+        setState(() {
+          final id = _nextId('l');
 
-          setState(() {
-            final id = _nextId('l');
+          final line = LineData(
+            id: id,
+            nodeAId: srcId,
+            nodeBId: destId,
+          );
 
-            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+          _lines[id] = line;
 
-            _lines[id] = line;
-
-            _nodes[srcId]?.connectedLineIds.add(id);
-
-            _nodes[destId]?.connectedLineIds.add(id);
-          });
+          _nodes[srcId]?.connectedLineIds.add(id);
+          _nodes[destId]?.connectedLineIds.add(id);
+        });
       }
 
       _lineSourceNodeId = null;
@@ -237,93 +304,83 @@ if (length != 0) {
 
     _draggingNodeId = null;
     _draggingLineId = null;
+    _draggingStartArrow = false;
+
     _lastPanPosition = null;
   }
 
   void _onPanUpdateWithTracking(DragUpdateDetails details) {
     _lastPanPosition = details.localPosition;
-
     _onPanUpdate(details);
   }
-
-  // ─────────────────────────────────────────────
-  // Build
-  // ─────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Automata Designer')),
-
-      floatingActionButton: FloatingActionButton(
-        tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-
-        backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
-
-        onPressed: () {
-          _setLineMode(!_lineMode);
-        },
-
-        child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
+      appBar: AppBar(
+        title: const Text('Automata Designer'),
       ),
-
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: 'startArrow',
+            tooltip: 'Set start state',
+            backgroundColor: _placingStartArrow ? Colors.orange : null,
+            onPressed: () {
+              setState(() {
+                _placingStartArrow = !_placingStartArrow;
+              });
+            },
+            child: const Icon(Icons.play_arrow),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'lineMode',
+            tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
+            backgroundColor:
+                _lineMode ? Colors.lightBlueAccent : null,
+            onPressed: () => _setLineMode(!_lineMode),
+            child: Icon(
+              _lineMode ? Icons.timeline : Icons.add_link,
+            ),
+          ),
+        ],
+      ),
       body: KeyboardListener(
-        focusNode: FocusNode()..requestFocus(),
-
+        focusNode: _focusNode,
         autofocus: true,
-
-        onKeyEvent: (event) {
-          if (event is KeyDownEvent && HardwareKeyboard.instance.isAltPressed) {
-            _setLineMode(true);
-          }
-
-          if (event is KeyUpEvent &&
-              (event.logicalKey == LogicalKeyboardKey.altLeft ||
-                  event.logicalKey == LogicalKeyboardKey.altRight)) {
-            _setLineMode(false);
-          }
-        },
-
+        onKeyEvent: _onKeyEvent,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-
           onTapDown: (details) {
             _lastTapPosition = details.localPosition;
           },
-
           onTap: () {
-            // Only unfocus (deselect everything) when the tap is on empty
-            // canvas — not on a node.  Tapping a node fires both the node's
-            // own GestureDetector (selects it) and this one (because the
-            // node uses HitTestBehavior.translucent); calling unfocus here
-            // would immediately cancel the selection we just made.
-            // Note: _lastPanPosition is null outside of a pan, so we use a
-            // separate field for the last tap position.
             if (_lastTapPosition == null ||
                 _nodeAt(_lastTapPosition!) == null) {
               FocusManager.instance.primaryFocus?.unfocus();
             }
             _lastTapPosition = null;
           },
-
           onDoubleTapDown: _onDoubleTapDown,
-
           onLongPress: _reset,
-
           onPanStart: _onPanStart,
-
           onPanUpdate: _onPanUpdateWithTracking,
-
           onPanEnd: _onPanEnd,
-
           child: Stack(
             children: [
-              // ─────────────────────
-              // Lines
-              // ─────────────────────
+              if (_startArrow != null &&
+                  _nodes[_startArrow!.nodeId] != null)
+                Positioned.fill(
+                  child: StartArrowWidget(
+                    data: _startArrow!,
+                    nodeCenter:
+                        _nodes[_startArrow!.nodeId]!.center,
+                  ),
+                ),
               ..._lines.values.map((line) {
                 final nodeA = _nodes[line.nodeAId];
-
                 final nodeB = _nodes[line.nodeBId];
 
                 if (nodeA == null || nodeB == null) {
@@ -332,15 +389,11 @@ if (length != 0) {
 
                 return KeyedSubtree(
                   key: ValueKey(line.id),
-
                   child: Positioned.fill(
                     child: LineWidget(
                       data: line,
-
                       centerA: nodeA.center,
-
                       centerB: nodeB.center,
-
                       onLabelChanged: (text) {
                         setState(() {
                           line.label = text;
@@ -350,30 +403,21 @@ if (length != 0) {
                   ),
                 );
               }),
-
-              // ─────────────────────
-              // Nodes
-              // ─────────────────────
               ..._nodes.values.map(
                 (node) => Node(
                   key: ValueKey(node.id),
-
                   data: node,
-
                   lineMode: _lineMode,
-
                   onLabelChanged: (text) {
                     setState(() {
                       node.label = text;
                     });
                   },
-
                   onLineModeSelect: () {
                     if (_lineMode) {
                       _lineSourceNodeId = node.id;
                     }
                   },
-
                   onDoubleTap: () {
                     setState(() {
                       node.isAccept = !node.isAccept;

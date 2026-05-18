@@ -186,6 +186,8 @@ bool containsPoint(
     return Offset(center.dx + dx * 50 / dist, center.dy + dy * 50 / dist);
   }
 
+  
+
   LineGeometry computeGeometry(
   Offset centerA,
   Offset centerB,
@@ -592,6 +594,39 @@ if ((centerA - centerB).distance < 1) {
 // ─────────────────────────────────────────────
 //  LineGeometry
 // ─────────────────────────────────────────────
+class StartArrowData {
+  String nodeId;
+
+  Offset offset;
+
+  double length;
+
+  String label;
+
+  StartArrowData({
+    required this.nodeId,
+
+    this.offset = const Offset(-1, 0),
+
+    this.length = 100,
+
+    this.label = '',
+  });
+
+  Offset direction() {
+    final dist = offset.distance;
+
+    if (dist == 0) {
+      return const Offset(-1, 0);
+    }
+
+    return Offset(
+      offset.dx / dist,
+      offset.dy / dist,
+    );
+  }
+}
+
 class LineGeometry {
   final bool hasCircle;
 
