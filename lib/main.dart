@@ -155,19 +155,54 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
         final nodeB = _nodes[line.nodeBId]!;
 
-        final dx = nodeB.center.dx - nodeA.center.dx;
+        double dx;
+double dy;
 
-        final dy = nodeB.center.dy - nodeA.center.dy;
+// Self-loop rotation dragging
+if (line.nodeAId == line.nodeBId) {
+  final center = nodeA.center;
 
-        final length = sqrt(dx * dx + dy * dy);
+  final mouse =
+      _lastPanPosition ?? center;
 
-        if (length != 0) {
-          final perpDx = dy / length;
-          final perpDy = -dx / length;
+  final previous =
+      mouse - details.delta;
 
-          line.perpendicularPart +=
-              details.delta.dx * perpDx + details.delta.dy * perpDy;
-        }
+  final oldAngle = atan2(
+    previous.dy - center.dy,
+    previous.dx - center.dx,
+  );
+
+  final newAngle = atan2(
+    mouse.dy - center.dy,
+    mouse.dx - center.dx,
+  );
+
+  line.selfLoopAngle +=
+      newAngle - oldAngle;
+
+  return;
+} else {
+  dx =
+      nodeB.center.dx -
+      nodeA.center.dx;
+
+  dy =
+      nodeB.center.dy -
+      nodeA.center.dy;
+}
+
+final length =
+    sqrt(dx * dx + dy * dy);
+
+if (length != 0) {
+  final perpDx = dy / length;
+  final perpDy = -dx / length;
+
+  line.perpendicularPart +=
+      details.delta.dx * perpDx +
+      details.delta.dy * perpDy;
+}
       });
     }
   }
@@ -183,11 +218,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
         final destId = destNode.id;
 
-        final alreadyExists = _lines.values.any(
-          (l) => l.nodeAId == srcId && l.nodeBId == destId,
-        );
 
-        if (!alreadyExists) {
           setState(() {
             final id = _nextId('l');
 
@@ -199,7 +230,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
             _nodes[destId]?.connectedLineIds.add(id);
           });
-        }
       }
 
       _lineSourceNodeId = null;
