@@ -14,10 +14,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      title: 'Automata Designer',
-      home: AutomataScreen(),
-    );
+    return const MaterialApp(title: 'Automata Designer', home: AutomataScreen());
   }
 }
 
@@ -92,12 +89,15 @@ class _AutomataScreenState extends State<AutomataScreen> {
     });
   }
 
+  // toggle line mode based on pressed key. When shift is pressed
+  // line mode is toggled on/off
   void _onKeyEvent(KeyEvent event) {
-    final isAlt =
-        event.logicalKey == LogicalKeyboardKey.altLeft ||
-        event.logicalKey == LogicalKeyboardKey.altRight;
+    final isShift =
+        event.logicalKey == LogicalKeyboardKey.shiftLeft || event.logicalKey == LogicalKeyboardKey.shiftRight;
+    // event.logicalKey == LogicalKeyboardKey.altLeft ||
+    // event.logicalKey == LogicalKeyboardKey.altRight;
 
-    if (!isAlt) return;
+    if (!isShift) return;
 
     if (event is KeyDownEvent) {
       setState(() {
@@ -135,20 +135,11 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
     final dir = _startArrow!.direction();
 
-    final end = Offset(
-      node.center.dx - dir.dx * 50,
-      node.center.dy - dir.dy * 50,
-    );
+    final end = Offset(node.center.dx - dir.dx * 50, node.center.dy - dir.dy * 50);
 
-    final start = Offset(
-      end.dx - dir.dx * _startArrow!.length,
-      end.dy - dir.dy * _startArrow!.length,
-    );
+    final start = Offset(end.dx - dir.dx * _startArrow!.length, end.dy - dir.dy * _startArrow!.length);
 
-    final mid = Offset(
-      (start.dx + end.dx) / 2,
-      (start.dy + end.dy) / 2,
-    );
+    final mid = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
 
     return (point - mid).distance < 40;
   }
@@ -163,10 +154,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
       final pos = details.localPosition - const Offset(50, 50);
       final id = _nextId('n');
 
-      _nodes[id] = NodeData(
-        id: id,
-        position: pos,
-      );
+      _nodes[id] = NodeData(id: id, position: pos);
     });
   }
 
@@ -218,10 +206,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
         final mouse = _lastPanPosition ?? center;
 
-        final dir = Offset(
-          mouse.dx - center.dx,
-          mouse.dy - center.dy,
-        );
+        final dir = Offset(mouse.dx - center.dx, mouse.dy - center.dy);
 
         final dist = dir.distance;
 
@@ -242,15 +227,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
           final previous = mouse - details.delta;
 
-          final oldAngle = atan2(
-            previous.dy - center.dy,
-            previous.dx - center.dx,
-          );
+          final oldAngle = atan2(previous.dy - center.dy, previous.dx - center.dx);
 
-          final newAngle = atan2(
-            mouse.dy - center.dy,
-            mouse.dx - center.dx,
-          );
+          final newAngle = atan2(mouse.dy - center.dy, mouse.dx - center.dx);
 
           line.selfLoopAngle += newAngle - oldAngle;
           return;
@@ -265,9 +244,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
           final perpDx = dy / length;
           final perpDy = -dx / length;
 
-          line.perpendicularPart +=
-              details.delta.dx * perpDx +
-              details.delta.dy * perpDy;
+          line.perpendicularPart += details.delta.dx * perpDx + details.delta.dy * perpDy;
         }
       });
     }
@@ -275,9 +252,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   void _onPanEnd(DragEndDetails details) {
     if (_lineMode && _lineSourceNodeId != null) {
-      final destNode = _lastPanPosition != null
-          ? _nodeAt(_lastPanPosition!)
-          : null;
+      final destNode = _lastPanPosition != null ? _nodeAt(_lastPanPosition!) : null;
 
       if (destNode != null) {
         final srcId = _lineSourceNodeId!;
@@ -286,11 +261,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
         setState(() {
           final id = _nextId('l');
 
-          final line = LineData(
-            id: id,
-            nodeAId: srcId,
-            nodeBId: destId,
-          );
+          final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
 
           _lines[id] = line;
 
@@ -317,9 +288,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Automata Designer'),
-      ),
+      appBar: AppBar(title: const Text('Automata Designer')),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -338,12 +307,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
           FloatingActionButton(
             heroTag: 'lineMode',
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-            backgroundColor:
-                _lineMode ? Colors.lightBlueAccent : null,
+            backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
             onPressed: () => _setLineMode(!_lineMode),
-            child: Icon(
-              _lineMode ? Icons.timeline : Icons.add_link,
-            ),
+            child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
           ),
         ],
       ),
@@ -357,8 +323,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
             _lastTapPosition = details.localPosition;
           },
           onTap: () {
-            if (_lastTapPosition == null ||
-                _nodeAt(_lastTapPosition!) == null) {
+            if (_lastTapPosition == null || _nodeAt(_lastTapPosition!) == null) {
               FocusManager.instance.primaryFocus?.unfocus();
             }
             _lastTapPosition = null;
@@ -370,14 +335,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
           onPanEnd: _onPanEnd,
           child: Stack(
             children: [
-              if (_startArrow != null &&
-                  _nodes[_startArrow!.nodeId] != null)
+              if (_startArrow != null && _nodes[_startArrow!.nodeId] != null)
                 Positioned.fill(
-                  child: StartArrowWidget(
-                    data: _startArrow!,
-                    nodeCenter:
-                        _nodes[_startArrow!.nodeId]!.center,
-                  ),
+                  child: StartArrowWidget(data: _startArrow!, nodeCenter: _nodes[_startArrow!.nodeId]!.center),
                 ),
               ..._lines.values.map((line) {
                 final nodeA = _nodes[line.nodeAId];
