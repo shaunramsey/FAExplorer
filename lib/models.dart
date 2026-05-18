@@ -177,86 +177,44 @@ class LineData {
     if ((centerA - centerB).distance < 1) {
       final angle = selfLoopAngle;
 
-      // Direction loop extends from node
-      final loopDirection = Offset(cos(angle - pi / 2), sin(angle - pi / 2));
+      // Direction the loop extends outward from the node
+      final outward = Offset(cos(angle), sin(angle));
 
-      // Fake second node slightly offset
-      final fakeCenterB = centerA + loopDirection;
+      // Move the loop center away from the node
+      const loopRadius = 45.0;
+      const centerDistance = 85.0;
 
-      // Perpendicular vector
-      final perp = Offset(-loopDirection.dy, loopDirection.dx);
+      final circleCenter = Offset(centerA.dx + outward.dx * centerDistance, centerA.dy + outward.dy * centerDistance);
 
-      // Controls loop size
-      const loopAmount = 120.0;
+      // Angle from loop center back toward node
+      final towardNodeAngle = atan2(centerA.dy - circleCenter.dy, centerA.dx - circleCenter.dx);
 
-      final anchor = Offset(
-        (centerA.dx + fakeCenterB.dx) / 2 + perp.dx * loopAmount,
-        (centerA.dy + fakeCenterB.dy) / 2 + perp.dy * loopAmount,
+      // Create an almost full-circle loop
+      const gapAngle = 0.45;
+
+      final startAngle = towardNodeAngle + gapAngle;
+      final sweepAngle = 2 * pi - (gapAngle * 2);
+
+      final endAngle = startAngle + sweepAngle;
+
+      final startPt = Offset(
+        circleCenter.dx + loopRadius * cos(startAngle),
+        circleCenter.dy + loopRadius * sin(startAngle),
       );
 
-      double det(double a, double b, double c, double d, double e, double f, double g, double h, double i) {
-        return a * e * i + b * f * g + c * d * h - a * f * h - b * d * i - c * e * g;
-      }
-
-      List<double> circleFromThreePoints(double x1, double y1, double x2, double y2, double x3, double y3) {
-        double a = det(x1, y1, 1, x2, y2, 1, x3, y3, 1);
-
-        double bx = -det(x1 * x1 + y1 * y1, y1, 1, x2 * x2 + y2 * y2, y2, 1, x3 * x3 + y3 * y3, y3, 1);
-
-        double by = det(x1 * x1 + y1 * y1, x1, 1, x2 * x2 + y2 * y2, x2, 1, x3 * x3 + y3 * y3, x3, 1);
-
-        double c = -det(x1 * x1 + y1 * y1, x1, y1, x2 * x2 + y2 * y2, x2, y2, x3 * x3 + y3 * y3, x3, y3);
-
-        double x = (-bx) / (2 * a);
-
-        double y = (-by) / (2 * a);
-
-        double radius = sqrt(bx * bx + by * by - 4 * a * c) / (2 * a.abs());
-
-        return [x, y, radius];
-      }
-
-      final circle = circleFromThreePoints(
-        centerA.dx,
-        centerA.dy,
-        fakeCenterB.dx,
-        fakeCenterB.dy,
-        anchor.dx,
-        anchor.dy,
-      );
-
-      final cx = circle[0];
-      final cy = circle[1];
-      final r = circle[2];
-
-      double startAngle = atan2(centerA.dy - cy, centerA.dx - cx);
-
-      double endAngle = atan2(fakeCenterB.dy - cy, fakeCenterB.dx - cx);
-
-      startAngle += 50 / r;
-      endAngle -= 50 / r;
-
-      while (endAngle < startAngle) {
-        endAngle += 2 * pi;
-      }
-
-      final sweepAngle = endAngle - startAngle;
-
-      final startPt = Offset(cx + r * cos(startAngle), cy + r * sin(startAngle));
-
-      final endPt = Offset(cx + r * cos(endAngle), cy + r * sin(endAngle));
+      final endPt = Offset(circleCenter.dx + loopRadius * cos(endAngle), circleCenter.dy + loopRadius * sin(endAngle));
 
       final midAngle = startAngle + sweepAngle / 2;
 
-      final midPt = Offset(cx + r * cos(midAngle), cy + r * sin(midAngle));
+      final midPt = Offset(circleCenter.dx + loopRadius * cos(midAngle), circleCenter.dy + loopRadius * sin(midAngle));
 
       return LineGeometry.arc(
         startPoint: startPt,
         endPoint: endPt,
         midPoint: midPt,
 
-        circleCenter: Offset(cx, cy),
-        circleRadius: r,
+        circleCenter: circleCenter,
+        circleRadius: loopRadius,
 
         startAngle: startAngle,
         sweepAngle: sweepAngle,
