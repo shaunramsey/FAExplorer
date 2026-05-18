@@ -26,8 +26,9 @@ echo "* Build number **$NEW_NUM**" >> "$OUTPUT_FILE"
 echo "* [Go Back](README.md) - go to the Readme"  >> "$OUTPUT_FILE"
 echo "* [Latest Build](build/web/index.html) - go to the last build"  >> "$OUTPUT_FILE"
 
+
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    flutter build web --release --base-href //FAExplorer//build//web//
+    MSYS_NO_PATHCONV=1 flutter build web --release --base-href /FAExplorer/build/web/
 else 
     flutter build web --release --base-href=/FAExplorer/build/web/
 fi
