@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'models.dart';
 
@@ -37,23 +38,36 @@ class LinePainter extends CustomPainter {
       ..color = deleteMode ? Colors.red : Colors.black;
 
     if (geometry.hasCircle) {
+      // Shorten the arc so it ends at the base of the arrowhead (len=15)
+      // rather than the tip, preventing the line from poking through.
+      const double arrowLen = 15;
+      final double shortenAngle = arrowLen / geometry.circleRadius!;
+      final double signedShorten = geometry.sweepAngle! >= 0 ? shortenAngle : -shortenAngle;
+
       canvas.drawArc(
         Rect.fromCircle(center: geometry.circleCenter!, radius: geometry.circleRadius!),
         geometry.startAngle!,
-        geometry.sweepAngle!,
+        geometry.sweepAngle! - signedShorten,
         false,
         paint,
       );
 
       _drawArrow(canvas, geometry.endPoint, geometry.arrowAngle!);
     } else {
-      canvas.drawLine(geometry.startPoint, geometry.endPoint, paint);
-
-      _drawArrow(
-        canvas,
-        geometry.endPoint,
-        atan2(geometry.endPoint.dy - geometry.startPoint.dy, geometry.endPoint.dx - geometry.startPoint.dx),
+      // Shorten the straight line to the base of the arrowhead (len=15).
+      const double arrowLen = 15;
+      final double angle = atan2(
+        geometry.endPoint.dy - geometry.startPoint.dy,
+        geometry.endPoint.dx - geometry.startPoint.dx,
       );
+      final Offset shortenedEnd = Offset(
+        geometry.endPoint.dx - cos(angle) * arrowLen,
+        geometry.endPoint.dy - sin(angle) * arrowLen,
+      );
+
+      canvas.drawLine(geometry.startPoint, shortenedEnd, paint);
+
+      _drawArrow(canvas, geometry.endPoint, angle);
     }
   }
 
@@ -306,7 +320,7 @@ class _LineWidgetState extends State<LineWidget> {
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
 
-                  style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, fontFamily: 'Courier'),
+                  style: GoogleFonts.courierPrime(fontSize: 30, fontWeight: FontWeight.bold),
 
                   // LIVE TOKEN PARSING
                   onChanged: (value) {
@@ -328,7 +342,6 @@ class _LineWidgetState extends State<LineWidget> {
                   },
 
                   //onTapOutside: (_) => _focusNode.unfocus(),
-
                   decoration: const InputDecoration(
                     border: InputBorder.none,
 

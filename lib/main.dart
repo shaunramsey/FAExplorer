@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 
 import 'models.dart';
@@ -14,7 +15,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(title: 'Automata Designer', home: AutomataScreen());
+    return MaterialApp(
+      title: 'Automata Designer',
+
+      theme: ThemeData(
+        textTheme: GoogleFonts.courierPrimeTextTheme(),
+        primaryTextTheme: GoogleFonts.courierPrimeTextTheme(),
+      ),
+
+      home: const AutomataScreen(),
+    );
   }
 }
 
@@ -343,9 +353,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
         final destId = destNode.id;
 
-        // Prevent duplicate
-        // directed edges
-
         final alreadyExists = _lines.values.any((line) => line.nodeAId == srcId && line.nodeBId == destId);
 
         if (!alreadyExists) {
@@ -389,6 +396,49 @@ class _AutomataScreenState extends State<AutomataScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              const DrawerHeader(
+                child: Center(
+                  child: Text('Automata Designer', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                ),
+              ),
+
+              const Spacer(),
+
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MarkdownFileScreen(title: 'README', assetPath: 'assets/README.md'),
+                    ),
+                  );
+                },
+                child: const Text('View README'),
+              ),
+
+              const SizedBox(height: 8),
+
+              Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MarkdownFileScreen(title: 'Changelog', assetPath: 'assets/Changelog.md'),
+                      ),
+                    );
+                  },
+                  child: const Text('View Changelog'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+
       appBar: AppBar(title: const Text('Automata Designer')),
 
       floatingActionButton: Column(
@@ -564,6 +614,56 @@ class _AutomataScreenState extends State<AutomataScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// MARKDOWN FILE SCREEN
+// ─────────────────────────────────────────────
+
+class MarkdownFileScreen extends StatefulWidget {
+  final String title;
+  final String assetPath;
+
+  const MarkdownFileScreen({super.key, required this.title, required this.assetPath});
+
+  @override
+  State<MarkdownFileScreen> createState() => _MarkdownFileScreenState();
+}
+
+class _MarkdownFileScreenState extends State<MarkdownFileScreen> {
+  String _content = 'Loading...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFile();
+  }
+
+  Future<void> _loadFile() async {
+    try {
+      final text = await rootBundle.loadString(widget.assetPath);
+
+      setState(() {
+        _content = text;
+      });
+    } catch (e) {
+      setState(() {
+        _content = 'Failed to load ${widget.assetPath}';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: SelectableText(_content, style: GoogleFonts.courierPrime(fontSize: 16)),
       ),
     );
   }
