@@ -60,6 +60,49 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   final FocusNode _focusNode = FocusNode();
 
+  bool _hitStartArrowSimple(Offset point) {
+  if (_startArrow == null) return false;
+
+  final node = _nodes[_startArrow!.nodeId];
+  if (node == null) return false;
+
+  var dir = _startArrow!.direction();
+
+  if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
+    dir = const Offset(-0.7071, -0.7071);
+  }
+
+  const double radius = 50;
+
+  final end = Offset(
+    node.center.dx + dir.dx * radius,
+    node.center.dy + dir.dy * radius,
+  );
+
+  final start = Offset(
+    end.dx + dir.dx * _startArrow!.length,
+    end.dy + dir.dy * _startArrow!.length,
+  );
+
+  final line = end - start;
+  final lenSq = line.dx * line.dx + line.dy * line.dy;
+
+  if (lenSq == 0) return false;
+
+  double t = ((point.dx - start.dx) * line.dx +
+          (point.dy - start.dy) * line.dy) /
+      lenSq;
+
+  t = t.clamp(0.0, 1.0);
+
+  final projection = Offset(
+    start.dx + line.dx * t,
+    start.dy + line.dy * t,
+  );
+
+  return (point - projection).distance < 30;
+}
+
   bool _isLabelTaken(String label, String currentId) {
      final normalized = label.trim();
 
@@ -246,28 +289,33 @@ bool _hitStartArrow(Offset point) {
     _draggingLineId = null;
 
     if (_deleteMode) {
-      final node = _nodeAt(pos);
+  final node = _nodeAt(pos);
 
-      if (node != null) {
-        setState(() {
-          _deleteNode(node.id);
-        });
+  if (node != null) {
+    setState(() {
+      _deleteNode(node.id);
+    });
+    return;
+  }
 
-        return;
-      }
+  final line = _lineAt(pos);
 
-      final line = _lineAt(pos);
+  if (line != null) {
+    setState(() {
+      _deleteLine(line.id);
+    });
+    return;
+  }
 
-      if (line != null) {
-        setState(() {
-          _deleteLine(line.id);
-        });
+  if (_hitStartArrowSimple(pos)) {
+    setState(() {
+      _startArrow = null;
+    });
+    return;
+  }
 
-        return;
-      }
-
-      return;
-    }
+  return;
+}
 
     final node = _nodeAt(pos);
 
@@ -550,9 +598,20 @@ bool _hitStartArrow(Offset point) {
           child: Stack(
             children: [
               if (_startArrow != null && _nodes[_startArrow!.nodeId] != null)
-                Positioned.fill(
-                  child: StartArrowWidget(data: _startArrow!, nodeCenter: _nodes[_startArrow!.nodeId]!.center),
-                ),
+  Positioned.fill(
+    child: StartArrowWidget(
+      data: _startArrow!,
+      nodeCenter: _nodes[_startArrow!.nodeId]!.center,
+
+      deleteMode: _deleteMode,
+
+      onDelete: () {
+        setState(() {
+          _startArrow = null;
+        });
+      },
+    ),
+  ),
 
               if (_lineSourceNodeId != null && _rubberBandEnd != null)
                 Positioned.fill(

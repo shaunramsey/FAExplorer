@@ -6,13 +6,17 @@ import 'models.dart';
 
 class StartArrowWidget extends StatefulWidget {
   final StartArrowData data;
-
   final Offset nodeCenter;
+
+  final VoidCallback? onDelete;
+  final bool deleteMode;
 
   const StartArrowWidget({
     super.key,
     required this.data,
     required this.nodeCenter,
+    this.onDelete,
+    this.deleteMode = false,
   });
 
   @override
@@ -21,7 +25,6 @@ class StartArrowWidget extends StatefulWidget {
 
 class _StartArrowWidgetState extends State<StartArrowWidget> {
   late final TextEditingController _controller;
-
   late final FocusNode _focusNode;
 
   int _lineCount = 1;
@@ -92,7 +95,6 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
         if (key.startsWith('/')) {
           final text = key.substring(1);
-
           return text.characters
               .map((ch) => ch == ' ' ? ch : '$ch\u0338')
               .join();
@@ -108,7 +110,6 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
     super.initState();
 
     _controller = TextEditingController(text: widget.data.label);
-
     _focusNode = FocusNode();
 
     _lineCount = '\n'.allMatches(widget.data.label).length + 1;
@@ -127,9 +128,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
   @override
   void dispose() {
     _controller.dispose();
-
     _focusNode.dispose();
-
     super.dispose();
   }
 
@@ -141,20 +140,17 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
     var dir = widget.data.direction();
 
-    // Default top-left direction
     if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
       dir = const Offset(-0.7071, -0.7071);
     }
 
     const double radius = 50;
 
-    // Point on circle edge
     final end = Offset(
       widget.nodeCenter.dx + dir.dx * radius,
       widget.nodeCenter.dy + dir.dy * radius,
     );
 
-    // Extend outward from circle
     final start = Offset(
       end.dx + dir.dx * widget.data.length,
       end.dy + dir.dy * widget.data.length,
@@ -186,6 +182,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
               start: start,
               end: end,
               angle: arrowAngle,
+              deleteMode: widget.deleteMode,
             ),
           ),
         ),
@@ -193,14 +190,17 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
         Positioned(
           left: labelOffset.dx,
           top: labelOffset.dy,
-
           child: SizedBox(
             width: boxWidth,
-
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
 
               onTap: () {
+                if (widget.deleteMode) {
+                  widget.onDelete?.call();
+                  return;
+                }
+
                 if (!_focusNode.hasFocus) {
                   FocusScope.of(context).requestFocus(_focusNode);
                 }
@@ -208,7 +208,6 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
               child: AbsorbPointer(
                 absorbing: true,
-
                 child: TextField(
                   controller: _controller,
                   focusNode: _focusNode,
@@ -270,12 +269,14 @@ class _ArrowPainter extends CustomPainter {
   final Offset start;
   final Offset end;
   final double angle;
+final bool deleteMode;
 
-  const _ArrowPainter({
-    required this.start,
-    required this.end,
-    required this.angle,
-  });
+const _ArrowPainter({
+  required this.start,
+  required this.end,
+  required this.angle,
+  this.deleteMode = false,
+});
 
   void _drawArrow(Canvas canvas, Offset tip, double angle) {
     const len = 15;
@@ -299,7 +300,7 @@ class _ArrowPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = Colors.black
+        ..color = deleteMode ? Colors.red : Colors.black
         ..style = PaintingStyle.fill,
     );
   }
@@ -307,8 +308,8 @@ class _ArrowPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..strokeWidth = 4
-      ..color = Colors.black;
+  ..strokeWidth = 4
+  ..color = deleteMode ? Colors.red : Colors.black;
 
     const double arrowLen = 15;
 
@@ -317,11 +318,7 @@ class _ArrowPainter extends CustomPainter {
       end.dy - sin(angle) * arrowLen,
     );
 
-    canvas.drawLine(
-      start,
-      shortenedEnd,
-      paint,
-    );
+    canvas.drawLine(start, shortenedEnd, paint);
 
     _drawArrow(canvas, end, angle);
   }
