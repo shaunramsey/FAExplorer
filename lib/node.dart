@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:characters/characters.dart';
 import 'models.dart';
 
 class Node extends StatefulWidget {

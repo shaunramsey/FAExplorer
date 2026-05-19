@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:characters/characters.dart';
 import 'dart:math';
 
 import 'models.dart';
@@ -222,6 +221,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
                   style: GoogleFonts.courierPrime(
                     fontSize: 30,
+                    height: 1,
                     fontWeight: FontWeight.bold,
                   ),
 

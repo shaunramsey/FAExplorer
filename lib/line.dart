@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:characters/characters.dart';
 import 'dart:math';
 import 'models.dart';
 
@@ -331,7 +330,7 @@ class _LineWidgetState extends State<LineWidget> {
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
 
-                  style: GoogleFonts.courierPrime(fontSize: 30, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.courierPrime(fontSize: 30, height:1, fontWeight: FontWeight.bold),
 
                   // LIVE TOKEN PARSING
                   onChanged: (value) {

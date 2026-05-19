@@ -115,11 +115,6 @@ class LineData {
     });
     int numberOfLines = label.split('\n').length;
 
-    // width/2 when when perpdx is high
-    // width * perpDx().abs() * 0.5
-    // TODO: perhaps fix this to be "precise" when fixed width font is used
-    // or find a way to "get text width and height" exactly for precise placement
-
     double whw = width / 2 - 9 * perpDx * fontScale * textLength - 25 * perpDx * fontScale;
     double whh = height / 2 - perpDy * fontScale * fontSize * (numberOfLines) / 2;
     if (fontScale * perpDy < 0 && numberOfLines > 1) {
@@ -132,11 +127,7 @@ class LineData {
       centerA.dx + dx * 0.5 + perpDx * (perpendicularPart) - wh.dx,
       centerA.dy + dy * 0.5 + perpDy * (perpendicularPart + fontScale * fontSize) - wh.dy,
     );
-    //debugPrint("perependicularPart is $perpendicularPart, $perpDx, $perpDy");
-    //this is for line length
-    //                       3         4         5         6         7         8         9        10        11        12
-    //78901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890
-    //debugPrint("gettextboclocation offset = $o");
+
     return o;
   }
 
