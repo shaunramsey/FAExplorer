@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:characters/characters.dart';
 import 'models.dart';
 
 class Node extends StatefulWidget {
@@ -190,6 +191,12 @@ class _NodeState extends State<Node> {
       }
 
       final key = (match.group(1) ?? '').trim();
+
+      // Diagonal-slash overlay: [[/word]] puts a combining solidus through each character
+      if (key.startsWith('/')) {
+        final text = key.substring(1);
+        return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
+      }
 
       return _replacements[key] ?? full;
     });

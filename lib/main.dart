@@ -166,35 +166,53 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return null;
   }
 
-  bool _hitStartArrow(Offset point) {
-    if (_startArrow == null) return false;
+bool _hitStartArrow(Offset point) {
+  if (_startArrow == null) return false;
 
-    final node = _nodes[_startArrow!.nodeId];
+  final node = _nodes[_startArrow!.nodeId];
 
-    if (node == null) return false;
+  if (node == null) return false;
 
-    final dir = _startArrow!.direction();
+  var dir = _startArrow!.direction();
 
-    final end = Offset(node.center.dx - dir.dx * 50, node.center.dy - dir.dy * 50);
-
-    final start = Offset(end.dx - dir.dx * _startArrow!.length, end.dy - dir.dy * _startArrow!.length);
-
-    final line = end - start;
-
-    final lenSq = line.dx * line.dx + line.dy * line.dy;
-
-    if (lenSq == 0) return false;
-
-    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
-
-    t = t.clamp(0.0, 1.0);
-
-    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
-
-    final distance = (point - projection).distance;
-
-    return distance < 30;
+  // Default top-left
+  if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
+    dir = const Offset(-0.7071, -0.7071);
   }
+
+  const double radius = 50;
+
+  final end = Offset(
+    node.center.dx + dir.dx * radius,
+    node.center.dy + dir.dy * radius,
+  );
+
+  final start = Offset(
+    end.dx + dir.dx * _startArrow!.length,
+    end.dy + dir.dy * _startArrow!.length,
+  );
+
+  final line = end - start;
+
+  final lenSq = line.dx * line.dx + line.dy * line.dy;
+
+  if (lenSq == 0) return false;
+
+  double t = ((point.dx - start.dx) * line.dx +
+          (point.dy - start.dy) * line.dy) /
+      lenSq;
+
+  t = t.clamp(0.0, 1.0);
+
+  final projection = Offset(
+    start.dx + line.dx * t,
+    start.dy + line.dy * t,
+  );
+
+  final distance = (point - projection).distance;
+
+  return distance < 30;
+}
 
   void _onDoubleTapDown(TapDownDetails details) {
     if (_lineMode) return;
@@ -294,7 +312,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
         final dist = dir.distance;
 
         if (dist > 10) {
-          _startArrow!.offset = Offset(-dir.dx / dist, -dir.dy / dist);
+          _startArrow!.offset = Offset(dir.dx / dist, dir.dy / dist);
 
           _startArrow!.length = max(40, dist - 50);
         }
@@ -605,6 +623,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                             Text('[[PHI]] → φ'),
                             Text('[[/0]] → ∅'),
                             Text('[[INFINITY]] → ∞'),
+                            Text('[[/abc]] → ã̸b̸c̸  (slashed letters)'),
 
                             SizedBox(height: 12),
 
