@@ -32,7 +32,12 @@ echo "* [Latest Build](build/web/index.html) - go to the last build"  >> "$OUTPU
 
 echo "* Build number **$NEW_NUM**" >> "$VERSION_FILE"
 
-
+echo "Copying markdown into assets folder"
+cp README.md assets/.
+cp Version.md assets/.
+cp Changelog.md assets/.
+cp About.md assets/.
+# copy assets into place
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     MSYS_NO_PATHCONV=1 flutter build web --release --base-href /FAExplorer/build/web/
 else 
