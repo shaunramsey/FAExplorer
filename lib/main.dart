@@ -428,11 +428,11 @@ bool _hitStartArrow(Offset point) {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const MarkdownFileScreen(title: 'README', assetPath: 'assets/README.md'),
+                      builder: (_) => const MarkdownFileScreen(title: 'About', assetPath: 'assets/About.md'),
                     ),
                   );
                 },
-                child: const Text('View README'),
+                child: const Text('View About'),
               ),
 
               TextButton(
