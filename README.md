@@ -8,4 +8,4 @@
 
 * [About](About.md) - For author/about information see [the about](About.md)
 
-* [License](License.md) - Licensing information
+* [License](assets/License.md) - Licensing information
