@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:characters/characters.dart';
 import 'dart:math';
 import 'models.dart';
 
@@ -210,6 +211,12 @@ class _LineWidgetState extends State<LineWidget> {
       }
 
       final key = (match.group(1) ?? '').trim();
+
+      // Diagonal-slash overlay: [[/word]] puts a combining solidus through each character
+      if (key.startsWith('/')) {
+        final text = key.substring(1);
+        return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
+      }
 
       return _replacements[key] ?? full;
     });
