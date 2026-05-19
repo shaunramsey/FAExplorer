@@ -5,7 +5,7 @@
 *.swp
 .DS_Store
 .atom/
-.build/
+# .build/
 .buildlog/
 .history
 .svn/
@@ -32,8 +32,9 @@ migrate_working_dir/
 .pub/
 /build/*
 !/build/web/
+!/build/web/assets/assets/
+!/build/web/assets/
 /coverage/
-/build/
 # Symbolication related
 app.*.symbols
 
