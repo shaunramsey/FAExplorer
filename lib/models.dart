@@ -74,10 +74,29 @@ class LineData {
     final scale = sqrt(dx * dx + dy * dy);
 
     if ((centerA - centerB).distance < 1) {
-      final geometry = computeGeometry(centerA, centerB);
+  final geometry = computeGeometry(centerA, centerB);
 
-      return Offset(geometry.midPoint.dx - width / 2, geometry.midPoint.dy - height / 2);
-    }
+  final loopCenter = geometry.circleCenter!;
+  final radius = geometry.circleRadius!;
+
+  // Put textbox OUTSIDE the loop instead of inside it
+  final angle = selfLoopAngle;
+
+  final outward = Offset(cos(angle), sin(angle));
+
+  // Extra spacing beyond loop radius
+  const textDistance = 65.0;
+
+  final textCenter = Offset(
+    loopCenter.dx + outward.dx * (radius + textDistance),
+    loopCenter.dy + outward.dy * (radius + textDistance),
+  );
+
+  return Offset(
+    textCenter.dx - width / 2,
+    textCenter.dy - height / 2,
+  );
+}
 
     if (scale == 0) return centerA;
 
