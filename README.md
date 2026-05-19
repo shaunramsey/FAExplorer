@@ -7,3 +7,5 @@
 * [Changelog](Changelog.md) - For a changelog see [the changelog](Changelog.md)
 
 * [About](About.md) - For author/about information see [the about](About.md)
+
+* [License](License.md) - Licensing information
