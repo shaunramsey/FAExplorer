@@ -238,7 +238,7 @@ class LineData {
         startAngle: startAngle,
         sweepAngle: sweepAngle,
 
-        arrowAngle: endAngle + pi / 2,
+        arrowAngle: endAngle + pi / 2 - pi /12,
       );
     }
 

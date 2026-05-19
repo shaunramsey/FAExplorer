@@ -66,9 +66,13 @@ class LinePainter extends CustomPainter {
         geometry.endPoint.dy - sin(angle) * arrowLen,
       );
 
+      final double angle2 = atan2(
+        geometry.endPoint.dy - shortenedEnd.dy,
+        geometry.endPoint.dx - shortenedEnd.dx,
+      );
       canvas.drawLine(geometry.startPoint, shortenedEnd, paint);
 
-      _drawArrow(canvas, geometry.endPoint, angle);
+      _drawArrow(canvas, geometry.endPoint, angle2);
     }
   }
 
