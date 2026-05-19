@@ -61,61 +61,49 @@ class _AutomataScreenState extends State<AutomataScreen> {
   final FocusNode _focusNode = FocusNode();
 
   void _cancelRubberBand() {
-  _lineSourceNodeId = null;
-  _rubberBandEnd = null;
-}
-
-  bool _hitStartArrowSimple(Offset point) {
-  if (_startArrow == null) return false;
-
-  final node = _nodes[_startArrow!.nodeId];
-  if (node == null) return false;
-
-  var dir = _startArrow!.direction();
-
-  if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
-    dir = const Offset(-0.7071, -0.7071);
+    _lineSourceNodeId = null;
+    _rubberBandEnd = null;
   }
 
-  const double radius = 50;
+  bool _hitStartArrowSimple(Offset point) {
+    if (_startArrow == null) return false;
 
-  final end = Offset(
-    node.center.dx + dir.dx * radius,
-    node.center.dy + dir.dy * radius,
-  );
+    final node = _nodes[_startArrow!.nodeId];
+    if (node == null) return false;
 
-  final start = Offset(
-    end.dx + dir.dx * _startArrow!.length,
-    end.dy + dir.dy * _startArrow!.length,
-  );
+    var dir = _startArrow!.direction();
 
-  final line = end - start;
-  final lenSq = line.dx * line.dx + line.dy * line.dy;
+    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
+      dir = const Offset(-0.7071, -0.7071);
+    }
 
-  if (lenSq == 0) return false;
+    const double radius = 50;
 
-  double t = ((point.dx - start.dx) * line.dx +
-          (point.dy - start.dy) * line.dy) /
-      lenSq;
+    final end = Offset(node.center.dx + dir.dx * radius, node.center.dy + dir.dy * radius);
 
-  t = t.clamp(0.0, 1.0);
+    final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
 
-  final projection = Offset(
-    start.dx + line.dx * t,
-    start.dy + line.dy * t,
-  );
+    final line = end - start;
+    final lenSq = line.dx * line.dx + line.dy * line.dy;
 
-  return (point - projection).distance < 30;
-}
+    if (lenSq == 0) return false;
+
+    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
+
+    t = t.clamp(0.0, 1.0);
+
+    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
+
+    return (point - projection).distance < 30;
+  }
 
   bool _isLabelTaken(String label, String currentId) {
-     final normalized = label.trim();
+    final normalized = label.trim();
 
-      if (normalized.isEmpty) return false;
+    if (normalized.isEmpty) return false;
 
-      return _nodes.values.any((n) =>
-      n.id != currentId && n.label.trim() == normalized);
-}
+    return _nodes.values.any((n) => n.id != currentId && n.label.trim() == normalized);
+  }
 
   String _nextId(String prefix) {
     if (prefix == 'n') {
@@ -188,24 +176,21 @@ class _AutomataScreenState extends State<AutomataScreen> {
   }
 
   void _onKeyEvent(KeyEvent event) {
-  final isShift =
-      event.logicalKey == LogicalKeyboardKey.shiftLeft ||
-      event.logicalKey == LogicalKeyboardKey.shiftRight;
+    final isShift =
+        event.logicalKey == LogicalKeyboardKey.shiftLeft || event.logicalKey == LogicalKeyboardKey.shiftRight;
 
-  if (!isShift) return;
+    if (!isShift) return;
 
-  if (event is KeyDownEvent) {
-    setState(() {
-      _lineMode = !_lineMode;
+    if (event is KeyDownEvent) {
+      setState(() {
+        _lineMode = !_lineMode;
+        _draggingLineId = null;
+        _draggingNodeId = null;
 
-      // 🔥 IMPORTANT: cancel any in-progress line drag
-      _draggingLineId = null;
-      _draggingNodeId = null;
-
-      _cancelRubberBand();
-    });
+        _cancelRubberBand();
+      });
+    }
   }
-}
 
   NodeData? _nodeAt(Offset point) {
     for (final node in _nodes.values) {
@@ -230,53 +215,42 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return null;
   }
 
-bool _hitStartArrow(Offset point) {
-  if (_startArrow == null) return false;
+  bool _hitStartArrow(Offset point) {
+    if (_startArrow == null) return false;
 
-  final node = _nodes[_startArrow!.nodeId];
+    final node = _nodes[_startArrow!.nodeId];
 
-  if (node == null) return false;
+    if (node == null) return false;
 
-  var dir = _startArrow!.direction();
+    var dir = _startArrow!.direction();
 
-  // Default top-left
-  if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
-    dir = const Offset(-0.7071, -0.7071);
+    // Default top-left
+    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
+      dir = const Offset(-0.7071, -0.7071);
+    }
+
+    const double radius = 50;
+
+    final end = Offset(node.center.dx + dir.dx * radius, node.center.dy + dir.dy * radius);
+
+    final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
+
+    final line = end - start;
+
+    final lenSq = line.dx * line.dx + line.dy * line.dy;
+
+    if (lenSq == 0) return false;
+
+    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
+
+    t = t.clamp(0.0, 1.0);
+
+    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
+
+    final distance = (point - projection).distance;
+
+    return distance < 30;
   }
-
-  const double radius = 50;
-
-  final end = Offset(
-    node.center.dx + dir.dx * radius,
-    node.center.dy + dir.dy * radius,
-  );
-
-  final start = Offset(
-    end.dx + dir.dx * _startArrow!.length,
-    end.dy + dir.dy * _startArrow!.length,
-  );
-
-  final line = end - start;
-
-  final lenSq = line.dx * line.dx + line.dy * line.dy;
-
-  if (lenSq == 0) return false;
-
-  double t = ((point.dx - start.dx) * line.dx +
-          (point.dy - start.dy) * line.dy) /
-      lenSq;
-
-  t = t.clamp(0.0, 1.0);
-
-  final projection = Offset(
-    start.dx + line.dx * t,
-    start.dy + line.dy * t,
-  );
-
-  final distance = (point - projection).distance;
-
-  return distance < 30;
-}
 
   void _onDoubleTapDown(TapDownDetails details) {
     if (_lineMode) return;
@@ -301,36 +275,35 @@ bool _hitStartArrow(Offset point) {
     _draggingLineId = null;
 
     if (_deleteMode) {
-  final node = _nodeAt(pos);
+      final node = _nodeAt(pos);
 
-  if (node != null) {
-    setState(() {
-      _deleteNode(node.id);
-    });
-    return;
-  }
+      if (node != null) {
+        setState(() {
+          _deleteNode(node.id);
+        });
+        return;
+      }
 
-  final line = _lineAt(pos);
+      final line = _lineAt(pos);
 
-  if (line != null) {
-    setState(() {
-      _deleteLine(line.id);
-    });
-    return;
-  }
+      if (line != null) {
+        setState(() {
+          _deleteLine(line.id);
+        });
+        return;
+      }
 
-  if (_hitStartArrowSimple(pos)) {
-    setState(() {
-      _startArrow = null;
-    });
-    return;
-  }
+      if (_hitStartArrowSimple(pos)) {
+        setState(() {
+          _startArrow = null;
+        });
+        return;
+      }
 
-  return;
-}
+      return;
+    }
 
     final node = _nodeAt(pos);
-
 
     if (node != null) {
       if (_placingStartArrow) {
@@ -430,28 +403,26 @@ bool _hitStartArrow(Offset point) {
       final destNode = _lastPanPosition != null ? _nodeAt(_lastPanPosition!) : null;
 
       if (destNode != null) {
-  final srcId = _lineSourceNodeId!;
-  final destId = destNode.id;
+        final srcId = _lineSourceNodeId!;
+        final destId = destNode.id;
 
-  final alreadyExists = _lines.values.any(
-    (line) => line.nodeAId == srcId && line.nodeBId == destId,
-  );
+        final alreadyExists = _lines.values.any((line) => line.nodeAId == srcId && line.nodeBId == destId);
 
-  if (!alreadyExists) {
-    setState(() {
-      final id = _nextId('l');
+        if (!alreadyExists) {
+          setState(() {
+            final id = _nextId('l');
 
-      final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
 
-      _lines[id] = line;
+            _lines[id] = line;
 
-      _nodes[srcId]?.connectedLineIds.add(id);
-      _nodes[destId]?.connectedLineIds.add(id);
-    });
-  }
-} else {
-  _cancelRubberBand();
-}
+            _nodes[srcId]?.connectedLineIds.add(id);
+            _nodes[destId]?.connectedLineIds.add(id);
+          });
+        }
+      } else {
+        _cancelRubberBand();
+      }
 
       _lineSourceNodeId = null;
     }
@@ -473,12 +444,12 @@ bool _hitStartArrow(Offset point) {
     _onPanUpdate(details);
 
     if (_lineSourceNodeId != null && _lineMode) {
-  setState(() {
-    _rubberBandEnd = details.localPosition;
-  });
-} else {
-  _cancelRubberBand();
-}
+      setState(() {
+        _rubberBandEnd = details.localPosition;
+      });
+    } else {
+      _cancelRubberBand();
+    }
   }
 
   @override
@@ -619,20 +590,20 @@ bool _hitStartArrow(Offset point) {
           child: Stack(
             children: [
               if (_startArrow != null && _nodes[_startArrow!.nodeId] != null)
-  Positioned.fill(
-    child: StartArrowWidget(
-      data: _startArrow!,
-      nodeCenter: _nodes[_startArrow!.nodeId]!.center,
+                Positioned.fill(
+                  child: StartArrowWidget(
+                    data: _startArrow!,
+                    nodeCenter: _nodes[_startArrow!.nodeId]!.center,
 
-      deleteMode: _deleteMode,
+                    deleteMode: _deleteMode,
 
-      onDelete: () {
-        setState(() {
-          _startArrow = null;
-        });
-      },
-    ),
-  ),
+                    onDelete: () {
+                      setState(() {
+                        _startArrow = null;
+                      });
+                    },
+                  ),
+                ),
 
               if (_lineSourceNodeId != null && _rubberBandEnd != null)
                 Positioned.fill(

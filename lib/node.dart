@@ -93,10 +93,10 @@ class _NodeState extends State<Node> {
   Color get _borderColor => widget.deleteMode
       ? Colors.red
       : _isDuplicate
-          ? Colors.orange
-          : _selected
-              ? Colors.lightBlueAccent
-              : Colors.black;
+      ? Colors.orange
+      : _selected
+      ? Colors.lightBlueAccent
+      : Colors.black;
 
   // ─────────────────────────────────────────────
   // TOKEN PARSER
@@ -201,9 +201,7 @@ class _NodeState extends State<Node> {
 
       if (key.startsWith('/')) {
         final text = key.substring(1);
-        return text.characters
-            .map((ch) => ch == ' ' ? ch : '$ch\u0338')
-            .join();
+        return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
       }
 
       return _replacements[key] ?? full;
@@ -288,11 +286,7 @@ class _NodeState extends State<Node> {
                     child: TextField(
                       controller: _controller,
                       focusNode: _focusNode,
-                      style: GoogleFonts.courierPrime(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 30,
-                        color: _borderColor,
-                      ),
+                      style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 30, color: _borderColor),
                       textAlign: TextAlign.center,
                       onEditingComplete: _deselect,
                       onTapOutside: (_) => _deselect(),
@@ -303,16 +297,11 @@ class _NodeState extends State<Node> {
                         if (parsed != value) {
                           _controller.value = TextEditingValue(
                             text: parsed,
-                            selection: TextSelection.collapsed(
-                              offset: parsed.length,
-                            ),
+                            selection: TextSelection.collapsed(offset: parsed.length),
                           );
                         }
 
-                        final duplicate = widget.isLabelTaken(
-                          parsed,
-                          widget.data.id,
-                        );
+                        final duplicate = widget.isLabelTaken(parsed, widget.data.id);
 
                         if (duplicate != _isDuplicate) {
                           setState(() => _isDuplicate = duplicate);
@@ -327,11 +316,11 @@ class _NodeState extends State<Node> {
                         isDense: true,
                         hintText: startText,
                         hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
-                  ),
                       ),
                     ),
                   ),
                 ),
+              ),
             ],
           ),
         ),

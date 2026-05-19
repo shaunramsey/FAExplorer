@@ -74,29 +74,26 @@ class LineData {
     final scale = sqrt(dx * dx + dy * dy);
 
     if ((centerA - centerB).distance < 1) {
-  final geometry = computeGeometry(centerA, centerB);
+      final geometry = computeGeometry(centerA, centerB);
 
-  final loopCenter = geometry.circleCenter!;
-  final radius = geometry.circleRadius!;
+      final loopCenter = geometry.circleCenter!;
+      final radius = geometry.circleRadius!;
 
-  // Put textbox OUTSIDE the loop instead of inside it
-  final angle = selfLoopAngle;
+      // Put textbox OUTSIDE the loop instead of inside it
+      final angle = selfLoopAngle;
 
-  final outward = Offset(cos(angle), sin(angle));
+      final outward = Offset(cos(angle), sin(angle));
 
-  // Extra spacing beyond loop radius
-  const textDistance = 65.0;
+      // Extra spacing beyond loop radius
+      const textDistance = 65.0;
 
-  final textCenter = Offset(
-    loopCenter.dx + outward.dx * (radius + textDistance),
-    loopCenter.dy + outward.dy * (radius + textDistance),
-  );
+      final textCenter = Offset(
+        loopCenter.dx + outward.dx * (radius + textDistance),
+        loopCenter.dy + outward.dy * (radius + textDistance),
+      );
 
-  return Offset(
-    textCenter.dx - width / 2,
-    textCenter.dy - height / 2,
-  );
-}
+      return Offset(textCenter.dx - width / 2, textCenter.dy - height / 2);
+    }
 
     if (scale == 0) return centerA;
 
@@ -229,7 +226,7 @@ class LineData {
         startAngle: startAngle,
         sweepAngle: sweepAngle,
 
-        arrowAngle: endAngle + pi / 2 - pi /12,
+        arrowAngle: endAngle + pi / 2 - pi / 12,
       );
     }
 

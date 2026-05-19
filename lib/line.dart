@@ -65,10 +65,7 @@ class LinePainter extends CustomPainter {
         geometry.endPoint.dy - sin(angle) * arrowLen,
       );
 
-      final double angle2 = atan2(
-        geometry.endPoint.dy - shortenedEnd.dy,
-        geometry.endPoint.dx - shortenedEnd.dx,
-      );
+      final double angle2 = atan2(geometry.endPoint.dy - shortenedEnd.dy, geometry.endPoint.dx - shortenedEnd.dx);
       canvas.drawLine(geometry.startPoint, shortenedEnd, paint);
 
       _drawArrow(canvas, geometry.endPoint, angle2);
@@ -330,7 +327,12 @@ class _LineWidgetState extends State<LineWidget> {
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
 
-                  style: GoogleFonts.courierPrime(fontSize: 30, height:1, fontWeight: FontWeight.bold, color: widget.deleteMode ? Colors.red : Colors.black),
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 30,
+                    height: 1,
+                    fontWeight: FontWeight.bold,
+                    color: widget.deleteMode ? Colors.red : Colors.black,
+                  ),
 
                   // LIVE TOKEN PARSING
                   onChanged: (value) {
@@ -361,10 +363,10 @@ class _LineWidgetState extends State<LineWidget> {
                     hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
                   ),
                 ),
-                ),
               ),
             ),
           ),
+        ),
       ],
     );
   }
