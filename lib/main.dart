@@ -421,7 +421,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const MarkdownFileScreen(title: 'Changelog', assetPath: 'assets/Changelog.md'),
+                      builder: (_) => const MarkdownFileScreen(title: 'Changelog', assetPath: 'assets/assets/Changelog.md'),
                     ),
                   );
                 },

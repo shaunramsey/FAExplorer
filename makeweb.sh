@@ -31,7 +31,6 @@ echo "* [Go Back](README.md) - go to the Readme"  >> "$OUTPUT_FILE"
 echo "* [Latest Build](build/web/index.html) - go to the last build"  >> "$OUTPUT_FILE"
 
 echo "* Build number **$NEW_NUM**" >> "$VERSION_FILE"
-echo "* [Go Back](README.md) - go to the Readme"  >> "$VERSION_FILE"
 
 
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
