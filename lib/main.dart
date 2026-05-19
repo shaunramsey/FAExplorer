@@ -60,6 +60,11 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   final FocusNode _focusNode = FocusNode();
 
+  void _cancelRubberBand() {
+  _lineSourceNodeId = null;
+  _rubberBandEnd = null;
+}
+
   bool _hitStartArrowSimple(Offset point) {
   if (_startArrow == null) return false;
 
@@ -183,17 +188,24 @@ class _AutomataScreenState extends State<AutomataScreen> {
   }
 
   void _onKeyEvent(KeyEvent event) {
-    final isShift =
-        event.logicalKey == LogicalKeyboardKey.shiftLeft || event.logicalKey == LogicalKeyboardKey.shiftRight;
+  final isShift =
+      event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+      event.logicalKey == LogicalKeyboardKey.shiftRight;
 
-    if (!isShift) return;
+  if (!isShift) return;
 
-    if (event is KeyDownEvent) {
-      setState(() {
-        _lineMode = !_lineMode;
-      });
-    }
+  if (event is KeyDownEvent) {
+    setState(() {
+      _lineMode = !_lineMode;
+
+      // 🔥 IMPORTANT: cancel any in-progress line drag
+      _draggingLineId = null;
+      _draggingNodeId = null;
+
+      _cancelRubberBand();
+    });
   }
+}
 
   NodeData? _nodeAt(Offset point) {
     for (final node in _nodes.values) {
@@ -418,24 +430,28 @@ bool _hitStartArrow(Offset point) {
       final destNode = _lastPanPosition != null ? _nodeAt(_lastPanPosition!) : null;
 
       if (destNode != null) {
-        final srcId = _lineSourceNodeId!;
-        final destId = destNode.id;
+  final srcId = _lineSourceNodeId!;
+  final destId = destNode.id;
 
-        final alreadyExists = _lines.values.any((line) => line.nodeAId == srcId && line.nodeBId == destId);
+  final alreadyExists = _lines.values.any(
+    (line) => line.nodeAId == srcId && line.nodeBId == destId,
+  );
 
-        if (!alreadyExists) {
-          setState(() {
-            final id = _nextId('l');
+  if (!alreadyExists) {
+    setState(() {
+      final id = _nextId('l');
 
-            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+      final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
 
-            _lines[id] = line;
+      _lines[id] = line;
 
-            _nodes[srcId]?.connectedLineIds.add(id);
-            _nodes[destId]?.connectedLineIds.add(id);
-          });
-        }
-      }
+      _nodes[srcId]?.connectedLineIds.add(id);
+      _nodes[destId]?.connectedLineIds.add(id);
+    });
+  }
+} else {
+  _cancelRubberBand();
+}
 
       _lineSourceNodeId = null;
     }
@@ -446,6 +462,9 @@ bool _hitStartArrow(Offset point) {
 
     _lastPanPosition = null;
     _rubberBandEnd = null;
+    _cancelRubberBand();
+    _lineSourceNodeId = null;
+    _rubberBandEnd = null;
   }
 
   void _onPanUpdateWithTracking(DragUpdateDetails details) {
@@ -453,11 +472,13 @@ bool _hitStartArrow(Offset point) {
 
     _onPanUpdate(details);
 
-    if (_lineSourceNodeId != null) {
-      setState(() {
-        _rubberBandEnd = details.localPosition;
-      });
-    }
+    if (_lineSourceNodeId != null && _lineMode) {
+  setState(() {
+    _rubberBandEnd = details.localPosition;
+  });
+} else {
+  _cancelRubberBand();
+}
   }
 
   @override
