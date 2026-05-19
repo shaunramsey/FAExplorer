@@ -82,27 +82,22 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
   };
 
   String parseNodeText(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'\\?\[\[(.*?)\]\]'),
-      (match) {
-        final full = match.group(0)!;
+    return input.replaceAllMapped(RegExp(r'\\?\[\[(.*?)\]\]'), (match) {
+      final full = match.group(0)!;
 
-        if (full.startsWith(r'\')) {
-          return full.substring(1);
-        }
+      if (full.startsWith(r'\')) {
+        return full.substring(1);
+      }
 
-        final key = (match.group(1) ?? '').trim();
+      final key = (match.group(1) ?? '').trim();
 
-        if (key.startsWith('/')) {
-          final text = key.substring(1);
-          return text.characters
-              .map((ch) => ch == ' ' ? ch : '$ch\u0338')
-              .join();
-        }
+      if (key.startsWith('/')) {
+        final text = key.substring(1);
+        return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
+      }
 
-        return _replacements[key] ?? full;
-      },
-    );
+      return _replacements[key] ?? full;
+    });
   }
 
   @override
@@ -119,8 +114,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
   void didUpdateWidget(covariant StartArrowWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (!_focusNode.hasFocus &&
-        _controller.text != widget.data.label) {
+    if (!_focusNode.hasFocus && _controller.text != widget.data.label) {
       _controller.text = widget.data.label;
     }
   }
@@ -146,20 +140,11 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
     const double radius = 50;
 
-    final end = Offset(
-      widget.nodeCenter.dx + dir.dx * radius,
-      widget.nodeCenter.dy + dir.dy * radius,
-    );
+    final end = Offset(widget.nodeCenter.dx + dir.dx * radius, widget.nodeCenter.dy + dir.dy * radius);
 
-    final start = Offset(
-      end.dx + dir.dx * widget.data.length,
-      end.dy + dir.dy * widget.data.length,
-    );
+    final start = Offset(end.dx + dir.dx * widget.data.length, end.dy + dir.dy * widget.data.length);
 
-    final arrowAngle = atan2(
-      end.dy - start.dy,
-      end.dx - start.dx,
-    );
+    final arrowAngle = atan2(end.dy - start.dy, end.dx - start.dx);
 
     final perp = Offset(-dir.dy, dir.dx);
 
@@ -168,22 +153,14 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
     final double boxHeight = lineHeight * _lineCount;
 
-    final labelOffset = Offset(
-      start.dx + perp.dx * 30 - boxWidth / 2,
-      start.dy + perp.dy * 30 - boxHeight / 2,
-    );
+    final labelOffset = Offset(start.dx + perp.dx * 30 - boxWidth / 2, start.dy + perp.dy * 30 - boxHeight / 2);
 
     return Stack(
       children: [
         IgnorePointer(
           child: CustomPaint(
             size: Size.infinite,
-            painter: _ArrowPainter(
-              start: start,
-              end: end,
-              angle: arrowAngle,
-              deleteMode: widget.deleteMode,
-            ),
+            painter: _ArrowPainter(start: start, end: end, angle: arrowAngle, deleteMode: widget.deleteMode),
           ),
         ),
 
@@ -222,6 +199,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     fontSize: 30,
                     height: 1,
                     fontWeight: FontWeight.bold,
+                    color: widget.deleteMode ? Colors.red : Colors.black,
                   ),
 
                   onChanged: (value) {
@@ -230,16 +208,13 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     if (parsed != value) {
                       _controller.value = TextEditingValue(
                         text: parsed,
-                        selection: TextSelection.collapsed(
-                          offset: parsed.length,
-                        ),
+                        selection: TextSelection.collapsed(offset: parsed.length),
                       );
                     }
 
                     widget.data.label = parsed;
 
-                    final newLineCount =
-                        '\n'.allMatches(parsed).length + 1;
+                    final newLineCount = '\n'.allMatches(parsed).length + 1;
 
                     if (newLineCount != _lineCount) {
                       setState(() {
@@ -248,12 +223,13 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     }
                   },
 
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
                     hintText: '~',
                     isDense: true,
+                    hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
                   ),
                 ),
               ),
@@ -269,14 +245,9 @@ class _ArrowPainter extends CustomPainter {
   final Offset start;
   final Offset end;
   final double angle;
-final bool deleteMode;
+  final bool deleteMode;
 
-const _ArrowPainter({
-  required this.start,
-  required this.end,
-  required this.angle,
-  this.deleteMode = false,
-});
+  const _ArrowPainter({required this.start, required this.end, required this.angle, this.deleteMode = false});
 
   void _drawArrow(Canvas canvas, Offset tip, double angle) {
     const len = 15;
@@ -287,14 +258,8 @@ const _ArrowPainter({
 
     final path = Path()
       ..moveTo(tip.dx, tip.dy)
-      ..lineTo(
-        tip.dx - len * dx + wing * dy,
-        tip.dy - len * dy - wing * dx,
-      )
-      ..lineTo(
-        tip.dx - len * dx - wing * dy,
-        tip.dy - len * dy + wing * dx,
-      )
+      ..lineTo(tip.dx - len * dx + wing * dy, tip.dy - len * dy - wing * dx)
+      ..lineTo(tip.dx - len * dx - wing * dy, tip.dy - len * dy + wing * dx)
       ..close();
 
     canvas.drawPath(
@@ -308,15 +273,12 @@ const _ArrowPainter({
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-  ..strokeWidth = 4
-  ..color = deleteMode ? Colors.red : Colors.black;
+      ..strokeWidth = 4
+      ..color = deleteMode ? Colors.red : Colors.black;
 
     const double arrowLen = 15;
 
-    final shortenedEnd = Offset(
-      end.dx - cos(angle) * arrowLen,
-      end.dy - sin(angle) * arrowLen,
-    );
+    final shortenedEnd = Offset(end.dx - cos(angle) * arrowLen, end.dy - sin(angle) * arrowLen);
 
     canvas.drawLine(start, shortenedEnd, paint);
 

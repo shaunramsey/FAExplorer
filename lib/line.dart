@@ -330,7 +330,7 @@ class _LineWidgetState extends State<LineWidget> {
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
 
-                  style: GoogleFonts.courierPrime(fontSize: 30, height:1, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.courierPrime(fontSize: 30, height:1, fontWeight: FontWeight.bold, color: widget.deleteMode ? Colors.red : Colors.black),
 
                   // LIVE TOKEN PARSING
                   onChanged: (value) {
@@ -352,22 +352,19 @@ class _LineWidgetState extends State<LineWidget> {
                   },
 
                   //onTapOutside: (_) => _focusNode.unfocus(),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     border: InputBorder.none,
-
                     enabledBorder: InputBorder.none,
-
                     focusedBorder: InputBorder.none,
-
-                    isDense: true,
-
                     hintText: '~',
+                    isDense: true,
+                    hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
                   ),
+                ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
