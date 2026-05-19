@@ -60,6 +60,15 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   final FocusNode _focusNode = FocusNode();
 
+  bool _isLabelTaken(String label, String currentId) {
+     final normalized = label.trim();
+
+      if (normalized.isEmpty) return false;
+
+      return _nodes.values.any((n) =>
+      n.id != currentId && n.label.trim() == normalized);
+}
+
   String _nextId(String prefix) {
     if (prefix == 'n') {
       return '$prefix${_nodeCounter++}';
@@ -261,6 +270,7 @@ bool _hitStartArrow(Offset point) {
     }
 
     final node = _nodeAt(pos);
+
 
     if (node != null) {
       if (_placingStartArrow) {
@@ -644,6 +654,8 @@ bool _hitStartArrow(Offset point) {
                   data: node,
                   lineMode: _lineMode,
                   deleteMode: _deleteMode,
+
+                  isLabelTaken: _isLabelTaken,
 
                   onLabelChanged: (text) {
                     setState(() {
