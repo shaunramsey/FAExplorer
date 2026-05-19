@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 
 import 'models.dart';
@@ -14,7 +15,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(title: 'Automata Designer', home: AutomataScreen());
+    return MaterialApp(
+      title: 'Automata Designer',
+      theme: ThemeData(
+        textTheme: GoogleFonts.courierPrimeTextTheme(),
+        primaryTextTheme: GoogleFonts.courierPrimeTextTheme(),
+      ),
+      home: const AutomataScreen(),
+    );
   }
 }
 
@@ -32,6 +40,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
   bool _lineMode = false;
   bool _placingStartArrow = false;
   bool _deleteMode = false;
+
+  bool _showHelpOverlay = false;
 
   StartArrowData? _startArrow;
 
@@ -156,10 +166,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return null;
   }
 
-  // ─────────────────────────────────────────────
-  // START ARROW HIT TEST
-  // ─────────────────────────────────────────────
-
   bool _hitStartArrow(Offset point) {
     if (_startArrow == null) return false;
 
@@ -212,7 +218,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
     _draggingNodeId = null;
     _draggingLineId = null;
 
-    // DELETE MODE
     if (_deleteMode) {
       final node = _nodeAt(pos);
 
@@ -299,7 +304,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
         final line = _lines[_draggingLineId!]!;
 
         final nodeA = _nodes[line.nodeAId]!;
-
         final nodeB = _nodes[line.nodeBId]!;
 
         if (line.nodeAId == line.nodeBId) {
@@ -319,7 +323,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
         }
 
         final dx = nodeB.center.dx - nodeA.center.dx;
-
         final dy = nodeB.center.dy - nodeA.center.dy;
 
         final length = sqrt(dx * dx + dy * dy);
@@ -340,11 +343,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
       if (destNode != null) {
         final srcId = _lineSourceNodeId!;
-
         final destId = destNode.id;
-
-        // Prevent duplicate
-        // directed edges
 
         final alreadyExists = _lines.values.any((line) => line.nodeAId == srcId && line.nodeBId == destId);
 
@@ -357,7 +356,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
             _lines[id] = line;
 
             _nodes[srcId]?.connectedLineIds.add(id);
-
             _nodes[destId]?.connectedLineIds.add(id);
           });
         }
@@ -389,25 +387,77 @@ class _AutomataScreenState extends State<AutomataScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            children: [
+              const Spacer(),
+
+              SwitchListTile(
+                title: const Text('Show Help'),
+                subtitle: const Text('Displays controls and textbox commands.'),
+                value: _showHelpOverlay,
+                onChanged: (value) {
+                  setState(() {
+                    _showHelpOverlay = value;
+                  });
+                },
+              ),
+
+              const SizedBox(height: 8),
+
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MarkdownFileScreen(title: 'README', assetPath: 'assets/README.md'),
+                    ),
+                  );
+                },
+                child: const Text('View README'),
+              ),
+
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MarkdownFileScreen(title: 'Changelog', assetPath: 'assets/Changelog.md'),
+                    ),
+                  );
+                },
+                child: const Text('View Changelog'),
+              ),
+
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MarkdownFileScreen(title: 'Version', assetPath: 'assets/Version.md'),
+                    ),
+                  );
+                },
+                child: const Text('View Version'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+
       appBar: AppBar(title: const Text('Automata Designer')),
 
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
-
         children: [
           FloatingActionButton(
             heroTag: 'startArrow',
-
             tooltip: 'Set start state',
-
             backgroundColor: _placingStartArrow ? Colors.orange : null,
-
             onPressed: () {
               setState(() {
                 _placingStartArrow = !_placingStartArrow;
               });
             },
-
             child: const Icon(Icons.play_arrow),
           ),
 
@@ -415,11 +465,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
           FloatingActionButton(
             heroTag: 'deleteMode',
-
             tooltip: 'Delete mode',
-
             backgroundColor: _deleteMode ? Colors.red : null,
-
             onPressed: () {
               setState(() {
                 _deleteMode = !_deleteMode;
@@ -430,7 +477,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
                 }
               });
             },
-
             child: const Icon(Icons.delete),
           ),
 
@@ -438,13 +484,9 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
           FloatingActionButton(
             heroTag: 'lineMode',
-
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-
             backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
-
             onPressed: () => _setLineMode(!_lineMode),
-
             child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
           ),
         ],
@@ -454,7 +496,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
         focusNode: _focusNode,
         autofocus: true,
         onKeyEvent: _onKeyEvent,
-
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
 
@@ -496,7 +537,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
               ..._lines.values.map((line) {
                 final nodeA = _nodes[line.nodeAId];
-
                 final nodeB = _nodes[line.nodeBId];
 
                 if (nodeA == null || nodeB == null) {
@@ -505,17 +545,12 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
                 return KeyedSubtree(
                   key: ValueKey(line.id),
-
                   child: Positioned.fill(
                     child: LineWidget(
                       data: line,
-
                       centerA: nodeA.center,
-
                       centerB: nodeB.center,
-
                       deleteMode: _deleteMode,
-
                       onLabelChanged: (text) {
                         setState(() {
                           line.label = text;
@@ -526,14 +561,69 @@ class _AutomataScreenState extends State<AutomataScreen> {
                 );
               }),
 
+              if (_showHelpOverlay)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Material(
+                    elevation: 10,
+                    borderRadius: BorderRadius.circular(14),
+                    color: Colors.black.withOpacity(0.9),
+                    child: Container(
+                      width: 320,
+                      padding: const EdgeInsets.all(16),
+                      child: DefaultTextStyle(
+                        style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.45),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Text('Quick Controls', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+
+                            SizedBox(height: 12),
+
+                            Text('• Double click empty space → Create node'),
+                            Text('• Drag node → Move node'),
+                            Text('• Double click node → Toggle accept state'),
+                            Text('• Shift or link button → Line mode'),
+                            Text('• Drag line → Curve line'),
+                            Text('• Long press screen → Reset graph'),
+                            Text('• Delete button → Delete mode'),
+
+                            SizedBox(height: 16),
+
+                            Text('Textbox Commands', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+
+                            SizedBox(height: 8),
+
+                            Text('[[DELTA_CAP]] → Δ'),
+                            Text('[[DELTA]] → δ'),
+                            Text('[[EPSILON]] → ε'),
+                            Text('[[SIGMA_CAP]] → Σ'),
+                            Text('[[SIGMA]] → σ'),
+                            Text('[[LAMBDA]] → λ'),
+                            Text('[[PHI]] → φ'),
+                            Text('[[/0]] → ∅'),
+                            Text('[[INFINITY]] → ∞'),
+
+                            SizedBox(height: 12),
+
+                            Text(
+                              'Tip: Commands can be typed directly inside node and line labels.',
+                              style: TextStyle(color: Colors.white70, fontStyle: FontStyle.italic),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
               ..._nodes.values.map(
                 (node) => Node(
                   key: ValueKey(node.id),
-
                   data: node,
-
                   lineMode: _lineMode,
-
                   deleteMode: _deleteMode,
 
                   onLabelChanged: (text) {
@@ -569,9 +659,50 @@ class _AutomataScreenState extends State<AutomataScreen> {
   }
 }
 
-// ─────────────────────────────────────────────
-// RUBBER BAND PAINTER
-// ─────────────────────────────────────────────
+class MarkdownFileScreen extends StatefulWidget {
+  final String title;
+  final String assetPath;
+
+  const MarkdownFileScreen({super.key, required this.title, required this.assetPath});
+
+  @override
+  State<MarkdownFileScreen> createState() => _MarkdownFileScreenState();
+}
+
+class _MarkdownFileScreenState extends State<MarkdownFileScreen> {
+  String _content = 'Loading...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFile();
+  }
+
+  Future<void> _loadFile() async {
+    try {
+      final text = await rootBundle.loadString(widget.assetPath);
+
+      setState(() {
+        _content = text;
+      });
+    } catch (e) {
+      setState(() {
+        _content = 'Failed to load ${widget.assetPath}';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: SelectableText(_content, style: GoogleFonts.courierPrime(fontSize: 16)),
+      ),
+    );
+  }
+}
 
 class _RubberBandPainter extends CustomPainter {
   final Offset start;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 
 import 'models.dart';
@@ -108,7 +109,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                   textInputAction: TextInputAction.newline,
                   textAlign: TextAlign.center,
 
-                  style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, fontFamily: 'Courier'),
+                  style: GoogleFonts.courierPrime(fontSize: 30, fontWeight: FontWeight.bold),
 
                   onChanged: (value) {
                     widget.data.label = value;
@@ -123,7 +124,6 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                   },
 
                   //onTapOutside: (_) => _focusNode.unfocus(),
-
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
@@ -174,9 +174,14 @@ class _ArrowPainter extends CustomPainter {
       ..strokeWidth = 4
       ..color = Colors.black;
 
-    canvas.drawLine(start, end, paint);
-
     final angle = atan2(end.dy - start.dy, end.dx - start.dx);
+
+    // Shorten the line so it ends at the base of the arrowhead (len=15),
+    // preventing the shaft from poking through the tip.
+    const double arrowLen = 15;
+    final shortenedEnd = Offset(end.dx - cos(angle) * arrowLen, end.dy - sin(angle) * arrowLen);
+
+    canvas.drawLine(start, shortenedEnd, paint);
 
     _drawArrow(canvas, end, angle);
   }

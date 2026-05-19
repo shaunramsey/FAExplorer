@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'models.dart';
 
 class Node extends StatefulWidget {
@@ -294,12 +295,7 @@ class _NodeState extends State<Node> {
                       controller: _controller,
                       focusNode: _focusNode,
 
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 30,
-                        fontFamily: 'Courier',
-                        color: _borderColor,
-                      ),
+                      style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 30, color: _borderColor),
 
                       textAlign: TextAlign.center,
 
