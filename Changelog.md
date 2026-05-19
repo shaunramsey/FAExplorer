@@ -1,3 +1,13 @@
+# May 19, 2026
+* Added a hamburger menu for the user to view a help menu, the changelog, version history, and an About
+* Tweaked the selfnode textboxes for improved readability 
+* lines now end their rendering at the base of the arrow and are centered more with the arrow
+* Changed all the text fonts to Courier New to have equal spacing for everything
+* Nodes now turn orange to warn the user if they are about to have duplicate node labels
+* delete mode now works for start lines and highlights everything in red including hint text
+* start lines have a default position of being to the top left corner of a node
+* Fixed a known rubberbanding issue when switching to and from linemode (also changed rubberbanding slighly)
+
 # May 18, 2026
 * Made self connecting nodes and start nodes possible
 * Changed alt to shift instead to prevent browser focus issues

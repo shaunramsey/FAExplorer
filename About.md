@@ -4,4 +4,4 @@ This work was supported by the Toll Research Grants program at Washington Colleg
 student contributors including:
 
 Elizabeth McCormick-Fischer - Summer 2026
-Caleb Jiminez - Fall 2026
+Caleb Jiminez - Spring 2026
