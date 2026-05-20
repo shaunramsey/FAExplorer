@@ -783,7 +783,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
           TextButton(
             onPressed: () {
               setState(() {
-                _savedExports.add(
+                _savedExports.insert(0,
                   SavedExport(
                     name: nameController.text.trim().isEmpty ? 'Untitled' : nameController.text.trim(),
 
