@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'models.dart';
@@ -333,7 +334,9 @@ class _LineWidgetState extends State<LineWidget> {
                     fontWeight: FontWeight.bold,
                     color: widget.deleteMode ? Colors.red : Colors.black,
                   ),
-
+                  onTap: () {
+                    SystemChannels.textInput.invokeMethod('TextInput.show');
+                  },
                   // LIVE TOKEN PARSING
                   onChanged: (value) {
                     final parsed = parseNodeText(value);
