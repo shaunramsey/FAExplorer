@@ -38,7 +38,6 @@ class _NodeState extends State<Node> {
   late final FocusNode _focusNode;
 
   bool _selected = false;
-  bool _isDuplicate = false;
 
   @override
   void initState() {
@@ -72,17 +71,14 @@ class _NodeState extends State<Node> {
   }
 
   void _deselect() {
-    final value = _controller.text;
-    final duplicate = widget.isLabelTaken(value, widget.data.id);
+  final value = _controller.text;
 
-    setState(() {
-      _selected = false;
-      _isDuplicate = duplicate;
-    });
+  setState(() {
+    _selected = false;
+  });
 
-    widget.onLabelChanged(value);
-    widget.onDuplicateStateChanged?.call(duplicate);
-  }
+  widget.onLabelChanged(value);
+}
 
   void _onFocusChange() {
     if (!_focusNode.hasFocus) {
@@ -90,13 +86,21 @@ class _NodeState extends State<Node> {
     }
   }
 
-  Color get _borderColor => widget.deleteMode
+  Color get _borderColor {
+  final isDuplicate =
+      widget.isLabelTaken(
+        _controller.text,
+        widget.data.id,
+      );
+
+  return widget.deleteMode
       ? Colors.red
-      : _isDuplicate
+      : isDuplicate
       ? Colors.orange
       : _selected
       ? Colors.lightBlueAccent
       : Colors.black;
+}
 
   // ─────────────────────────────────────────────
   // TOKEN PARSER
@@ -301,12 +305,7 @@ class _NodeState extends State<Node> {
                           );
                         }
 
-                        final duplicate = widget.isLabelTaken(parsed, widget.data.id);
-
-                        if (duplicate != _isDuplicate) {
-                          setState(() => _isDuplicate = duplicate);
-                          widget.onDuplicateStateChanged?.call(duplicate);
-                        }
+                        setState(() {});
                       },
 
                       decoration: InputDecoration(
