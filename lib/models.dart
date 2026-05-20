@@ -76,7 +76,23 @@ class LineData {
     if ((centerA - centerB).distance < 1) {
       final geometry = computeGeometry(centerA, centerB);
 
-      return Offset(geometry.midPoint.dx - width / 2, geometry.midPoint.dy - height / 2);
+      final loopCenter = geometry.circleCenter!;
+      final radius = geometry.circleRadius!;
+
+      // Put textbox OUTSIDE the loop instead of inside it
+      final angle = selfLoopAngle;
+
+      final outward = Offset(cos(angle), sin(angle));
+
+      // Extra spacing beyond loop radius
+      const textDistance = 65.0;
+
+      final textCenter = Offset(
+        loopCenter.dx + outward.dx * (radius + textDistance),
+        loopCenter.dy + outward.dy * (radius + textDistance),
+      );
+
+      return Offset(textCenter.dx - width / 2, textCenter.dy - height / 2);
     }
 
     if (scale == 0) return centerA;
@@ -96,11 +112,6 @@ class LineData {
     });
     int numberOfLines = label.split('\n').length;
 
-    // width/2 when when perpdx is high
-    // width * perpDx().abs() * 0.5
-    // TODO: perhaps fix this to be "precise" when fixed width font is used
-    // or find a way to "get text width and height" exactly for precise placement
-
     double whw = width / 2 - 9 * perpDx * fontScale * textLength - 25 * perpDx * fontScale;
     double whh = height / 2 - perpDy * fontScale * fontSize * (numberOfLines) / 2;
     if (fontScale * perpDy < 0 && numberOfLines > 1) {
@@ -113,11 +124,7 @@ class LineData {
       centerA.dx + dx * 0.5 + perpDx * (perpendicularPart) - wh.dx,
       centerA.dy + dy * 0.5 + perpDy * (perpendicularPart + fontScale * fontSize) - wh.dy,
     );
-    //debugPrint("perependicularPart is $perpendicularPart, $perpDx, $perpDy");
-    //this is for line length
-    //                       3         4         5         6         7         8         9        10        11        12
-    //78901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890
-    //debugPrint("gettextboclocation offset = $o");
+
     return o;
   }
 
@@ -219,7 +226,7 @@ class LineData {
         startAngle: startAngle,
         sweepAngle: sweepAngle,
 
-        arrowAngle: endAngle + pi / 2,
+        arrowAngle: endAngle + pi / 2 - pi / 12,
       );
     }
 

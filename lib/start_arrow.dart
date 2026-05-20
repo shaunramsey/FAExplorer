@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:characters/characters.dart';
 import 'dart:math';
 
 import 'models.dart';
 
 class StartArrowWidget extends StatefulWidget {
   final StartArrowData data;
-
   final Offset nodeCenter;
+
+  final VoidCallback? onDelete;
+  final bool deleteMode;
 
   const StartArrowWidget({
     super.key,
     required this.data,
     required this.nodeCenter,
+    this.onDelete,
+    this.deleteMode = false,
   });
 
   @override
@@ -22,7 +25,6 @@ class StartArrowWidget extends StatefulWidget {
 
 class _StartArrowWidgetState extends State<StartArrowWidget> {
   late final TextEditingController _controller;
-
   late final FocusNode _focusNode;
 
   int _lineCount = 1;
@@ -80,28 +82,22 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
   };
 
   String parseNodeText(String input) {
-    return input.replaceAllMapped(
-      RegExp(r'\\?\[\[(.*?)\]\]'),
-      (match) {
-        final full = match.group(0)!;
+    return input.replaceAllMapped(RegExp(r'\\?\[\[(.*?)\]\]'), (match) {
+      final full = match.group(0)!;
 
-        if (full.startsWith(r'\')) {
-          return full.substring(1);
-        }
+      if (full.startsWith(r'\')) {
+        return full.substring(1);
+      }
 
-        final key = (match.group(1) ?? '').trim();
+      final key = (match.group(1) ?? '').trim();
 
-        if (key.startsWith('/')) {
-          final text = key.substring(1);
+      if (key.startsWith('/')) {
+        final text = key.substring(1);
+        return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
+      }
 
-          return text.characters
-              .map((ch) => ch == ' ' ? ch : '$ch\u0338')
-              .join();
-        }
-
-        return _replacements[key] ?? full;
-      },
-    );
+      return _replacements[key] ?? full;
+    });
   }
 
   @override
@@ -109,7 +105,6 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
     super.initState();
 
     _controller = TextEditingController(text: widget.data.label);
-
     _focusNode = FocusNode();
 
     _lineCount = '\n'.allMatches(widget.data.label).length + 1;
@@ -119,8 +114,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
   void didUpdateWidget(covariant StartArrowWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (!_focusNode.hasFocus &&
-        _controller.text != widget.data.label) {
+    if (!_focusNode.hasFocus && _controller.text != widget.data.label) {
       _controller.text = widget.data.label;
     }
   }
@@ -128,9 +122,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
   @override
   void dispose() {
     _controller.dispose();
-
     _focusNode.dispose();
-
     super.dispose();
   }
 
@@ -142,29 +134,17 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
     var dir = widget.data.direction();
 
-    // Default top-left direction
     if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
       dir = const Offset(-0.7071, -0.7071);
     }
 
     const double radius = 50;
 
-    // Point on circle edge
-    final end = Offset(
-      widget.nodeCenter.dx + dir.dx * radius,
-      widget.nodeCenter.dy + dir.dy * radius,
-    );
+    final end = Offset(widget.nodeCenter.dx + dir.dx * radius, widget.nodeCenter.dy + dir.dy * radius);
 
-    // Extend outward from circle
-    final start = Offset(
-      end.dx + dir.dx * widget.data.length,
-      end.dy + dir.dy * widget.data.length,
-    );
+    final start = Offset(end.dx + dir.dx * widget.data.length, end.dy + dir.dy * widget.data.length);
 
-    final arrowAngle = atan2(
-      end.dy - start.dy,
-      end.dx - start.dx,
-    );
+    final arrowAngle = atan2(end.dy - start.dy, end.dx - start.dx);
 
     final perp = Offset(-dir.dy, dir.dx);
 
@@ -173,35 +153,31 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
     final double boxHeight = lineHeight * _lineCount;
 
-    final labelOffset = Offset(
-      start.dx + perp.dx * 30 - boxWidth / 2,
-      start.dy + perp.dy * 30 - boxHeight / 2,
-    );
+    final labelOffset = Offset(start.dx + perp.dx * 30 - boxWidth / 2, start.dy + perp.dy * 30 - boxHeight / 2);
 
     return Stack(
       children: [
         IgnorePointer(
           child: CustomPaint(
             size: Size.infinite,
-            painter: _ArrowPainter(
-              start: start,
-              end: end,
-              angle: arrowAngle,
-            ),
+            painter: _ArrowPainter(start: start, end: end, angle: arrowAngle, deleteMode: widget.deleteMode),
           ),
         ),
 
         Positioned(
           left: labelOffset.dx,
           top: labelOffset.dy,
-
           child: SizedBox(
             width: boxWidth,
-
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
 
               onTap: () {
+                if (widget.deleteMode) {
+                  widget.onDelete?.call();
+                  return;
+                }
+
                 if (!_focusNode.hasFocus) {
                   FocusScope.of(context).requestFocus(_focusNode);
                 }
@@ -209,7 +185,6 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
               child: AbsorbPointer(
                 absorbing: true,
-
                 child: TextField(
                   controller: _controller,
                   focusNode: _focusNode,
@@ -222,7 +197,9 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
                   style: GoogleFonts.courierPrime(
                     fontSize: 30,
+                    height: 1,
                     fontWeight: FontWeight.bold,
+                    color: widget.deleteMode ? Colors.red : Colors.black,
                   ),
 
                   onChanged: (value) {
@@ -231,16 +208,13 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     if (parsed != value) {
                       _controller.value = TextEditingValue(
                         text: parsed,
-                        selection: TextSelection.collapsed(
-                          offset: parsed.length,
-                        ),
+                        selection: TextSelection.collapsed(offset: parsed.length),
                       );
                     }
 
                     widget.data.label = parsed;
 
-                    final newLineCount =
-                        '\n'.allMatches(parsed).length + 1;
+                    final newLineCount = '\n'.allMatches(parsed).length + 1;
 
                     if (newLineCount != _lineCount) {
                       setState(() {
@@ -249,12 +223,13 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     }
                   },
 
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
                     hintText: '~',
                     isDense: true,
+                    hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
                   ),
                 ),
               ),
@@ -270,12 +245,9 @@ class _ArrowPainter extends CustomPainter {
   final Offset start;
   final Offset end;
   final double angle;
+  final bool deleteMode;
 
-  const _ArrowPainter({
-    required this.start,
-    required this.end,
-    required this.angle,
-  });
+  const _ArrowPainter({required this.start, required this.end, required this.angle, this.deleteMode = false});
 
   void _drawArrow(Canvas canvas, Offset tip, double angle) {
     const len = 15;
@@ -286,20 +258,14 @@ class _ArrowPainter extends CustomPainter {
 
     final path = Path()
       ..moveTo(tip.dx, tip.dy)
-      ..lineTo(
-        tip.dx - len * dx + wing * dy,
-        tip.dy - len * dy - wing * dx,
-      )
-      ..lineTo(
-        tip.dx - len * dx - wing * dy,
-        tip.dy - len * dy + wing * dx,
-      )
+      ..lineTo(tip.dx - len * dx + wing * dy, tip.dy - len * dy - wing * dx)
+      ..lineTo(tip.dx - len * dx - wing * dy, tip.dy - len * dy + wing * dx)
       ..close();
 
     canvas.drawPath(
       path,
       Paint()
-        ..color = Colors.black
+        ..color = deleteMode ? Colors.red : Colors.black
         ..style = PaintingStyle.fill,
     );
   }
@@ -308,20 +274,13 @@ class _ArrowPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..strokeWidth = 4
-      ..color = Colors.black;
+      ..color = deleteMode ? Colors.red : Colors.black;
 
     const double arrowLen = 15;
 
-    final shortenedEnd = Offset(
-      end.dx - cos(angle) * arrowLen,
-      end.dy - sin(angle) * arrowLen,
-    );
+    final shortenedEnd = Offset(end.dx - cos(angle) * arrowLen, end.dy - sin(angle) * arrowLen);
 
-    canvas.drawLine(
-      start,
-      shortenedEnd,
-      paint,
-    );
+    canvas.drawLine(start, shortenedEnd, paint);
 
     _drawArrow(canvas, end, angle);
   }

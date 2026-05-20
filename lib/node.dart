@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:characters/characters.dart';
 import 'models.dart';
 
 class Node extends StatefulWidget {
   final NodeData data;
   final bool lineMode;
   final ValueChanged<String> onLabelChanged;
+
+  final bool Function(String label, String nodeId) isLabelTaken;
+  final ValueChanged<bool>? onDuplicateStateChanged;
+
   final VoidCallback? onLineModeSelect;
   final VoidCallback? onDoubleTap;
+
   final bool deleteMode;
   final VoidCallback? onDelete;
 
@@ -17,6 +21,8 @@ class Node extends StatefulWidget {
     required this.data,
     required this.lineMode,
     required this.onLabelChanged,
+    required this.isLabelTaken,
+    this.onDuplicateStateChanged,
     this.onLineModeSelect,
     this.onDoubleTap,
     required this.deleteMode,
@@ -38,7 +44,6 @@ class _NodeState extends State<Node> {
     super.initState();
 
     _controller = TextEditingController(text: widget.data.label);
-
     _focusNode = FocusNode()..addListener(_onFocusChange);
   }
 
@@ -66,10 +71,14 @@ class _NodeState extends State<Node> {
   }
 
   void _deselect() {
-    setState(() => _selected = false);
+  final value = _controller.text;
 
-    widget.onLabelChanged(_controller.text);
-  }
+  setState(() {
+    _selected = false;
+  });
+
+  widget.onLabelChanged(value);
+}
 
   void _onFocusChange() {
     if (!_focusNode.hasFocus) {
@@ -77,21 +86,29 @@ class _NodeState extends State<Node> {
     }
   }
 
-  Color get _borderColor => widget.deleteMode
+  Color get _borderColor {
+  final isDuplicate =
+      widget.isLabelTaken(
+        _controller.text,
+        widget.data.id,
+      );
+
+  return widget.deleteMode
       ? Colors.red
+      : isDuplicate
+      ? Colors.orange
       : _selected
       ? Colors.lightBlueAccent
       : Colors.black;
+}
 
   // ─────────────────────────────────────────────
   // TOKEN PARSER
   // ─────────────────────────────────────────────
 
   static const Map<String, String> _replacements = {
-    // Control
     '\\0': '∅',
 
-    // Greek lowercase
     'ALPHA': 'α',
     'BETA': 'β',
     'GAMMA': 'γ',
@@ -109,7 +126,6 @@ class _NodeState extends State<Node> {
     'OMEGA': 'ω',
     'PHI': 'φ',
 
-    // Greek uppercase
     'GAMMA_CAP': 'Γ',
     'DELTA_CAP': 'Δ',
     'PI_CAP': 'Π',
@@ -117,7 +133,6 @@ class _NodeState extends State<Node> {
     'OMEGA_CAP': 'Ω',
     'PHI_CAP': 'Φ',
 
-    // Math
     'INFINITY': '∞',
     'SQRT': '√',
     'PLUSMINUS': '±',
@@ -128,20 +143,17 @@ class _NodeState extends State<Node> {
     'MULTIPLY': '×',
     'DIVIDE': '÷',
 
-    // Arrows
     'LEFT': '←',
     'RIGHT': '→',
     'UP': '↑',
     'DOWN': '↓',
     'LEFTRIGHT': '↔',
 
-    // Misc
     'CHECK': '✓',
     'X': '✗',
     'STAR': '★',
     'HEART': '♥',
     'BULLET': '•',
-    'QUESTION': '�',
     'ELLIPSIS': '…',
     'COPY': '©',
     'REGISTERED': '®',
@@ -151,6 +163,7 @@ class _NodeState extends State<Node> {
     'SECTION': '§',
     'CURRENCY': '¤',
     'PILCROW': '¶',
+
     'PEACE': '☮',
     "YIN YANG": '☯',
     "SMILEY": '☺',
@@ -184,15 +197,12 @@ class _NodeState extends State<Node> {
     return input.replaceAllMapped(RegExp(r'\\?\[\[(.*?)\]\]'), (match) {
       final full = match.group(0)!;
 
-      // Escaped token support
-      // Example: \[[GAMMA]]
       if (full.startsWith(r'\')) {
         return full.substring(1);
       }
 
       final key = (match.group(1) ?? '').trim();
 
-      // Diagonal-slash overlay: [[/word]] puts a combining solidus through each character
       if (key.startsWith('/')) {
         final text = key.substring(1);
         return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
@@ -209,16 +219,13 @@ class _NodeState extends State<Node> {
   String getDisplayId(String rawId) {
     final number = int.tryParse(rawId.replaceFirst('n', ''));
 
-    if (number == null || number < 0) {
-      return rawId;
-    }
+    if (number == null || number < 0) return rawId;
 
     int n = number;
     String result = '';
 
     do {
       result = String.fromCharCode(65 + (n % 26)) + result;
-
       n = (n ~/ 26) - 1;
     } while (n >= 0);
 
@@ -228,7 +235,6 @@ class _NodeState extends State<Node> {
   @override
   Widget build(BuildContext context) {
     final bool textFieldActive = _selected && !widget.lineMode;
-
     final startText = getDisplayId(widget.data.id);
 
     return Positioned(
@@ -236,7 +242,6 @@ class _NodeState extends State<Node> {
       left: widget.data.position.dx,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-
         onTap: () {
           if (widget.deleteMode) {
             widget.onDelete?.call();
@@ -248,18 +253,12 @@ class _NodeState extends State<Node> {
             _select();
           }
         },
-
         onDoubleTap: widget.onDoubleTap,
-
         child: SizedBox(
           width: 100,
           height: 100,
-
           child: Stack(
             children: [
-              // ─────────────────────────────
-              // OUTER CIRCLE
-              // ─────────────────────────────
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -269,70 +268,53 @@ class _NodeState extends State<Node> {
                 ),
               ),
 
-              // ─────────────────────────────
-              // ACCEPT STATE INNER RING
-              // ─────────────────────────────
               if (widget.data.isAccept)
                 Center(
                   child: IgnorePointer(
                     child: Container(
                       width: 80,
                       height: 80,
-
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-
                         border: Border.all(color: _borderColor, width: 4),
                       ),
                     ),
                   ),
                 ),
 
-              // ─────────────────────────────
-              // TEXT FIELD
-              // ─────────────────────────────
               Center(
                 child: SizedBox(
                   width: 80,
-
                   child: IgnorePointer(
                     ignoring: !textFieldActive,
-
                     child: TextField(
                       controller: _controller,
                       focusNode: _focusNode,
-
                       style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 30, color: _borderColor),
-
                       textAlign: TextAlign.center,
-
                       onEditingComplete: _deselect,
-
                       onTapOutside: (_) => _deselect(),
 
-                      // LIVE TOKEN PARSING
                       onChanged: (value) {
                         final parsed = parseNodeText(value);
 
                         if (parsed != value) {
                           _controller.value = TextEditingValue(
                             text: parsed,
-
                             selection: TextSelection.collapsed(offset: parsed.length),
                           );
                         }
+
+                        setState(() {});
                       },
 
                       decoration: InputDecoration(
                         border: InputBorder.none,
-
                         enabledBorder: InputBorder.none,
-
                         focusedBorder: InputBorder.none,
-
                         isDense: true,
-
                         hintText: startText,
+                        hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
                       ),
                     ),
                   ),
