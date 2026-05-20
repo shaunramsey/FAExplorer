@@ -44,3 +44,4 @@ else
 fi
 
 echo "Output successfully written to $OUTPUT_FILE and $VERSION_FILE"
+echo "* Build number **$NEW_NUM** is ready for publishing." 
