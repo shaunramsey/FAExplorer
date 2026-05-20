@@ -62,7 +62,11 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   final List<SavedExport> _savedExports = [];
 
-  
+  bool _isNullToken(String token) {
+  final normalized = _normalizeSimToken(token);
+
+  return normalized == '∅';
+}
 
   // ═══════════════════════════════════════════════════════════════
   // STRING SIMULATION STATE
@@ -103,39 +107,110 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // TOKENIZER: splits input into chars or [[WORD]] tokens
   // ─────────────────────────────────────────────
 
-  bool _isEpsilonLabel(String label) {
-  final trimmed = label.trim();
+  bool _isEpsilonLabel(
+  String label,
+  bool atEndOfInput,
+  bool nullWasExplicitlyTyped,
+) {
+  final normalized = _normalizeSimToken(label);
 
-  return trimmed.isEmpty ||
-      trimmed == '~';
+  // ~ and empty labels are always epsilon
+  if (normalized.isEmpty || normalized == '~') {
+    return true;
+  }
+
+  // ∅ behaves like epsilon ONLY when:
+  // - we are at end of input
+  // - user did NOT explicitly type ∅
+  if (normalized == '∅') {
+    return atEndOfInput && !nullWasExplicitlyTyped;
+  }
+
+  return false;
 }
 
-(Set<String>, Set<String>) _epsilonClosure(Set<String> startNodes) {
+(Set<String>, Set<String>) _epsilonClosure(
+  Set<String> startNodes,
+  bool atEndOfInput,
+  bool nullWasExplicitlyTyped,
+) {
   final visitedNodes = <String>{...startNodes};
   final usedLines = <String>{};
 
-  final queue = <String>[...startNodes];
+  final queue = <({
+    String nodeId,
+    bool usedNull,
+  })>[
+    for (final node in startNodes)
+      (
+        nodeId: node,
+        usedNull: false,
+      ),
+  ];
+
+  final visitedStates = <String>{};
 
   while (queue.isNotEmpty) {
-    final nodeId = queue.removeLast();
+    final current = queue.removeLast();
+
+    final stateKey =
+        '${current.nodeId}:${current.usedNull}';
+
+    if (visitedStates.contains(stateKey)) {
+      continue;
+    }
+
+    visitedStates.add(stateKey);
 
     for (final line in _lines.values) {
-      if (line.nodeAId != nodeId) continue;
+      if (line.nodeAId != current.nodeId) {
+        continue;
+      }
 
       final alternatives = line.label
           .split(RegExp(r'[,\n]'))
           .map((s) => s.trim());
 
-      final isEpsilon = alternatives.any(_isEpsilonLabel);
+      bool isNormalEpsilon = false;
+      bool isNullJump = false;
 
-      if (!isEpsilon) continue;
+      for (final alt in alternatives) {
+        final normalized =
+            _normalizeSimToken(alt);
+
+        // ~ or empty
+        if (normalized.isEmpty ||
+            normalized == '~') {
+          isNormalEpsilon = true;
+        }
+
+        // ∅
+        if (normalized == '∅' &&
+            atEndOfInput &&
+            !nullWasExplicitlyTyped) {
+          isNullJump = true;
+        }
+      }
+
+      // Cannot continue after using a null jump
+      if (current.usedNull) {
+        continue;
+      }
+
+      if (!isNormalEpsilon && !isNullJump) {
+        continue;
+      }
 
       usedLines.add(line.id);
 
-      if (!visitedNodes.contains(line.nodeBId)) {
-        visitedNodes.add(line.nodeBId);
-        queue.add(line.nodeBId);
-      }
+      visitedNodes.add(line.nodeBId);
+
+      // If this transition used ∅,
+      // mark branch as terminated
+      queue.add((
+        nodeId: line.nodeBId,
+        usedNull: isNullJump,
+      ));
     }
   }
 
@@ -314,6 +389,8 @@ void _refreshSimulation() {
 }
 
   void _buildSimulation() {
+  final nullWasExplicitlyTyped =
+    _simTokens.any(_isNullToken);
   _simStates.clear();
   _simLines.clear();
 
@@ -328,7 +405,11 @@ void _refreshSimulation() {
 
   // Initial epsilon closure
   final (initialClosure, initialLines) =
-      _epsilonClosure({initialNode});
+    _epsilonClosure(
+      {initialNode},
+      _simTokens.isEmpty,
+      nullWasExplicitlyTyped,
+    );
 
   Set<String> current = initialClosure;
 
@@ -338,6 +419,8 @@ void _refreshSimulation() {
   for (final token in _simTokens) {
     final nextNodes = <String>{};
     final usedLines = <String>{};
+    final isLastToken =
+    token == _simTokens.last;
 
     // Consume token transitions
     for (final nodeId in current) {
@@ -350,7 +433,13 @@ void _refreshSimulation() {
 
         for (final alt in alternatives) {
           // Skip epsilon transitions here
-          if (_isEpsilonLabel(alt)) continue;
+          if (_isEpsilonLabel(
+  alt,
+  false,
+  nullWasExplicitlyTyped,
+)) {
+  continue;
+}
 
           if (_normalizeSimToken(alt) ==
               _normalizeSimToken(token)) {
@@ -364,7 +453,11 @@ void _refreshSimulation() {
 
     // Follow epsilon transitions afterward
     final (closureNodes, closureLines) =
-        _epsilonClosure(nextNodes);
+    _epsilonClosure(
+      nextNodes,
+      isLastToken,
+      nullWasExplicitlyTyped,
+    );
 
     current = closureNodes;
 
