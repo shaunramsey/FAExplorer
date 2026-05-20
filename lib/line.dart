@@ -305,69 +305,50 @@ class _LineWidgetState extends State<LineWidget> {
           child: SizedBox(
             width: boxWidth,
 
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-
-              // Focus textbox manually
-              onTap: () {
-                if (!_focusNode.hasFocus) {
-                  FocusScope.of(context).requestFocus(_focusNode);
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+                        
+              textAlign: TextAlign.center,
+                        
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+                        
+              style: GoogleFonts.courierPrime(
+                fontSize: 30,
+                height: 1,
+                fontWeight: FontWeight.bold,
+                color: widget.deleteMode ? Colors.red : widget.highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black,
+              ),
+                        
+              // LIVE TOKEN PARSING
+              onChanged: (value) {
+                final parsed = parseNodeText(value);
+                        
+                final newLineCount = '\n'.allMatches(parsed).length + 1;
+                        
+                if (newLineCount != _lineCount) {
+                  setState(() => _lineCount = newLineCount);
+                }
+                        
+                if (parsed != value) {
+                  _controller.value = TextEditingValue(
+                    text: parsed,
+                        
+                    selection: TextSelection.collapsed(offset: parsed.length),
+                  );
                 }
               },
-
-              // No pan gestures here.
-              // Parent canvas receives drags.
-              child: AbsorbPointer(
-                // Prevent TextField from
-                // swallowing drag gestures.
-                absorbing: true,
-
-                child: TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-
-                  textAlign: TextAlign.center,
-
-                  maxLines: null,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-
-                  style: GoogleFonts.courierPrime(
-                    fontSize: 30,
-                    height: 1,
-                    fontWeight: FontWeight.bold,
-                    color: widget.deleteMode ? Colors.red : widget.highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black,
-                  ),
-
-                  // LIVE TOKEN PARSING
-                  onChanged: (value) {
-                    final parsed = parseNodeText(value);
-
-                    final newLineCount = '\n'.allMatches(parsed).length + 1;
-
-                    if (newLineCount != _lineCount) {
-                      setState(() => _lineCount = newLineCount);
-                    }
-
-                    if (parsed != value) {
-                      _controller.value = TextEditingValue(
-                        text: parsed,
-
-                        selection: TextSelection.collapsed(offset: parsed.length),
-                      );
-                    }
-                  },
-
-                  //onTapOutside: (_) => _focusNode.unfocus(),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    hintText: '~',
-                    isDense: true,
-                    hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
-                  ),
-                ),
+                        
+              //onTapOutside: (_) => _focusNode.unfocus(),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                hintText: '~',
+                isDense: true,
+                hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
               ),
             ),
           ),
