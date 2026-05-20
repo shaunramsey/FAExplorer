@@ -993,15 +993,7 @@ if (angleMatch != null) {
     final node = _nodeAt(pos);
 
     if (node != null) {
-      if (_placingStartArrow) {
-        setState(() {
-          _startArrow = StartArrowData(nodeId: node.id);
-
-          _placingStartArrow = false;
-        });
-
-        return;
-      }
+      
 
       if (_lineMode) {
         _lineSourceNodeId = node.id;
@@ -1281,8 +1273,22 @@ if (angleMatch != null) {
           behavior: HitTestBehavior.opaque,
 
           onTapDown: (details) {
-            _lastTapPosition = details.localPosition;
-          },
+  _lastTapPosition = details.localPosition;
+
+  if (_placingStartArrow) {
+    final tappedNode = _nodeAt(details.localPosition);
+
+    if (tappedNode != null) {
+      setState(() {
+        _startArrow = StartArrowData(
+          nodeId: tappedNode.id,
+        );
+
+        _placingStartArrow = false;
+      });
+    }
+  }
+},
 
           onTap: () {
             if (_lastTapPosition == null || _nodeAt(_lastTapPosition!) == null) {
