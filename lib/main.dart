@@ -62,6 +62,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   final List<SavedExport> _savedExports = [];
 
+  
+
   // ═══════════════════════════════════════════════════════════════
   // STRING SIMULATION STATE
   // ═══════════════════════════════════════════════════════════════
@@ -104,23 +106,157 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // ─────────────────────────────────────────────
   // TOKENIZER: splits input into chars or [[WORD]] tokens
   // ─────────────────────────────────────────────
-  List<String> _tokenize(String input) {
-    final tokens = <String>[];
-    int i = 0;
-    while (i < input.length) {
-      if (i + 1 < input.length && input[i] == '[' && input[i + 1] == '[') {
-        final close = input.indexOf(']]', i + 2);
-        if (close >= 0) {
-          tokens.add(input.substring(i, close + 2));
-          i = close + 2;
-          continue;
-        }
-      }
-      tokens.add(input[i]);
-      i++;
-    }
-    return tokens;
+
+static const Map<String, String> _simCommands = {
+  r'\0': '∅',
+
+  'ALPHA': 'α',
+  'BETA': 'β',
+  'GAMMA': 'γ',
+  'ZETA': 'ζ',
+  'ETA': 'η',
+  'THETA': 'θ',
+  'IOTA': 'ι',
+  'KAPPA': 'κ',
+  'LAMDA': 'λ',
+  'DELTA': 'δ',
+  'EPSILON': 'ε',
+  'MU': 'μ',
+  'PI': 'π',
+  'SIGMA': 'σ',
+  'OMEGA': 'ω',
+  'PHI': 'φ',
+
+  'GAMMA_CAP': 'Γ',
+  'DELTA_CAP': 'Δ',
+  'PI_CAP': 'Π',
+  'SIGMA_CAP': 'Σ',
+  'OMEGA_CAP': 'Ω',
+  'PHI_CAP': 'Φ',
+
+  'INFINITY': '∞',
+  'SQRT': '√',
+  'PLUSMINUS': '±',
+  'NOTEQUAL': '≠',
+  'LESSEQ': '≤',
+  'GREATEREQ': '≥',
+  'APPROX': '≈',
+  'MULTIPLY': '×',
+  'DIVIDE': '÷',
+
+  'LEFT': '←',
+  'RIGHT': '→',
+  'UP': '↑',
+  'DOWN': '↓',
+  'LEFTRIGHT': '↔',
+
+  'CHECK': '✓',
+  'X': '✗',
+  'STAR': '★',
+  'HEART': '♥',
+  'BULLET': '•',
+  'ELLIPSIS': '…',
+  'COPY': '©',
+  'REGISTERED': '®',
+  'TRADEMARK': '™',
+  'DEGREE': '°',
+  'PARAGRAPH': '¶',
+  'SECTION': '§',
+  'CURRENCY': '¤',
+  'PILCROW': '¶',
+
+  'PEACE': '☮',
+  'YIN YANG': '☯',
+  'SMILEY': '☺',
+  'BLACK SMILEY': '☻',
+  'SUN': '☀',
+  'CLOUD': '☁',
+  'UMBRELLA': '☂',
+  'SNOWFLAKE': '❄',
+  'SKULL': '☠',
+  'SPADE': '♠',
+  'CLUB': '♣',
+  'DIAMOND': '♦',
+  'MUSIC NOTE': '♪',
+  'BEAMED EIGHTH NOTES': '♫',
+  'RADIOACTIVE': '☢',
+  'BIOHAZARD': '☣',
+  'CLOVER': '☘',
+  'HANDS': '☝',
+  'MALE': '♂',
+  'FEMALE': '♀',
+  'STAR AND CRESCENT': '☪',
+  'FALLING STAR': '☫',
+  'HAMMER AND SICKLE': '☭',
+  'HOT SPRINGS': '♨',
+  'HOTEL': '🏨',
+  'HOSPITAL': '🏥',
+  'HOURGLASS': '⌛',
+};
+
+String _resolveSimCommand(String token) {
+  final trimmed = token.trim();
+
+  if (!trimmed.startsWith('[[') || !trimmed.endsWith(']]')) {
+    return token;
   }
+
+  final inner = trimmed
+      .substring(2, trimmed.length - 2)
+      .trim()
+      .toUpperCase();
+
+  return _simCommands[inner] ?? token;
+}
+
+  List<String> _tokenize(String input) {
+  final tokens = <String>[];
+
+  int i = 0;
+
+  while (i < input.length) {
+    // Skip spaces
+    if (input[i].trim().isEmpty) {
+      i++;
+      continue;
+    }
+
+    // [[COMMAND]]
+    if (i + 1 < input.length &&
+        input[i] == '[' &&
+        input[i + 1] == '[') {
+      final close = input.indexOf(']]', i + 2);
+
+      if (close >= 0) {
+        final raw = input.substring(i, close + 2);
+
+        tokens.add(_resolveSimCommand(raw));
+
+        i = close + 2;
+        continue;
+      }
+    }
+
+    // "multi character token"
+    if (input[i] == '"') {
+      final close = input.indexOf('"', i + 1);
+
+      if (close >= 0) {
+        tokens.add(input.substring(i + 1, close));
+
+        i = close + 1;
+        continue;
+      }
+    }
+
+    // Default single character token
+    tokens.add(input[i]);
+
+    i++;
+  }
+
+  return tokens;
+}
 
   // ─────────────────────────────────────────────
   // SIMULATION BUILDER
