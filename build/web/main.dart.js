@@ -40456,11 +40456,12 @@ A.aiJ.prototype={
 $0(){return this.a.f=this.b},
 $S:0}
 A.aiM.prototype={
-$0(){var s=this.a.e
-s===$&&A.a()
-if(!s.gbf()){A.a0C(this.b).zN(s)
-if(A.ao()===B.C||A.ao()===B.a_){A.ap4().$1("tapped line textfield widget")
-B.ks.he("TextInput.show",t.z)}}},
+$0(){var s,r=this.a.e
+r===$&&A.a()
+if(!r.gbf()){A.a0C(this.b).zN(r)
+s=A.ao()===B.C||A.ao()===B.a_
+B.ks.he("TextInput.show",t.z)
+if(s)A.ap4().$1("tapped line textfield widget")}},
 $S:0}
 A.aiL.prototype={
 $1(a){var s=this.a,r=s.uo(a),q=B.c.kF("\n",r).gF(0)+1

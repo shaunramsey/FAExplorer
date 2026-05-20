@@ -311,10 +311,10 @@ class _LineWidgetState extends State<LineWidget> {
                   FocusScope.of(context).requestFocus(_focusNode);
                   final isMobileWeb =
                       defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android;
-
+SystemChannels.textInput.invokeMethod('TextInput.show');
                   if (isMobileWeb) {
                     debugPrint("tapped line textfield widget");
-                    SystemChannels.textInput.invokeMethod('TextInput.show');
+                    
                   }
                 }
               },
