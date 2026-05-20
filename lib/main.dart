@@ -60,6 +60,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   final FocusNode _focusNode = FocusNode();
 
+  final List<SavedExport> _savedExports = [];
+
   void _cancelRubberBand() {
     _lineSourceNodeId = null;
     _rubberBandEnd = null;
@@ -146,21 +148,22 @@ class _AutomataScreenState extends State<AutomataScreen> {
     super.initState();
     _focusNode.requestFocus();
   }
+
   String _numberToAlphabetLabel(int index) {
-  index += 1;
+    index += 1;
 
-  String result = '';
+    String result = '';
 
-  while (index > 0) {
-    index--;
+    while (index > 0) {
+      index--;
 
-    result = String.fromCharCode(65 + (index % 26)) + result;
+      result = String.fromCharCode(65 + (index % 26)) + result;
 
-    index ~/= 26;
+      index ~/= 26;
+    }
+
+    return result;
   }
-
-  return result;
-}
 
   @override
   void dispose() {
@@ -202,218 +205,196 @@ class _AutomataScreenState extends State<AutomataScreen> {
   //   to label length = N – start arrow length (only when non-default)
   // ═══════════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════════
-// DSL EXPORT
-// ═══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+  // DSL EXPORT
+  // ═══════════════════════════════════════════════════════════════
 
-String _exportToDsl() {
-  final lines = <String>[];
+  String _exportToDsl() {
+    final lines = <String>[];
 
-  String escapeDsl(String text) {
-    return text
-        .replaceAll(r'\', r'\\')
-        .replaceAll('\n', r'\n');
-  }
-
-  // ─────────────────────────────────────────────
-  // NODE DEFINITIONS
-  // ─────────────────────────────────────────────
-
-  for (final n in _nodes.values) {
-    final displayLabel = n.label.trim().isEmpty
-        ? _numberToAlphabetLabel(int.parse(n.id.substring(1)))
-        : n.label;
-
-    lines.add('${n.id} = ${escapeDsl(displayLabel)}');
-  }
-
-  if (_nodes.isNotEmpty) {
-    lines.add('');
-  }
-
-  // ─────────────────────────────────────────────
-  // POSITIONS
-  // ─────────────────────────────────────────────
-
-  bool wrotePos = false;
-
-  for (final n in _nodes.values) {
-    final x = n.position.dx.toStringAsFixed(1);
-    final y = n.position.dy.toStringAsFixed(1);
-
-    lines.add('${_nodeRef(n)} = ($x, $y)');
-
-    wrotePos = true;
-  }
-
-  if (wrotePos) {
-    lines.add('');
-  }
-
-  // ─────────────────────────────────────────────
-  // ACCEPT STATES
-  // ─────────────────────────────────────────────
-
-  bool wroteAccept = false;
-
-  for (final n in _nodes.values) {
-    if (!n.isAccept) continue;
-
-    lines.add('${_nodeRef(n)} is accepted');
-
-    wroteAccept = true;
-  }
-
-  if (wroteAccept) {
-    lines.add('');
-  }
-
-  // ─────────────────────────────────────────────
-  // TRANSITIONS
-  // ─────────────────────────────────────────────
-
-  bool wroteLines = false;
-
-  for (final l in _lines.values) {
-    final nodeA = _nodes[l.nodeAId];
-    final nodeB = _nodes[l.nodeBId];
-
-    if (nodeA == null || nodeB == null) continue;
-
-    final refA = _nodeRef(nodeA);
-    final refB = _nodeRef(nodeB);
-
-    if (l.label.trim().isEmpty) {
-      lines.add('$refA to $refB');
-    } else {
-      lines.add(
-        '$refA to $refB = ${escapeDsl(l.label)}',
-      );
+    String escapeDsl(String text) {
+      return text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
     }
 
-    wroteLines = true;
-  }
+    // ─────────────────────────────────────────────
+    // NODE DEFINITIONS
+    // ─────────────────────────────────────────────
 
-  if (wroteLines) {
-    lines.add('');
-  }
+    for (final n in _nodes.values) {
+      final displayLabel = n.label.trim().isEmpty ? _numberToAlphabetLabel(int.parse(n.id.substring(1))) : n.label;
 
-  // ─────────────────────────────────────────────
-  // CURVES
-  // ─────────────────────────────────────────────
+      lines.add('${n.id} = ${escapeDsl(displayLabel)}');
+    }
 
-  bool wroteCurves = false;
+    if (_nodes.isNotEmpty) {
+      lines.add('');
+    }
 
-  for (final l in _lines.values) {
-    if (l.perpendicularPart.abs() <= 0.5) continue;
+    // ─────────────────────────────────────────────
+    // POSITIONS
+    // ─────────────────────────────────────────────
 
-    final curveRef = _lineRef(l);
+    bool wrotePos = false;
 
-    lines.add(
-      '$curveRef curve = ${l.perpendicularPart.toStringAsFixed(1)}',
-    );
+    for (final n in _nodes.values) {
+      final x = n.position.dx.toStringAsFixed(1);
+      final y = n.position.dy.toStringAsFixed(1);
 
-    wroteCurves = true;
-  }
+      lines.add('${_nodeRef(n)} = ($x, $y)');
 
-  if (wroteCurves) {
-    lines.add('');
-  }
+      wrotePos = true;
+    }
 
-  // ─────────────────────────────────────────────
-  // START ARROW
-  // ─────────────────────────────────────────────
+    if (wrotePos) {
+      lines.add('');
+    }
 
-  if (_startArrow != null) {
-    final node = _nodes[_startArrow!.nodeId];
+    // ─────────────────────────────────────────────
+    // ACCEPT STATES
+    // ─────────────────────────────────────────────
 
-    if (node != null) {
-      final ref = _nodeRef(node);
+    bool wroteAccept = false;
 
-      if (_startArrow!.label.trim().isEmpty) {
-        lines.add('to $ref');
+    for (final n in _nodes.values) {
+      if (!n.isAccept) continue;
+
+      lines.add('${_nodeRef(n)} is accepted');
+
+      wroteAccept = true;
+    }
+
+    if (wroteAccept) {
+      lines.add('');
+    }
+
+    // ─────────────────────────────────────────────
+    // TRANSITIONS
+    // ─────────────────────────────────────────────
+
+    bool wroteLines = false;
+
+    for (final l in _lines.values) {
+      final nodeA = _nodes[l.nodeAId];
+      final nodeB = _nodes[l.nodeBId];
+
+      if (nodeA == null || nodeB == null) continue;
+
+      final refA = _nodeRef(nodeA);
+      final refB = _nodeRef(nodeB);
+
+      if (l.label.trim().isEmpty) {
+        lines.add('$refA to $refB');
       } else {
-        lines.add(
-          'to $ref = ${escapeDsl(_startArrow!.label)}',
-        );
+        lines.add('$refA to $refB = ${escapeDsl(l.label)}');
       }
 
-      if ((_startArrow!.length - 100).abs() > 0.5) {
-        lines.add(
-          'to $ref length = ${_startArrow!.length.toStringAsFixed(1)}',
-        );
-      }
-
-      final dir = _startArrow!.direction();
-
-      lines.add(
-        'to $ref angle = ${dir.dx.toStringAsFixed(4)}, ${dir.dy.toStringAsFixed(4)}',
-      );
+      wroteLines = true;
     }
+
+    if (wroteLines) {
+      lines.add('');
+    }
+
+    // ─────────────────────────────────────────────
+    // CURVES
+    // ─────────────────────────────────────────────
+
+    bool wroteCurves = false;
+
+    for (final l in _lines.values) {
+      if (l.perpendicularPart.abs() <= 0.5) continue;
+
+      final curveRef = _lineRef(l);
+
+      lines.add('$curveRef curve = ${l.perpendicularPart.toStringAsFixed(1)}');
+
+      wroteCurves = true;
+    }
+
+    if (wroteCurves) {
+      lines.add('');
+    }
+
+    // ─────────────────────────────────────────────
+    // START ARROW
+    // ─────────────────────────────────────────────
+
+    if (_startArrow != null) {
+      final node = _nodes[_startArrow!.nodeId];
+
+      if (node != null) {
+        final ref = _nodeRef(node);
+
+        if (_startArrow!.label.trim().isEmpty) {
+          lines.add('to $ref');
+        } else {
+          lines.add('to $ref = ${escapeDsl(_startArrow!.label)}');
+        }
+
+        if ((_startArrow!.length - 100).abs() > 0.5) {
+          lines.add('to $ref length = ${_startArrow!.length.toStringAsFixed(1)}');
+        }
+
+        final dir = _startArrow!.direction();
+
+        lines.add('to $ref angle = ${dir.dx.toStringAsFixed(4)}, ${dir.dy.toStringAsFixed(4)}');
+      }
+    }
+
+    return lines.join('\n').trimRight();
   }
 
-  return lines.join('\n').trimRight();
-}
+  // ═══════════════════════════════════════════════════════════════
+  // NODE REFERENCES
+  // ═══════════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════════
-// NODE REFERENCES
-// ═══════════════════════════════════════════════════════════════
+  String _nodeRef(NodeData node) {
+    String escapeDsl(String text) {
+      return text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
+    }
 
-String _nodeRef(NodeData node) {
-  String escapeDsl(String text) {
-    return text
-        .replaceAll(r'\', r'\\')
-        .replaceAll('\n', r'\n');
+    final label = node.label.trim();
+
+    if (label.isEmpty) {
+      return node.id;
+    }
+
+    final duplicateCount = _nodes.values.where((n) => n.label.trim() == label).length;
+
+    // Unique label → just use label
+    if (duplicateCount <= 1) {
+      return escapeDsl(label);
+    }
+
+    // Duplicate label → use id(label)
+    return '${node.id}(${escapeDsl(label)})';
   }
 
-  final label = node.label.trim();
+  // ═══════════════════════════════════════════════════════════════
+  // LINE REFERENCES
+  // ═══════════════════════════════════════════════════════════════
 
-  if (label.isEmpty) {
-    return node.id;
+  String _lineRef(LineData line) {
+    String escapeDsl(String text) {
+      return text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
+    }
+
+    final label = line.label.trim();
+
+    if (label.isEmpty) {
+      return line.id;
+    }
+
+    final duplicateCount = _lines.values.where((l) => l.label.trim() == label).length;
+
+    if (duplicateCount <= 1) {
+      return escapeDsl(label);
+    }
+
+    return '${line.id}(${escapeDsl(label)})';
   }
 
-  final duplicateCount = _nodes.values
-      .where((n) => n.label.trim() == label)
-      .length;
-
-  // Unique label → just use label
-  if (duplicateCount <= 1) {
-    return escapeDsl(label);
-  }
-
-  // Duplicate label → use id(label)
-  return '${node.id}(${escapeDsl(label)})';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// LINE REFERENCES
-// ═══════════════════════════════════════════════════════════════
-
-String _lineRef(LineData line) {
-  String escapeDsl(String text) {
-    return text
-        .replaceAll(r'\', r'\\')
-        .replaceAll('\n', r'\n');
-  }
-
-  final label = line.label.trim();
-
-  if (label.isEmpty) {
-    return line.id;
-  }
-
-  final duplicateCount = _lines.values
-      .where((l) => l.label.trim() == label)
-      .length;
-
-  if (duplicateCount <= 1) {
-    return escapeDsl(label);
-  }
-
-  return '${line.id}(${escapeDsl(label)})';
-}
-
-Offset _defaultPosition(int index) {
+  Offset _defaultPosition(int index) {
     if (index == 0) return const Offset(300, 300);
     // Spiral outward: rings of 6, 12, 18 …
     int ring = 0;
@@ -431,374 +412,309 @@ Offset _defaultPosition(int index) {
     return Offset(300 + cos(angle) * radius, 300 + sin(angle) * radius);
   }
 
-String? _importFromDsl(String src) {
-  try {
-    final newNodes = <String, NodeData>{};
-    final labelToId = <String, String>{};
-    final newLines = <String, LineData>{};
-    final lineLabelToId = <String, String>{};
+  String? _importFromDsl(String src) {
+    try {
+      final newNodes = <String, NodeData>{};
+      final labelToId = <String, String>{};
+      final newLines = <String, LineData>{};
+      final lineLabelToId = <String, String>{};
 
-    StartArrowData? newStartArrow;
+      StartArrowData? newStartArrow;
 
-    int nodeCounter = 0;
-    int lineCounter = 0;
+      int nodeCounter = 0;
+      int lineCounter = 0;
 
-    // Unescapes exported multiline text.
-    String unescapeDsl(String text) {
-      return text
-          .replaceAll(r'\n', '\n')
-          .replaceAll(r'\\', r'\');
-    }
-
-    String? idForLabel(String lbl) {
-  lbl = unescapeDsl(lbl.trim());
-
-  // n0(Label)
-  final explicitRef =
-      RegExp(r'^(n\d+)\((.*)\)$').firstMatch(lbl);
-
-  if (explicitRef != null) {
-    return explicitRef.group(1);
-  }
-
-  // direct ID
-  if (newNodes.containsKey(lbl)) {
-    return lbl;
-  }
-
-  // normal label
-  return labelToId[lbl];
-}
-
-    String ensureNode(String lbl) {
-      lbl = unescapeDsl(lbl);
-
-      final existing = idForLabel(lbl);
-
-      if (existing != null) return existing;
-
-      final id = 'n${nodeCounter++}';
-
-      final pos = _defaultPosition(newNodes.length);
-
-      final node = NodeData(
-        id: id,
-        position: pos,
-        label: lbl,
-      );
-
-      newNodes[id] = node;
-
-      labelToId[lbl.trim()] = id;
-
-      return id;
-    }
-
-    final rawLines = src.split('\n');
-
-    for (var rawLine in rawLines) {
-      final commentIdx = rawLine.indexOf('#');
-
-      if (commentIdx >= 0) {
-        rawLine = rawLine.substring(0, commentIdx);
+      // Unescapes exported multiline text.
+      String unescapeDsl(String text) {
+        return text.replaceAll(r'\n', '\n').replaceAll(r'\\', r'\');
       }
 
-      final line = rawLine.trim();
+      String? idForLabel(String lbl) {
+        lbl = unescapeDsl(lbl.trim());
 
-      if (line.isEmpty) continue;
-      
+        // n0(Label)
+        final explicitRef = RegExp(r'^(n\d+)\((.*)\)$').firstMatch(lbl);
 
-      // ── start arrow: "to label …" ─────────────────────────
-      if (line.toLowerCase().startsWith('to ')) {
-        final rest = line.substring(3).trim();
+        if (explicitRef != null) {
+          return explicitRef.group(1);
+        }
 
-        final lengthRe = RegExp(
-          r'^(.+?)\s+length\s*=\s*(-?[\d.]+)$',
-          caseSensitive: false,
-        );
+        // direct ID
+        if (newNodes.containsKey(lbl)) {
+          return lbl;
+        }
 
-        final lengthMatch = lengthRe.firstMatch(rest);
+        // normal label
+        return labelToId[lbl];
+      }
 
-        if (lengthMatch != null) {
-          final nodeLabel = unescapeDsl(
-            lengthMatch.group(1)!.trim(),
-          );
+      String ensureNode(String lbl) {
+        lbl = unescapeDsl(lbl);
 
-          final length = double.parse(lengthMatch.group(2)!);
+        final existing = idForLabel(lbl);
 
-          final nodeId = ensureNode(nodeLabel);
+        if (existing != null) return existing;
 
-          newStartArrow ??= StartArrowData(nodeId: nodeId);
+        final id = 'n${nodeCounter++}';
 
-          if (newStartArrow.nodeId != nodeId) {
+        final pos = _defaultPosition(newNodes.length);
+
+        final node = NodeData(id: id, position: pos, label: lbl);
+
+        newNodes[id] = node;
+
+        labelToId[lbl.trim()] = id;
+
+        return id;
+      }
+
+      final rawLines = src.split('\n');
+
+      for (var rawLine in rawLines) {
+        final commentIdx = rawLine.indexOf('#');
+
+        if (commentIdx >= 0) {
+          rawLine = rawLine.substring(0, commentIdx);
+        }
+
+        final line = rawLine.trim();
+
+        if (line.isEmpty) continue;
+
+        // ── start arrow: "to label …" ─────────────────────────
+        if (line.toLowerCase().startsWith('to ')) {
+          final rest = line.substring(3).trim();
+
+          final lengthRe = RegExp(r'^(.+?)\s+length\s*=\s*(-?[\d.]+)$', caseSensitive: false);
+
+          final lengthMatch = lengthRe.firstMatch(rest);
+
+          if (lengthMatch != null) {
+            final nodeLabel = unescapeDsl(lengthMatch.group(1)!.trim());
+
+            final length = double.parse(lengthMatch.group(2)!);
+
+            final nodeId = ensureNode(nodeLabel);
+
+            newStartArrow ??= StartArrowData(nodeId: nodeId);
+
+            if (newStartArrow.nodeId != nodeId) {
+              newStartArrow = StartArrowData(nodeId: nodeId, length: length, label: newStartArrow.label);
+            } else {
+              newStartArrow = StartArrowData(
+                nodeId: nodeId,
+                offset: newStartArrow.offset,
+                length: length,
+                label: newStartArrow.label,
+              );
+            }
+
+            continue;
+          }
+
+          final angleRe = RegExp(r'^(.+?)\s+angle\s*=\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$', caseSensitive: false);
+
+          final angleMatch = angleRe.firstMatch(rest);
+
+          if (angleMatch != null) {
+            final nodeLabel = unescapeDsl(angleMatch.group(1)!.trim());
+
+            final dx = double.parse(angleMatch.group(2)!);
+            final dy = double.parse(angleMatch.group(3)!);
+
+            final nodeId = ensureNode(nodeLabel);
+
+            newStartArrow ??= StartArrowData(nodeId: nodeId);
+
             newStartArrow = StartArrowData(
               nodeId: nodeId,
-              length: length,
+              offset: Offset(dx, dy),
+              length: newStartArrow.length,
               label: newStartArrow.label,
             );
+
+            continue;
+          }
+
+          final eqIdx = rest.indexOf('=');
+
+          if (eqIdx >= 0) {
+            final nodeLabel = unescapeDsl(rest.substring(0, eqIdx).trim());
+
+            final saLabel = unescapeDsl(rest.substring(eqIdx + 1).trim());
+
+            final nodeId = ensureNode(nodeLabel);
+
+            newStartArrow = StartArrowData(nodeId: nodeId, label: saLabel);
           } else {
-            newStartArrow = StartArrowData(
-              nodeId: nodeId,
-              offset: newStartArrow.offset,
-              length: length,
-              label: newStartArrow.label,
-            );
+            final nodeId = ensureNode(unescapeDsl(rest));
+
+            newStartArrow = StartArrowData(nodeId: nodeId);
           }
 
           continue;
         }
 
-        final angleRe = RegExp(
-  r'^(.+?)\s+angle\s*=\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$',
-  caseSensitive: false,
-);
+        // ── "lineLabel curve = N" ─────────────────────────────
+        final curveRe = RegExp(r'^(.+?)\s+curve\s*=\s*(-?[\d.]+)$', caseSensitive: false);
+        final curveMatch = curveRe.firstMatch(line);
 
-final angleMatch = angleRe.firstMatch(rest);
+        if (curveMatch != null) {
+          final lbl = unescapeDsl(curveMatch.group(1)!.trim());
 
-if (angleMatch != null) {
-  final nodeLabel = unescapeDsl(
-    angleMatch.group(1)!.trim(),
-  );
+          final val = double.parse(curveMatch.group(2)!);
 
-  final dx = double.parse(angleMatch.group(2)!);
-  final dy = double.parse(angleMatch.group(3)!);
+          String? lid;
 
-  final nodeId = ensureNode(nodeLabel);
+          final explicitRef = RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
 
-  newStartArrow ??= StartArrowData(nodeId: nodeId);
+          if (explicitRef != null) {
+            lid = explicitRef.group(1);
+          } else if (newLines.containsKey(lbl)) {
+            lid = lbl;
+          } else {
+            lid = lineLabelToId[lbl];
+          }
 
-  newStartArrow = StartArrowData(
-    nodeId: nodeId,
-    offset: Offset(dx, dy),
-    length: newStartArrow.length,
-    label: newStartArrow.label,
-  );
+          if (lid != null && newLines.containsKey(lid)) {
+            newLines[lid]!.perpendicularPart = val;
+          }
 
-  continue;
-}
-
-        final eqIdx = rest.indexOf('=');
-
-        if (eqIdx >= 0) {
-          final nodeLabel = unescapeDsl(
-            rest.substring(0, eqIdx).trim(),
-          );
-
-          final saLabel = unescapeDsl(
-            rest.substring(eqIdx + 1).trim(),
-          );
-
-          final nodeId = ensureNode(nodeLabel);
-
-          newStartArrow = StartArrowData(
-            nodeId: nodeId,
-            label: saLabel,
-          );
-        } else {
-          final nodeId = ensureNode(
-            unescapeDsl(rest),
-          );
-
-          newStartArrow = StartArrowData(nodeId: nodeId);
+          continue;
         }
 
-        continue;
+        // ── "label is accepted" ───────────────────────────────
+        final acceptRe = RegExp(r'^(.+?)\s+is\s+accepted$', caseSensitive: false);
+
+        final acceptMatch = acceptRe.firstMatch(line);
+
+        if (acceptMatch != null) {
+          final lbl = unescapeDsl(acceptMatch.group(1)!.trim());
+
+          final nid = idForLabel(lbl) ?? ensureNode(lbl);
+
+          newNodes[nid]!.isAccept = true;
+
+          continue;
+        }
+
+        // ── "labelA to labelB [= lineLabel]" ─────────────────
+        final toIdx = _findToSeparator(line);
+
+        if (toIdx >= 0) {
+          final leftPart = unescapeDsl(line.substring(0, toIdx).trim());
+
+          final rightPart = line.substring(toIdx + 4).trim();
+
+          String lineLabel = '';
+          String nodeBLabel = rightPart;
+
+          final eqIdx = rightPart.indexOf('=');
+
+          if (eqIdx >= 0) {
+            nodeBLabel = unescapeDsl(rightPart.substring(0, eqIdx).trim());
+
+            lineLabel = unescapeDsl(rightPart.substring(eqIdx + 1).trim());
+          }
+
+          final idA = ensureNode(leftPart);
+          final idB = ensureNode(nodeBLabel);
+
+          final lid = 'l${lineCounter++}';
+
+          final lineData = LineData(id: lid, nodeAId: idA, nodeBId: idB, label: lineLabel);
+
+          newLines[lid] = lineData;
+
+          newNodes[idA]!.connectedLineIds.add(lid);
+          newNodes[idB]!.connectedLineIds.add(lid);
+
+          if (lineLabel.isNotEmpty) {
+            lineLabelToId[lineLabel] = lid;
+          }
+
+          continue;
+        }
+
+        // ── "label = (x, y)" ───────────────────────────────
+        final posRe = RegExp(r'^(.+?)\s*=\s*\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)$');
+
+        final posMatch = posRe.firstMatch(line);
+
+        if (posMatch != null) {
+          final lbl = unescapeDsl(posMatch.group(1)!.trim());
+
+          final x = double.parse(posMatch.group(2)!);
+          final y = double.parse(posMatch.group(3)!);
+
+          final nid = idForLabel(lbl) ?? ensureNode(lbl);
+
+          newNodes[nid]!.position = Offset(x, y);
+
+          continue;
+        }
+
+        // ── "nN = label" ────────────────────────────────────
+        final nodeDefRe = RegExp(r'^(n\d+)\s*=\s*(.*)$');
+
+        final nodeDefMatch = nodeDefRe.firstMatch(line);
+
+        if (nodeDefMatch != null) {
+          final id = nodeDefMatch.group(1)!;
+
+          final lbl = unescapeDsl(nodeDefMatch.group(2)!.trim());
+
+          final num = int.tryParse(id.substring(1)) ?? -1;
+
+          if (num >= nodeCounter) {
+            nodeCounter = num + 1;
+          }
+
+          if (!newNodes.containsKey(id)) {
+            final pos = _defaultPosition(newNodes.length);
+
+            final node = NodeData(id: id, position: pos, label: lbl);
+
+            newNodes[id] = node;
+          } else {
+            newNodes[id]!.label = lbl;
+          }
+
+          if (lbl.isNotEmpty) {
+            labelToId[lbl] = id;
+          }
+
+          continue;
+        }
+
+        // ── bare "label" → create node ─────────────────────
+        ensureNode(unescapeDsl(line));
       }
 
-      // ── "lineLabel curve = N" ─────────────────────────────
-      final curveRe = RegExp(
-        r'^(.+?)\s+curve\s*=\s*(-?[\d.]+)$',
-        caseSensitive: false,
-      );
-final curveMatch = curveRe.firstMatch(line);
+      setState(() {
+        _nodes
+          ..clear()
+          ..addAll(newNodes);
 
-if (curveMatch != null) {
-  final lbl = unescapeDsl(
-    curveMatch.group(1)!.trim(),
-  );
+        _lines
+          ..clear()
+          ..addAll(newLines);
 
-  final val = double.parse(curveMatch.group(2)!);
+        _startArrow = newStartArrow;
 
-  String? lid;
+        _nodeCounter = nodeCounter;
+        _lineCounter = lineCounter;
 
-  final explicitRef =
-      RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
+        _draggingNodeId = null;
+        _draggingLineId = null;
+        _lineSourceNodeId = null;
+      });
 
-  if (explicitRef != null) {
-    lid = explicitRef.group(1);
-  } else if (newLines.containsKey(lbl)) {
-    lid = lbl;
-  } else {
-    lid = lineLabelToId[lbl];
-  }
-
-  if (lid != null && newLines.containsKey(lid)) {
-    newLines[lid]!.perpendicularPart = val;
-  }
-
-  continue;
-}
-
-      // ── "label is accepted" ───────────────────────────────
-      final acceptRe = RegExp(
-        r'^(.+?)\s+is\s+accepted$',
-        caseSensitive: false,
-      );
-
-      final acceptMatch = acceptRe.firstMatch(line);
-
-      if (acceptMatch != null) {
-        final lbl = unescapeDsl(
-          acceptMatch.group(1)!.trim(),
-        );
-
-        final nid = idForLabel(lbl) ?? ensureNode(lbl);
-
-        newNodes[nid]!.isAccept = true;
-
-        continue;
-      }
-
-      // ── "labelA to labelB [= lineLabel]" ─────────────────
-      final toIdx = _findToSeparator(line);
-
-      if (toIdx >= 0) {
-        final leftPart = unescapeDsl(
-          line.substring(0, toIdx).trim(),
-        );
-
-        final rightPart = line.substring(toIdx + 4).trim();
-
-        String lineLabel = '';
-        String nodeBLabel = rightPart;
-
-        final eqIdx = rightPart.indexOf('=');
-
-        if (eqIdx >= 0) {
-          nodeBLabel = unescapeDsl(
-            rightPart.substring(0, eqIdx).trim(),
-          );
-
-          lineLabel = unescapeDsl(
-            rightPart.substring(eqIdx + 1).trim(),
-          );
-        }
-
-        final idA = ensureNode(leftPart);
-        final idB = ensureNode(nodeBLabel);
-
-        final lid = 'l${lineCounter++}';
-
-        final lineData = LineData(
-          id: lid,
-          nodeAId: idA,
-          nodeBId: idB,
-          label: lineLabel,
-        );
-
-        newLines[lid] = lineData;
-
-        newNodes[idA]!.connectedLineIds.add(lid);
-        newNodes[idB]!.connectedLineIds.add(lid);
-
-        if (lineLabel.isNotEmpty) {
-          lineLabelToId[lineLabel] = lid;
-        }
-
-        continue;
-      }
-
-      // ── "label = (x, y)" ───────────────────────────────
-      final posRe = RegExp(
-        r'^(.+?)\s*=\s*\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)$',
-      );
-
-      final posMatch = posRe.firstMatch(line);
-
-      if (posMatch != null) {
-        final lbl = unescapeDsl(
-          posMatch.group(1)!.trim(),
-        );
-
-        final x = double.parse(posMatch.group(2)!);
-        final y = double.parse(posMatch.group(3)!);
-
-        final nid = idForLabel(lbl) ?? ensureNode(lbl);
-
-        newNodes[nid]!.position = Offset(x, y);
-
-        continue;
-      }
-
-      // ── "nN = label" ────────────────────────────────────
-      final nodeDefRe = RegExp(r'^(n\d+)\s*=\s*(.*)$');
-
-      final nodeDefMatch = nodeDefRe.firstMatch(line);
-
-      if (nodeDefMatch != null) {
-        final id = nodeDefMatch.group(1)!;
-
-        final lbl = unescapeDsl(
-          nodeDefMatch.group(2)!.trim(),
-        );
-
-        final num = int.tryParse(id.substring(1)) ?? -1;
-
-        if (num >= nodeCounter) {
-          nodeCounter = num + 1;
-        }
-
-        if (!newNodes.containsKey(id)) {
-          final pos = _defaultPosition(newNodes.length);
-
-          final node = NodeData(
-            id: id,
-            position: pos,
-            label: lbl,
-          );
-
-          newNodes[id] = node;
-        } else {
-          newNodes[id]!.label = lbl;
-        }
-
-        if (lbl.isNotEmpty) {
-          labelToId[lbl] = id;
-        }
-
-        continue;
-      }
-
-      // ── bare "label" → create node ─────────────────────
-      ensureNode(
-        unescapeDsl(line),
-      );
+      return null;
+    } catch (e) {
+      return 'Parse error: $e';
     }
-
-    setState(() {
-      _nodes
-        ..clear()
-        ..addAll(newNodes);
-
-      _lines
-        ..clear()
-        ..addAll(newLines);
-
-      _startArrow = newStartArrow;
-
-      _nodeCounter = nodeCounter;
-      _lineCounter = lineCounter;
-
-      _draggingNodeId = null;
-      _draggingLineId = null;
-      _lineSourceNodeId = null;
-    });
-
-    return null;
-  } catch (e) {
-    return 'Parse error: $e';
   }
-}
 
   /// Find the index of the first " to " that is NOT inside a word.
   /// Returns the index of the space before "to", or -1 if not found.
@@ -819,28 +735,42 @@ if (curveMatch != null) {
 
   void _showExportDialog() {
     final dsl = _exportToDsl();
+
     Clipboard.setData(ClipboardData(text: dsl));
+
+    final nameController = TextEditingController(text: 'Export ${_savedExports.length + 1}');
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Export', style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold)),
+
         content: SizedBox(
           width: double.maxFinite,
+
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
+
             children: [
-              Text(
-                'Copied to clipboard. Select below to copy manually.',
-                style: GoogleFonts.courierPrime(fontSize: 13),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Save Name', border: OutlineInputBorder()),
               ),
+
+              const SizedBox(height: 12),
+
+              Text('Copied to clipboard.', style: GoogleFonts.courierPrime(fontSize: 13)),
+
               const SizedBox(height: 10),
+
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 320),
+
                 child: SingleChildScrollView(
                   child: SelectableText(
                     dsl.isEmpty ? '(empty graph)' : dsl,
+
                     style: GoogleFonts.courierPrime(fontSize: 13),
                   ),
                 ),
@@ -848,20 +778,39 @@ if (curveMatch != null) {
             ],
           ),
         ),
+
         actions: [
           TextButton(
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: dsl));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Copied to clipboard')),
-              );
+              setState(() {
+                _savedExports.add(
+                  SavedExport(
+                    name: nameController.text.trim().isEmpty ? 'Untitled' : nameController.text.trim(),
+
+                    dsl: dsl,
+                  ),
+                );
+              });
+
+              Navigator.of(ctx).pop();
+
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export saved')));
             },
+
+            child: const Text('Save'),
+          ),
+
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: dsl));
+
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
+            },
+
             child: const Text('Copy'),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
+
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
         ],
       ),
     );
@@ -928,18 +877,13 @@ if (curveMatch != null) {
               },
               child: const Text('Paste'),
             ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
                 final err = _importFromDsl(controller.text.trim());
                 if (err == null) {
                   Navigator.of(ctx).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Import successful')),
-                  );
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import successful')));
                 } else {
                   setDialogState(() => errorText = err);
                 }
@@ -956,6 +900,130 @@ if (curveMatch != null) {
     setState(() {
       _lineMode = value;
     });
+  }
+
+  void _showExportHistory() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Saved Exports', style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold)),
+
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+
+                child: _savedExports.isEmpty
+                    ? const Center(child: Text('No saved exports'))
+                    : ListView.builder(
+                        itemCount: _savedExports.length,
+
+                        itemBuilder: (context, index) {
+                          if (index >= _savedExports.length) {
+                            return const SizedBox.shrink();
+                          }
+
+                          final save = _savedExports[index];
+
+                          return ListTile(
+                            title: Text(save.name),
+
+                            subtitle: Text(
+                              save.dsl.trim().isEmpty ? '(empty export)' : save.dsl.split('\n').first,
+
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+
+                            onTap: () {
+                              Navigator.of(ctx).pop();
+
+                              final err = _importFromDsl(save.dsl);
+
+                              if (err != null) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                              }
+                            },
+
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+
+                                  onPressed: () {
+                                    final controller = TextEditingController(text: save.name);
+
+                                    showDialog(
+                                      context: context,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text('Rename Export'),
+
+                                        content: TextField(controller: controller),
+
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                            },
+
+                                            child: const Text('Cancel'),
+                                          ),
+
+                                          FilledButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                save.name = controller.text.trim();
+                                              });
+
+                                              setDialogState(() {});
+
+                                              Navigator.pop(context);
+                                            },
+
+                                            child: const Text('Save'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+
+                                IconButton(
+                                  icon: const Icon(Icons.delete),
+
+                                  onPressed: () {
+                                    setState(() {
+                                      _savedExports.removeAt(index);
+                                    });
+
+                                    setDialogState(() {});
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                  },
+
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _onKeyEvent(KeyEvent event) {
@@ -1089,8 +1157,6 @@ if (curveMatch != null) {
     final node = _nodeAt(pos);
 
     if (node != null) {
-      
-
       if (_lineMode) {
         _lineSourceNodeId = node.id;
       } else {
@@ -1275,6 +1341,16 @@ if (curveMatch != null) {
 
               const SizedBox(height: 8),
 
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('Export History'),
+                subtitle: const Text('View saved exports'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showExportHistory();
+                },
+              ),
+
               TextButton(
                 onPressed: () {
                   Navigator.of(context).push(
@@ -1369,22 +1445,20 @@ if (curveMatch != null) {
           behavior: HitTestBehavior.opaque,
 
           onTapDown: (details) {
-  _lastTapPosition = details.localPosition;
+            _lastTapPosition = details.localPosition;
 
-  if (_placingStartArrow) {
-    final tappedNode = _nodeAt(details.localPosition);
+            if (_placingStartArrow) {
+              final tappedNode = _nodeAt(details.localPosition);
 
-    if (tappedNode != null) {
-      setState(() {
-        _startArrow = StartArrowData(
-          nodeId: tappedNode.id,
-        );
+              if (tappedNode != null) {
+                setState(() {
+                  _startArrow = StartArrowData(nodeId: tappedNode.id);
 
-        _placingStartArrow = false;
-      });
-    }
-  }
-},
+                  _placingStartArrow = false;
+                });
+              }
+            }
+          },
 
           onTap: () {
             if (_lastTapPosition == null || _nodeAt(_lastTapPosition!) == null) {
@@ -1564,6 +1638,13 @@ class MarkdownFileScreen extends StatefulWidget {
 
   @override
   State<MarkdownFileScreen> createState() => _MarkdownFileScreenState();
+}
+
+class SavedExport {
+  String name;
+  String dsl;
+
+  SavedExport({required this.name, required this.dsl});
 }
 
 class _MarkdownFileScreenState extends State<MarkdownFileScreen> {
