@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
@@ -308,6 +309,13 @@ class _LineWidgetState extends State<LineWidget> {
               onTap: () {
                 if (!_focusNode.hasFocus) {
                   FocusScope.of(context).requestFocus(_focusNode);
+                  final isMobileWeb =
+                      defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android;
+
+                  if (isMobileWeb) {
+                    debugPrint("tapped line textfield widget");
+                    SystemChannels.textInput.invokeMethod('TextInput.show');
+                  }
                 }
               },
 
@@ -334,9 +342,7 @@ class _LineWidgetState extends State<LineWidget> {
                     fontWeight: FontWeight.bold,
                     color: widget.deleteMode ? Colors.red : Colors.black,
                   ),
-                  onTap: () {
-                    SystemChannels.textInput.invokeMethod('TextInput.show');
-                  },
+
                   // LIVE TOKEN PARSING
                   onChanged: (value) {
                     final parsed = parseNodeText(value);
