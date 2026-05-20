@@ -16,6 +16,8 @@ class Node extends StatefulWidget {
   final bool deleteMode;
   final VoidCallback? onDelete;
 
+  final bool highlighted;
+
   const Node({
     super.key,
     required this.data,
@@ -27,6 +29,7 @@ class Node extends StatefulWidget {
     this.onDoubleTap,
     required this.deleteMode,
     this.onDelete,
+    this.highlighted = false,
   });
 
   @override
@@ -95,6 +98,8 @@ class _NodeState extends State<Node> {
 
   return widget.deleteMode
       ? Colors.red
+      : widget.highlighted
+      ? const Color.fromARGB(255, 208, 0, 255)
       : isDuplicate
       ? Colors.orange
       : _selected

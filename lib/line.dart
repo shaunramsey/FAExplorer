@@ -6,8 +6,9 @@ import 'models.dart';
 class LinePainter extends CustomPainter {
   final LineGeometry geometry;
   final bool deleteMode;
+  final bool highlighted;
 
-  const LinePainter({required this.geometry, this.deleteMode = false});
+  const LinePainter({required this.geometry, this.deleteMode = false, this.highlighted = false});
 
   void _drawArrow(Canvas canvas, Offset tip, double angle) {
     const len = 15;
@@ -25,17 +26,19 @@ class LinePainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = deleteMode ? Colors.red : Colors.black
+        ..color = deleteMode ? Colors.red : highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black
         ..style = PaintingStyle.fill,
     );
   }
+
+  Color get _lineColor => deleteMode ? Colors.red : highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..color = deleteMode ? Colors.red : Colors.black;
+      ..strokeWidth = highlighted ? 5 : 4
+      ..color = _lineColor;
 
     if (geometry.hasCircle) {
       // Shorten the arc so it ends at the base of the arrowhead (len=15)
@@ -73,7 +76,7 @@ class LinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(LinePainter oldDelegate) => oldDelegate.geometry != geometry;
+  bool shouldRepaint(LinePainter oldDelegate) => oldDelegate.geometry != geometry || oldDelegate.highlighted != highlighted || oldDelegate.deleteMode != deleteMode;
 }
 
 class LineWidget extends StatefulWidget {
@@ -81,6 +84,7 @@ class LineWidget extends StatefulWidget {
   final Offset centerA;
   final Offset centerB;
   final bool deleteMode;
+  final bool highlighted;
   final ValueChanged<String> onLabelChanged;
 
   const LineWidget({
@@ -89,6 +93,7 @@ class LineWidget extends StatefulWidget {
     required this.centerA,
     required this.centerB,
     required this.deleteMode,
+    this.highlighted = false,
     required this.onLabelChanged,
   });
 
@@ -285,7 +290,7 @@ class _LineWidgetState extends State<LineWidget> {
         Positioned.fill(
           child: IgnorePointer(
             child: CustomPaint(
-              painter: LinePainter(geometry: geometry, deleteMode: widget.deleteMode),
+              painter: LinePainter(geometry: geometry, deleteMode: widget.deleteMode, highlighted: widget.highlighted),
             ),
           ),
         ),
@@ -331,7 +336,7 @@ class _LineWidgetState extends State<LineWidget> {
                     fontSize: 30,
                     height: 1,
                     fontWeight: FontWeight.bold,
-                    color: widget.deleteMode ? Colors.red : Colors.black,
+                    color: widget.deleteMode ? Colors.red : widget.highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black,
                   ),
 
                   // LIVE TOKEN PARSING

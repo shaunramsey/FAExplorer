@@ -10,6 +10,7 @@ class StartArrowWidget extends StatefulWidget {
 
   final VoidCallback? onDelete;
   final bool deleteMode;
+  final bool highlighted;
 
   const StartArrowWidget({
     super.key,
@@ -17,6 +18,7 @@ class StartArrowWidget extends StatefulWidget {
     required this.nodeCenter,
     this.onDelete,
     this.deleteMode = false,
+    this.highlighted = false,
   });
 
   @override
