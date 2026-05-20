@@ -202,17 +202,23 @@ class _AutomataScreenState extends State<AutomataScreen> {
   //   to label length = N – start arrow length (only when non-default)
   // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// DSL EXPORT
+// ═══════════════════════════════════════════════════════════════
+
 String _exportToDsl() {
   final lines = <String>[];
 
-  // Escapes multiline text so exports stay one-line-per-command.
   String escapeDsl(String text) {
     return text
         .replaceAll(r'\', r'\\')
         .replaceAll('\n', r'\n');
   }
 
-  // ── 1. Nodes ──────────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // NODE DEFINITIONS
+  // ─────────────────────────────────────────────
+
   for (final n in _nodes.values) {
     final displayLabel = n.label.trim().isEmpty
         ? _numberToAlphabetLabel(int.parse(n.id.substring(1)))
@@ -221,44 +227,51 @@ String _exportToDsl() {
     lines.add('${n.id} = ${escapeDsl(displayLabel)}');
   }
 
-  if (_nodes.isNotEmpty) lines.add('');
+  if (_nodes.isNotEmpty) {
+    lines.add('');
+  }
 
-  // ── 2. Positions ──────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // POSITIONS
+  // ─────────────────────────────────────────────
+
   bool wrotePos = false;
 
   for (final n in _nodes.values) {
     final x = n.position.dx.toStringAsFixed(1);
     final y = n.position.dy.toStringAsFixed(1);
 
-    final displayLabel = n.label.trim().isEmpty
-        ? _numberToAlphabetLabel(int.parse(n.id.substring(1)))
-        : n.label;
-
-    lines.add('${escapeDsl(displayLabel)} = ($x, $y)');
+    lines.add('${_nodeRef(n)} = ($x, $y)');
 
     wrotePos = true;
   }
 
-  if (wrotePos) lines.add('');
+  if (wrotePos) {
+    lines.add('');
+  }
 
-  // ── 3. Accept states ──────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // ACCEPT STATES
+  // ─────────────────────────────────────────────
+
   bool wroteAccept = false;
 
   for (final n in _nodes.values) {
-    if (n.isAccept) {
-      final displayLabel = n.label.trim().isEmpty
-          ? _numberToAlphabetLabel(int.parse(n.id.substring(1)))
-          : n.label;
+    if (!n.isAccept) continue;
 
-      lines.add('${escapeDsl(displayLabel)} is accepted');
+    lines.add('${_nodeRef(n)} is accepted');
 
-      wroteAccept = true;
-    }
+    wroteAccept = true;
   }
 
-  if (wroteAccept) lines.add('');
+  if (wroteAccept) {
+    lines.add('');
+  }
 
-  // ── 4. Transitions ────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // TRANSITIONS
+  // ─────────────────────────────────────────────
+
   bool wroteLines = false;
 
   for (final l in _lines.values) {
@@ -267,78 +280,137 @@ String _exportToDsl() {
 
     if (nodeA == null || nodeB == null) continue;
 
-    final labelA = nodeA.label.trim().isEmpty
-        ? _numberToAlphabetLabel(int.parse(nodeA.id.substring(1)))
-        : nodeA.label;
+    final refA = _nodeRef(nodeA);
+    final refB = _nodeRef(nodeB);
 
-    final labelB = nodeB.label.trim().isEmpty
-        ? _numberToAlphabetLabel(int.parse(nodeB.id.substring(1)))
-        : nodeB.label;
-
-    if (l.label.isEmpty) {
-      lines.add('${escapeDsl(labelA)} to ${escapeDsl(labelB)}');
+    if (l.label.trim().isEmpty) {
+      lines.add('$refA to $refB');
     } else {
       lines.add(
-        '${escapeDsl(labelA)} to ${escapeDsl(labelB)} = ${escapeDsl(l.label)}',
+        '$refA to $refB = ${escapeDsl(l.label)}',
       );
     }
 
     wroteLines = true;
   }
 
-  if (wroteLines) lines.add('');
+  if (wroteLines) {
+    lines.add('');
+  }
 
-  // ── 5. Curve overrides ────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // CURVES
+  // ─────────────────────────────────────────────
+
   bool wroteCurves = false;
 
   for (final l in _lines.values) {
-    if (l.perpendicularPart.abs() > 0.5) {
-      final curveName = l.label.isEmpty
-          ? '(unnamed line ${l.id})'
-          : escapeDsl(l.label);
+    if (l.perpendicularPart.abs() <= 0.5) continue;
 
-      lines.add(
-        '$curveName curve = ${l.perpendicularPart.toStringAsFixed(1)}',
-      );
-
-      wroteCurves = true;
-    }
-  }
-
-  if (wroteCurves) lines.add('');
-
-  // ── 6. Start arrow ────────────────────────────────────────────
-  if (_startArrow != null) {
-  final node = _nodes[_startArrow!.nodeId];
-
-  if (node != null) {
-    final nodeLabel = node.label.trim().isEmpty
-        ? _numberToAlphabetLabel(int.parse(node.id.substring(1)))
-        : node.label;
-
-    if (_startArrow!.label.isEmpty) {
-      lines.add('to ${escapeDsl(nodeLabel)}');
-    } else {
-      lines.add(
-        'to ${escapeDsl(nodeLabel)} = ${escapeDsl(_startArrow!.label)}',
-      );
-    }
-
-    if ((_startArrow!.length - 100).abs() > 0.5) {
-      lines.add(
-        'to ${escapeDsl(nodeLabel)} length = ${_startArrow!.length.toStringAsFixed(1)}',
-      );
-    }
-
-    final dir = _startArrow!.direction();
+    final curveRef = _lineRef(l);
 
     lines.add(
-      'to ${escapeDsl(nodeLabel)} angle = ${dir.dx.toStringAsFixed(4)}, ${dir.dy.toStringAsFixed(4)}',
+      '$curveRef curve = ${l.perpendicularPart.toStringAsFixed(1)}',
     );
+
+    wroteCurves = true;
   }
-}
+
+  if (wroteCurves) {
+    lines.add('');
+  }
+
+  // ─────────────────────────────────────────────
+  // START ARROW
+  // ─────────────────────────────────────────────
+
+  if (_startArrow != null) {
+    final node = _nodes[_startArrow!.nodeId];
+
+    if (node != null) {
+      final ref = _nodeRef(node);
+
+      if (_startArrow!.label.trim().isEmpty) {
+        lines.add('to $ref');
+      } else {
+        lines.add(
+          'to $ref = ${escapeDsl(_startArrow!.label)}',
+        );
+      }
+
+      if ((_startArrow!.length - 100).abs() > 0.5) {
+        lines.add(
+          'to $ref length = ${_startArrow!.length.toStringAsFixed(1)}',
+        );
+      }
+
+      final dir = _startArrow!.direction();
+
+      lines.add(
+        'to $ref angle = ${dir.dx.toStringAsFixed(4)}, ${dir.dy.toStringAsFixed(4)}',
+      );
+    }
+  }
 
   return lines.join('\n').trimRight();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NODE REFERENCES
+// ═══════════════════════════════════════════════════════════════
+
+String _nodeRef(NodeData node) {
+  String escapeDsl(String text) {
+    return text
+        .replaceAll(r'\', r'\\')
+        .replaceAll('\n', r'\n');
+  }
+
+  final label = node.label.trim();
+
+  if (label.isEmpty) {
+    return node.id;
+  }
+
+  final duplicateCount = _nodes.values
+      .where((n) => n.label.trim() == label)
+      .length;
+
+  // Unique label → just use label
+  if (duplicateCount <= 1) {
+    return escapeDsl(label);
+  }
+
+  // Duplicate label → use id(label)
+  return '${node.id}(${escapeDsl(label)})';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LINE REFERENCES
+// ═══════════════════════════════════════════════════════════════
+
+String _lineRef(LineData line) {
+  String escapeDsl(String text) {
+    return text
+        .replaceAll(r'\', r'\\')
+        .replaceAll('\n', r'\n');
+  }
+
+  final label = line.label.trim();
+
+  if (label.isEmpty) {
+    return line.id;
+  }
+
+  final duplicateCount = _lines.values
+      .where((l) => l.label.trim() == label)
+      .length;
+
+  if (duplicateCount <= 1) {
+    return escapeDsl(label);
+  }
+
+  return '${line.id}(${escapeDsl(label)})';
 }
 
 Offset _defaultPosition(int index) {
@@ -379,10 +451,24 @@ String? _importFromDsl(String src) {
     }
 
     String? idForLabel(String lbl) {
-      if (newNodes.containsKey(lbl)) return lbl;
+  lbl = unescapeDsl(lbl.trim());
 
-      return labelToId[unescapeDsl(lbl.trim())];
-    }
+  // n0(Label)
+  final explicitRef =
+      RegExp(r'^(n\d+)\((.*)\)$').firstMatch(lbl);
+
+  if (explicitRef != null) {
+    return explicitRef.group(1);
+  }
+
+  // direct ID
+  if (newNodes.containsKey(lbl)) {
+    return lbl;
+  }
+
+  // normal label
+  return labelToId[lbl];
+}
 
     String ensureNode(String lbl) {
       lbl = unescapeDsl(lbl);
@@ -524,24 +610,34 @@ if (angleMatch != null) {
         r'^(.+?)\s+curve\s*=\s*(-?[\d.]+)$',
         caseSensitive: false,
       );
+final curveMatch = curveRe.firstMatch(line);
 
-      final curveMatch = curveRe.firstMatch(line);
+if (curveMatch != null) {
+  final lbl = unescapeDsl(
+    curveMatch.group(1)!.trim(),
+  );
 
-      if (curveMatch != null) {
-        final lbl = unescapeDsl(
-          curveMatch.group(1)!.trim(),
-        );
+  final val = double.parse(curveMatch.group(2)!);
 
-        final val = double.parse(curveMatch.group(2)!);
+  String? lid;
 
-        final lid = lineLabelToId[lbl];
+  final explicitRef =
+      RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
 
-        if (lid != null && newLines.containsKey(lid)) {
-          newLines[lid]!.perpendicularPart = val;
-        }
+  if (explicitRef != null) {
+    lid = explicitRef.group(1);
+  } else if (newLines.containsKey(lbl)) {
+    lid = lbl;
+  } else {
+    lid = lineLabelToId[lbl];
+  }
 
-        continue;
-      }
+  if (lid != null && newLines.containsKey(lid)) {
+    newLines[lid]!.perpendicularPart = val;
+  }
+
+  continue;
+}
 
       // ── "label is accepted" ───────────────────────────────
       final acceptRe = RegExp(
