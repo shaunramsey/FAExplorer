@@ -1,3 +1,10 @@
+# May 20, 2026
+* Added in an import and export with simple language and an export history feature
+* Changed it so that start arrows are placed on tapdown rather than panning
+* Fixed duplicate label issues so all duplicates are highlighted in orange
+* Add in a string simulator that the user can provide a string and see if their finite automata accepts or rejects it
+* fixed an issue with line textboxes so now you can click wherever on a textbox to put your cursor there
+
 # May 19, 2026
 * Added a hamburger menu for the user to view a help menu, the changelog, version history, and an About
 * Tweaked the selfnode textboxes for improved readability 
