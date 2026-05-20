@@ -90,10 +90,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
   Set<String> get _simActiveLines {
   if (_simLines.isEmpty) return {};
 
-  // Before consuming anything
-  if (_simStep < 0) return {};
-
-  // _simLines[i + 1] corresponds to token i
   final idx = _simStep + 1;
 
   if (idx < 0 || idx >= _simLines.length) {
@@ -106,6 +102,45 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // ─────────────────────────────────────────────
   // TOKENIZER: splits input into chars or [[WORD]] tokens
   // ─────────────────────────────────────────────
+
+  bool _isEpsilonLabel(String label) {
+  final trimmed = label.trim();
+
+  return trimmed.isEmpty ||
+      trimmed == '~';
+}
+
+(Set<String>, Set<String>) _epsilonClosure(Set<String> startNodes) {
+  final visitedNodes = <String>{...startNodes};
+  final usedLines = <String>{};
+
+  final queue = <String>[...startNodes];
+
+  while (queue.isNotEmpty) {
+    final nodeId = queue.removeLast();
+
+    for (final line in _lines.values) {
+      if (line.nodeAId != nodeId) continue;
+
+      final alternatives = line.label
+          .split(RegExp(r'[,\n]'))
+          .map((s) => s.trim());
+
+      final isEpsilon = alternatives.any(_isEpsilonLabel);
+
+      if (!isEpsilon) continue;
+
+      usedLines.add(line.id);
+
+      if (!visitedNodes.contains(line.nodeBId)) {
+        visitedNodes.add(line.nodeBId);
+        queue.add(line.nodeBId);
+      }
+    }
+  }
+
+  return (visitedNodes, usedLines);
+}
 
 static const Map<String, String> _simCommands = {
   r'\0': '∅',
@@ -208,6 +243,14 @@ String _resolveSimCommand(String token) {
 
   return _simCommands[inner] ?? token;
 }
+String _normalizeSimToken(String token) {
+  token = token.trim();
+
+  // Convert [[COMMAND]]
+  token = _resolveSimCommand(token);
+
+  return token;
+}
 
   List<String> _tokenize(String input) {
   final tokens = <String>[];
@@ -271,50 +314,68 @@ void _refreshSimulation() {
 }
 
   void _buildSimulation() {
-    _simStates.clear();
-    _simLines.clear();
+  _simStates.clear();
+  _simLines.clear();
 
-    if (_startArrow == null || !_nodes.containsKey(_startArrow!.nodeId)) {
-      _simStates.add({});
-      _simLines.add({});
-      return;
-    }
+  if (_startArrow == null ||
+      !_nodes.containsKey(_startArrow!.nodeId)) {
+    _simStates.add({});
+    _simLines.add({});
+    return;
+  }
 
-    // Initial state
-    final initialNode = _startArrow!.nodeId;
-    Set<String> current = {initialNode};
-    _simStates.add(Set.from(current)); // index 0 = before any token consumed
-    _simLines.add({}); // no lines taken to reach initial state
+  final initialNode = _startArrow!.nodeId;
 
-    for (final token in _simTokens) {
-      final nextNodes = <String>{};
-      final usedLines = <String>{};
+  // Initial epsilon closure
+  final (initialClosure, initialLines) =
+      _epsilonClosure({initialNode});
 
-      for (final nodeId in current) {
-        // Find all outgoing lines from nodeId
-        for (final line in _lines.values) {
-          if (line.nodeAId != nodeId) continue;
+  Set<String> current = initialClosure;
 
-          // Match: line label equals token, or line label contains token as one of
-          // comma/newline separated alternatives, or ε (epsilon) transitions
-          final rawLabel = line.label.trim();
-          final alternatives = rawLabel.split(RegExp(r'[,\n]')).map((s) => s.trim()).toList();
+  _simStates.add(Set.from(current));
+  _simLines.add(Set.from(initialLines));
 
-          for (final alt in alternatives) {
-            if (alt == token) {
-              nextNodes.add(line.nodeBId);
-              usedLines.add(line.id);
-              break;
-            }
+  for (final token in _simTokens) {
+    final nextNodes = <String>{};
+    final usedLines = <String>{};
+
+    // Consume token transitions
+    for (final nodeId in current) {
+      for (final line in _lines.values) {
+        if (line.nodeAId != nodeId) continue;
+
+        final alternatives = line.label
+            .split(RegExp(r'[,\n]'))
+            .map((s) => s.trim());
+
+        for (final alt in alternatives) {
+          // Skip epsilon transitions here
+          if (_isEpsilonLabel(alt)) continue;
+
+          if (_normalizeSimToken(alt) ==
+              _normalizeSimToken(token)) {
+            nextNodes.add(line.nodeBId);
+            usedLines.add(line.id);
+            break;
           }
         }
       }
-
-      current = nextNodes;
-      _simStates.add(Set.from(current));
-      _simLines.add(Set.from(usedLines));
     }
+
+    // Follow epsilon transitions afterward
+    final (closureNodes, closureLines) =
+        _epsilonClosure(nextNodes);
+
+    current = closureNodes;
+
+    _simStates.add(Set.from(current));
+
+    _simLines.add({
+      ...usedLines,
+      ...closureLines,
+    });
   }
+}
 
   void _simRebuild() {
     _simTokens = _tokenize(_simController.text);
