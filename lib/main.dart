@@ -2078,6 +2078,7 @@ void _refreshSimulation() {
                       onLabelChanged: (text) {
                         setState(() {
                           line.label = text;
+                          _refreshSimulation();
                         });
                       },
                     ),
