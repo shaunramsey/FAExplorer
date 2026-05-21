@@ -918,52 +918,67 @@ ${htmlEscape.convert(line.label)}
     // NODES
     // ─────────────────────────────
 
-    for (final node in _nodes.values) {
-      final center = node.center;
+    const nodeRadius = 42.0;
+const acceptRadius = 34.0;
+const strokeWidth = 3.0;
 
-      buffer.writeln('''
+for (final node in _nodes.values) {
+  final center = node.center;
+
+  final label =
+      node.label.trim().isEmpty
+          ? '∅'
+          : node.label;
+
+  buffer.writeln('''
 <g
   class="node"
   data-id="${node.id}">
+
+  <circle
+    cx="${center.dx}"
+    cy="${center.dy}"
+    r="$nodeRadius"
+
+    fill="white"
+    stroke="black"
+    stroke-width="$strokeWidth"/>
+
 ''');
 
-      buffer.writeln('''
-<circle
-  cx="${center.dx}"
-  cy="${center.dy}"
-  r="50"
+  if (node.isAccept) {
+    buffer.writeln('''
+  <circle
+    cx="${center.dx}"
+    cy="${center.dy}"
+    r="$acceptRadius"
 
-  fill="white"
-  stroke="black"
-  stroke-width="4"/>
+    fill="none"
+    stroke="black"
+    stroke-width="$strokeWidth"/>
 ''');
+  }
 
-      if (node.isAccept) {
-        buffer.writeln('''
-<circle
-  cx="${center.dx}"
-  cy="${center.dy}"
-  r="42"
+  buffer.writeln('''
+  <text
+    x="${center.dx}"
+    y="${center.dy}"
 
-  fill="none"
-  stroke="black"
-  stroke-width="4"/>
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ${htmlEscape.convert(label)}
+
+  </text>
+
+</g>
 ''');
-      }
-
-      buffer.writeln('''
-<text
-  x="${center.dx}"
-  y="${center.dy + 12}"
-  font-family="Courier New"
-  font-size="30"
-  text-anchor="middle">
-${htmlEscape.convert(node.label)}
-</text>
-''');
-
-      buffer.writeln('</g>');
-    }
+}
 
     // ─────────────────────────────
     // START ARROW
