@@ -371,16 +371,32 @@ if (widget.data.isHaltReject)
                       onTapOutside: (_) => _deselect(),
 
                       onChanged: (value) {
-                        final parsed = parseNodeText(value);
+  final parsed = parseNodeText(value);
 
-                        if (parsed != value) {
-                          _controller.value = TextEditingValue(
-                            text: parsed,
-                            selection: TextSelection.collapsed(offset: parsed.length),
-                          );
-                        }
+  String finalText = parsed;
 
-                        setState(() {});
+  bool haltAccept = false;
+  bool haltReject = false;
+
+  if (parsed.startsWith('<<') && parsed.endsWith('>>')) {
+    haltAccept = true;
+    finalText = parsed.substring(2, parsed.length - 2);
+  } else if (parsed.startsWith('>>') && parsed.endsWith('<<')) {
+    haltReject = true;
+    finalText = parsed.substring(2, parsed.length - 2);
+  }
+
+  widget.data.isHaltAccept = haltAccept;
+  widget.data.isHaltReject = haltReject;
+
+  if (finalText != _controller.text) {
+    _controller.value = TextEditingValue(
+      text: finalText,
+      selection: TextSelection.collapsed(offset: finalText.length),
+    );
+  }
+
+  setState(() {});
                       },
 
                       decoration: InputDecoration(

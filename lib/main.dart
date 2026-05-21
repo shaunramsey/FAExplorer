@@ -379,58 +379,84 @@ class _AutomataScreenState extends State<AutomataScreen> {
     _simLines.add(Set.from(initialLines));
 
     for (final token in _simTokens) {
-      final nextNodes = <String>{};
-      final usedLines = <String>{};
-      final isLastToken = token == _simTokens.last;
+  final nextNodes = <String>{};
+  final usedLines = <String>{};
 
-      bool halted = false;
+  final isLastToken = token == _simTokens.last;
 
-for (final nid in current) {
-  final node = _nodes[nid];
+  // ─────────────────────────────
+  // Process every active branch
+  // ─────────────────────────────
 
-  if (node == null) continue;
+  for (final nodeId in current) {
+    final currentNode = _nodes[nodeId];
 
-  if (node.isHaltAccept || node.isHaltReject) {
-    halted = true;
+    if (currentNode == null) {
+      continue;
+    }
+
+    // Halt reject:
+    // kill ONLY this branch
+    if (currentNode.isHaltReject) {
+      continue;
+    }
+
+    // Halt accept:
+    // instantly accept entire simulation
+    if (currentNode.isHaltAccept) {
+      current = {nodeId};
+
+      _simStates.add(Set.from(current));
+      _simLines.add(Set.from(usedLines));
+
+      return;
+    }
+
+    // Normal transitions
+    for (final line in _lines.values) {
+      if (line.nodeAId != nodeId) continue;
+
+      final alternatives = line.label
+          .split(RegExp(r'[,\\n]'))
+          .map((s) => s.trim());
+
+      for (final alt in alternatives) {
+        if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) {
+          continue;
+        }
+
+        if (_normalizeSimToken(alt) ==
+            _normalizeSimToken(token)) {
+          nextNodes.add(line.nodeBId);
+          usedLines.add(line.id);
+          break;
+        }
+      }
+    }
+  }
+
+  // Epsilon closure
+  final (closureNodes, closureLines) =
+      _epsilonClosure(
+    nextNodes,
+    isLastToken,
+    nullWasExplicitlyTyped,
+  );
+
+  current = closureNodes;
+
+  _simStates.add(Set.from(current));
+
+  _simLines.add({
+    ...usedLines,
+    ...closureLines,
+  });
+
+  // No branches left → reject
+  if (current.isEmpty) {
     break;
   }
 }
-
-if (halted) {
-  break;
-}
-
-      // Consume token transitions
-      for (final nodeId in current) {
-        for (final line in _lines.values) {
-          if (line.nodeAId != nodeId) continue;
-
-          final alternatives = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
-
-          for (final alt in alternatives) {
-            // Skip epsilon transitions here
-            if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) {
-              continue;
-            }
-
-            if (_normalizeSimToken(alt) == _normalizeSimToken(token)) {
-              nextNodes.add(line.nodeBId);
-              usedLines.add(line.id);
-              break;
-            }
-          }
-        }
-      }
-
-      // Follow epsilon transitions afterward
-      final (closureNodes, closureLines) = _epsilonClosure(nextNodes, isLastToken, nullWasExplicitlyTyped);
-
-      current = closureNodes;
-
-      _simStates.add(Set.from(current));
-
-      _simLines.add({...usedLines, ...closureLines});
-    }
     
   }
 
