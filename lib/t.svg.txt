@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="800"
+  height="600"
+  viewBox="0 0 800 600">
+
+<script type="application/json" id="automata-data">
+{
+  "version": 2,
+  "nodes": [
+    {
+      "id": "n0",
+      "x": 452.93359375,
+      "y": 142.26953125,
+      "label": "",
+      "accept": false
+    },
+    {
+      "id": "n1",
+      "x": 258.08984375,
+      "y": 190.828125,
+      "label": "",
+      "accept": false
+    },
+    {
+      "id": "n2",
+      "x": 478.16796875,
+      "y": 371.17578125,
+      "label": "",
+      "accept": false
+    },
+    {
+      "id": "n3",
+      "x": 695.1953125,
+      "y": 234.71875,
+      "label": "",
+      "accept": true
+    },
+    {
+      "id": "n4",
+      "x": 89.05078125,
+      "y": 213.33984375,
+      "label": "",
+      "accept": false
+    },
+    {
+      "id": "n5",
+      "x": 164.4921875,
+      "y": 425.73046875,
+      "label": "",
+      "accept": false
+    },
+    {
+      "id": "n6",
+      "x": 177.234375,
+      "y": 365.3984375,
+      "label": "",
+      "accept": false
+    }
+  ],
+  "lines": [
+    {
+      "id": "l0",
+      "a": "n1",
+      "b": "n2",
+      "label": "a",
+      "curve": 0,
+      "loopAngle": -1.5707963267948966
+    },
+    {
+      "id": "l1",
+      "a": "n2",
+      "b": "n3",
+      "label": "a",
+      "curve": 0,
+      "loopAngle": -1.5707963267948966
+    },
+    {
+      "id": "l2",
+      "a": "n1",
+      "b": "n0",
+      "label": "a",
+      "curve": 28.277961252318445,
+      "loopAngle": -1.5707963267948966
+    },
+    {
+      "id": "l3",
+      "a": "n0",
+      "b": "n3",
+      "label": "b\na",
+      "curve": 0,
+      "loopAngle": -1.5707963267948966
+    },
+    {
+      "id": "l4",
+      "a": "n2",
+      "b": "n2",
+      "label": "a",
+      "curve": 0,
+      "loopAngle": 1.8405095684010981
+    }
+  ],
+  "startArrow": {
+    "nodeId": "n1",
+    "dx": -0.6168596197453147,
+    "dy": -0.7870731919762392,
+    "length": 77.57410273100912,
+    "label": ""
+  }
+}
+</script>
+<defs>
+  <marker
+  id="arrowhead"
+  viewBox="0 0 10 10"
+  refX="8"
+  refY="5"
+  markerWidth="4"
+  markerHeight="4"
+  orient="auto">
+
+  <path
+    d="M 0 0 L 10 5 L 0 10 z"
+    fill="black"/>
+</marker>
+</defs>
+
+<line
+  class="transition"
+  data-id="l0"
+  data-label="a"
+
+  x1="346.76326098747893"
+  y1="272.51987154663055"
+
+  x2="489.49455151252107"
+  y2="389.48403470336945"
+
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+
+<text
+  x="439.6792939017088"
+  y="302.195877611269"
+  font-family="Courier New"
+  font-size="30"
+  text-anchor="middle">
+a
+</text>
+
+<line
+  class="transition"
+  data-id="l1"
+  data-label="a"
+
+  x1="570.4962945748584"
+  y1="394.56163401841235"
+
+  x2="702.8669866751416"
+  y2="311.33289723158765"
+
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+
+<text
+  x="618.5840205075203"
+  y="320.8517723826275"
+  font-family="Courier New"
+  font-size="30"
+  text-anchor="middle">
+a
+</text>
+
+<path
+  class="transition"
+  data-id="l2"
+  data-label="a"
+
+  d="
+    M 347.37533512830134 210.12618918325455
+    A 192.37859796125994 192.37859796125994 0 0 1 453.83467172928454 183.5945930868867
+  "
+
+  fill="none"
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+
+<text
+  x="390.4515677431996"
+  y="151.44570193661443"
+  font-family="Courier New"
+  font-size="30"
+  text-anchor="middle">
+a
+</text>
+
+<line
+  class="transition"
+  data-id="l3"
+  data-label="b
+a"
+
+  x1="549.6477707431081"
+  y1="210.0960751622832"
+
+  x2="698.4811355068919"
+  y2="266.8922060877168"
+
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+
+<text
+  x="636.1865029853526"
+  y="174.4228751353377"
+  font-family="Courier New"
+  font-size="30"
+  text-anchor="middle">
+b
+a
+</text>
+
+<path
+  class="transition"
+  data-id="l4"
+  data-label="a"
+
+  d="
+    M 542.3475315234583 468.56793973404547
+    A 35 35 0 1 1 491.65915789545573 454.5551673469677
+  "
+
+  fill="none"
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+
+<text
+  x="484.20288445527376"
+  y="586.2105930459009"
+  font-family="Courier New"
+  font-size="30"
+  text-anchor="middle">
+a
+</text>
+
+<g
+  class="node"
+  data-id="n0">
+
+  <circle
+    cx="502.93359375"
+    cy="192.26953125"
+    r="42"
+
+    fill="white"
+    stroke="black"
+    stroke-width="3"/>
+
+
+  <text
+    x="502.93359375"
+    y="192.26953125"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ∅
+
+  </text>
+
+</g>
+
+<g
+  class="node"
+  data-id="n1">
+
+  <circle
+    cx="308.08984375"
+    cy="240.828125"
+    r="42"
+
+    fill="white"
+    stroke="black"
+    stroke-width="3"/>
+
+
+  <text
+    x="308.08984375"
+    y="240.828125"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ∅
+
+  </text>
+
+</g>
+
+<g
+  class="node"
+  data-id="n2">
+
+  <circle
+    cx="528.16796875"
+    cy="421.17578125"
+    r="42"
+
+    fill="white"
+    stroke="black"
+    stroke-width="3"/>
+
+
+  <text
+    x="528.16796875"
+    y="421.17578125"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ∅
+
+  </text>
+
+</g>
+
+<g
+  class="node"
+  data-id="n3">
+
+  <circle
+    cx="745.1953125"
+    cy="284.71875"
+    r="42"
+
+    fill="white"
+    stroke="black"
+    stroke-width="3"/>
+
+
+  <circle
+    cx="745.1953125"
+    cy="284.71875"
+    r="34"
+
+    fill="none"
+    stroke="black"
+    stroke-width="3"/>
+
+  <text
+    x="745.1953125"
+    y="284.71875"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ∅
+
+  </text>
+
+</g>
+
+<g
+  class="node"
+  data-id="n4">
+
+  <circle
+    cx="139.05078125"
+    cy="263.33984375"
+    r="42"
+
+    fill="white"
+    stroke="black"
+    stroke-width="3"/>
+
+
+  <text
+    x="139.05078125"
+    y="263.33984375"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ∅
+
+  </text>
+
+</g>
+
+<g
+  class="node"
+  data-id="n5">
+
+  <circle
+    cx="214.4921875"
+    cy="475.73046875"
+    r="42"
+
+    fill="white"
+    stroke="black"
+    stroke-width="3"/>
+
+
+  <text
+    x="214.4921875"
+    y="475.73046875"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ∅
+
+  </text>
+
+</g>
+
+<g
+  class="node"
+  data-id="n6">
+
+  <circle
+    cx="227.234375"
+    cy="415.3984375"
+    r="42"
+
+    fill="white"
+    stroke="black"
+    stroke-width="3"/>
+
+
+  <text
+    x="227.234375"
+    y="415.3984375"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ∅
+
+  </text>
+
+</g>
+
+<line
+  class="start-arrow"
+
+  x1="229.39453125000003"
+  y1="140.41796875"
+
+  x2="277.2468627627343"
+  y2="201.47446540118804"
+
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+
+</svg>
