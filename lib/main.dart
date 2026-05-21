@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
-
+import 'dart:convert';
 import 'models.dart';
 import 'node.dart';
 import 'line.dart';
@@ -42,6 +42,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
   bool _deleteMode = false;
 
   bool _showHelpOverlay = false;
+  bool _showSimulator = true;
 
   StartArrowData? _startArrow;
 
@@ -61,6 +62,390 @@ class _AutomataScreenState extends State<AutomataScreen> {
   final FocusNode _focusNode = FocusNode();
 
   final List<SavedExport> _savedExports = [];
+
+  bool _isNullToken(String token) {
+    final normalized = _normalizeSimToken(token);
+
+    return normalized == '∅';
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // STRING SIMULATION STATE
+  // ═══════════════════════════════════════════════════════════════
+  final TextEditingController _simController = TextEditingController();
+  List<String> _simTokens = [];
+  // _simStep: -1 = before any input (only start arrow/node lit),
+  //           0..n = after consuming token[0..n-1]
+  int _simStep = -1;
+  // Each step maps to a SET of active node IDs (NFA support)
+  // _simStates[i] = set of node IDs active after consuming i tokens
+  // _simStates[-1+1=0] = initial states
+  final List<Set<String>> _simStates = [];
+  // Lines taken at each step: _simLines[i] = lines used going from step i-1 to step i
+  final List<Set<String>> _simLines = [];
+
+  Set<String> get _simActiveNodes {
+    if (_simStates.isEmpty) return {};
+    final idx = _simStep + 1; // index into _simStates
+    if (idx < 0 || idx >= _simStates.length) return {};
+    return _simStates[idx];
+  }
+
+  Set<String> get _simActiveLines {
+    if (_simLines.isEmpty) return {};
+
+    final idx = _simStep + 1;
+
+    if (idx < 0 || idx >= _simLines.length) {
+      return {};
+    }
+
+    return _simLines[idx];
+  }
+
+  // ─────────────────────────────────────────────
+  // TOKENIZER: splits input into chars or [[WORD]] tokens
+  // ─────────────────────────────────────────────
+
+  bool _isEpsilonLabel(String label, bool atEndOfInput, bool nullWasExplicitlyTyped) {
+    final normalized = _normalizeSimToken(label);
+
+    // ~ and empty labels are always epsilon
+    if (normalized.isEmpty || normalized == '~') {
+      return true;
+    }
+
+    // ∅ behaves like epsilon ONLY when:
+    // - we are at end of input
+    // - user did NOT explicitly type ∅
+    if (normalized == '∅') {
+      return atEndOfInput && !nullWasExplicitlyTyped;
+    }
+
+    return false;
+  }
+
+  (Set<String>, Set<String>) _epsilonClosure(Set<String> startNodes, bool atEndOfInput, bool nullWasExplicitlyTyped) {
+    final visitedNodes = <String>{...startNodes};
+    final usedLines = <String>{};
+
+    final queue = <({String nodeId, bool usedNull})>[for (final node in startNodes) (nodeId: node, usedNull: false)];
+
+    final visitedStates = <String>{};
+
+    while (queue.isNotEmpty) {
+      final current = queue.removeLast();
+
+      final stateKey = '${current.nodeId}:${current.usedNull}';
+
+      if (visitedStates.contains(stateKey)) {
+        continue;
+      }
+
+      visitedStates.add(stateKey);
+
+      for (final line in _lines.values) {
+        if (line.nodeAId != current.nodeId) {
+          continue;
+        }
+
+        final alternatives = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
+
+        bool isNormalEpsilon = false;
+        bool isNullJump = false;
+
+        for (final alt in alternatives) {
+          final normalized = _normalizeSimToken(alt);
+
+          // ~ or empty
+          if (normalized.isEmpty || normalized == '~') {
+            isNormalEpsilon = true;
+          }
+
+          // ∅
+          if (normalized == '∅' && atEndOfInput && !nullWasExplicitlyTyped) {
+            isNullJump = true;
+          }
+        }
+
+        // Cannot continue after using a null jump
+        if (current.usedNull) {
+          continue;
+        }
+
+        if (!isNormalEpsilon && !isNullJump) {
+          continue;
+        }
+
+        usedLines.add(line.id);
+
+        visitedNodes.add(line.nodeBId);
+
+        // If this transition used ∅,
+        // mark branch as terminated
+        queue.add((nodeId: line.nodeBId, usedNull: isNullJump));
+      }
+    }
+
+    return (visitedNodes, usedLines);
+  }
+
+  static const Map<String, String> _simCommands = {
+    r'\0': '∅',
+
+    'ALPHA': 'α',
+    'BETA': 'β',
+    'GAMMA': 'γ',
+    'ZETA': 'ζ',
+    'ETA': 'η',
+    'THETA': 'θ',
+    'IOTA': 'ι',
+    'KAPPA': 'κ',
+    'LAMDA': 'λ',
+    'DELTA': 'δ',
+    'EPSILON': 'ε',
+    'MU': 'μ',
+    'PI': 'π',
+    'SIGMA': 'σ',
+    'OMEGA': 'ω',
+    'PHI': 'φ',
+
+    'GAMMA_CAP': 'Γ',
+    'DELTA_CAP': 'Δ',
+    'PI_CAP': 'Π',
+    'SIGMA_CAP': 'Σ',
+    'OMEGA_CAP': 'Ω',
+    'PHI_CAP': 'Φ',
+
+    'INFINITY': '∞',
+    'SQRT': '√',
+    'PLUSMINUS': '±',
+    'NOTEQUAL': '≠',
+    'LESSEQ': '≤',
+    'GREATEREQ': '≥',
+    'APPROX': '≈',
+    'MULTIPLY': '×',
+    'DIVIDE': '÷',
+
+    'LEFT': '←',
+    'RIGHT': '→',
+    'UP': '↑',
+    'DOWN': '↓',
+    'LEFTRIGHT': '↔',
+
+    'CHECK': '✓',
+    'X': '✗',
+    'STAR': '★',
+    'HEART': '♥',
+    'BULLET': '•',
+    'ELLIPSIS': '…',
+    'COPY': '©',
+    'REGISTERED': '®',
+    'TRADEMARK': '™',
+    'DEGREE': '°',
+    'PARAGRAPH': '¶',
+    'SECTION': '§',
+    'CURRENCY': '¤',
+    'PILCROW': '¶',
+
+    'PEACE': '☮',
+    'YIN YANG': '☯',
+    'SMILEY': '☺',
+    'BLACK SMILEY': '☻',
+    'SUN': '☀',
+    'CLOUD': '☁',
+    'UMBRELLA': '☂',
+    'SNOWFLAKE': '❄',
+    'SKULL': '☠',
+    'SPADE': '♠',
+    'CLUB': '♣',
+    'DIAMOND': '♦',
+    'MUSIC NOTE': '♪',
+    'BEAMED EIGHTH NOTES': '♫',
+    'RADIOACTIVE': '☢',
+    'BIOHAZARD': '☣',
+    'CLOVER': '☘',
+    'HANDS': '☝',
+    'MALE': '♂',
+    'FEMALE': '♀',
+    'STAR AND CRESCENT': '☪',
+    'FALLING STAR': '☫',
+    'HAMMER AND SICKLE': '☭',
+    'HOT SPRINGS': '♨',
+    'HOTEL': '🏨',
+    'HOSPITAL': '🏥',
+    'HOURGLASS': '⌛',
+  };
+
+  String _resolveSimCommand(String token) {
+    final trimmed = token.trim();
+
+    if (!trimmed.startsWith('[[') || !trimmed.endsWith(']]')) {
+      return token;
+    }
+
+    final inner = trimmed.substring(2, trimmed.length - 2).trim().toUpperCase();
+
+    return _simCommands[inner] ?? token;
+  }
+
+  String _normalizeSimToken(String token) {
+    token = token.trim();
+
+    // Convert [[COMMAND]]
+    token = _resolveSimCommand(token);
+
+    return token;
+  }
+
+  List<String> _tokenize(String input) {
+    final tokens = <String>[];
+
+    int i = 0;
+
+    while (i < input.length) {
+      // Skip spaces
+      if (input[i].trim().isEmpty) {
+        i++;
+        continue;
+      }
+
+      // [[COMMAND]]
+      if (i + 1 < input.length && input[i] == '[' && input[i + 1] == '[') {
+        final close = input.indexOf(']]', i + 2);
+
+        if (close >= 0) {
+          final raw = input.substring(i, close + 2);
+
+          tokens.add(_resolveSimCommand(raw));
+
+          i = close + 2;
+          continue;
+        }
+      }
+
+      // "multi character token"
+      if (input[i] == '"') {
+        final close = input.indexOf('"', i + 1);
+
+        if (close >= 0) {
+          tokens.add(input.substring(i + 1, close));
+
+          i = close + 1;
+          continue;
+        }
+      }
+
+      // Default single character token
+      tokens.add(input[i]);
+
+      i++;
+    }
+
+    return tokens;
+  }
+
+  // ─────────────────────────────────────────────
+  // SIMULATION BUILDER
+  // Runs NFA simulation, building _simStates and _simLines
+  // ─────────────────────────────────────────────
+  void _refreshSimulation() {
+    if (_simController.text.isEmpty && _simStates.isEmpty) {
+      return;
+    }
+
+    _simRebuild();
+  }
+
+  void _buildSimulation() {
+    final nullWasExplicitlyTyped = _simTokens.any(_isNullToken);
+    _simStates.clear();
+    _simLines.clear();
+
+    if (_startArrow == null || !_nodes.containsKey(_startArrow!.nodeId)) {
+      _simStates.add({});
+      _simLines.add({});
+      return;
+    }
+
+    final initialNode = _startArrow!.nodeId;
+
+    // Initial epsilon closure
+    final (initialClosure, initialLines) = _epsilonClosure({initialNode}, _simTokens.isEmpty, nullWasExplicitlyTyped);
+
+    Set<String> current = initialClosure;
+
+    _simStates.add(Set.from(current));
+    _simLines.add(Set.from(initialLines));
+
+    for (final token in _simTokens) {
+      final nextNodes = <String>{};
+      final usedLines = <String>{};
+      final isLastToken = token == _simTokens.last;
+
+      // Consume token transitions
+      for (final nodeId in current) {
+        for (final line in _lines.values) {
+          if (line.nodeAId != nodeId) continue;
+
+          final alternatives = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
+
+          for (final alt in alternatives) {
+            // Skip epsilon transitions here
+            if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) {
+              continue;
+            }
+
+            if (_normalizeSimToken(alt) == _normalizeSimToken(token)) {
+              nextNodes.add(line.nodeBId);
+              usedLines.add(line.id);
+              break;
+            }
+          }
+        }
+      }
+
+      // Follow epsilon transitions afterward
+      final (closureNodes, closureLines) = _epsilonClosure(nextNodes, isLastToken, nullWasExplicitlyTyped);
+
+      current = closureNodes;
+
+      _simStates.add(Set.from(current));
+
+      _simLines.add({...usedLines, ...closureLines});
+    }
+  }
+
+  void _simRebuild() {
+    _simTokens = _tokenize(_simController.text);
+    _buildSimulation();
+    // Clamp step
+    if (_simStep > _simTokens.length) {
+      _simStep = _simTokens.length;
+    }
+  }
+
+  // Result at final step: ✓ / ✗ / ?
+  // Returns 1 = accept, 0 = reject, -1 = mixed
+  int _simFinalResult() {
+    if (_simStates.isEmpty) return 0;
+    final finalStates = _simStates.last;
+    if (finalStates.isEmpty) return 0;
+    bool anyAccept = false;
+    bool anyReject = false;
+    for (final nid in finalStates) {
+      final node = _nodes[nid];
+      if (node == null) continue;
+      if (node.isAccept) {
+        anyAccept = true;
+      } else {
+        anyReject = true;
+      }
+    }
+    if (anyAccept && anyReject) return -1;
+    if (anyAccept) return 1;
+    return 0;
+  }
 
   void _cancelRubberBand() {
     _lineSourceNodeId = null;
@@ -125,6 +510,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
     _nodes[line.nodeBId]?.connectedLineIds.remove(lineId);
 
     _lines.remove(lineId);
+    _refreshSimulation();
   }
 
   void _deleteNode(String nodeId) {
@@ -141,6 +527,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
 
     _nodes.remove(nodeId);
+    _refreshSimulation();
   }
 
   @override
@@ -168,6 +555,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
   @override
   void dispose() {
     _focusNode.dispose();
+    _simController.dispose();
     super.dispose();
   }
 
@@ -316,6 +704,26 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
 
     // ─────────────────────────────────────────────
+    // SELF LOOP ANGLES
+    // ─────────────────────────────────────────────
+
+    bool wroteLoopAngles = false;
+
+    for (final l in _lines.values) {
+      if (l.nodeAId != l.nodeBId) continue;
+
+      final loopRef = _lineRef(l);
+
+      lines.add('$loopRef loop angle = ${l.selfLoopAngle.toStringAsFixed(4)}');
+
+      wroteLoopAngles = true;
+    }
+
+    if (wroteLoopAngles) {
+      lines.add('');
+    }
+
+    // ─────────────────────────────────────────────
     // START ARROW
     // ─────────────────────────────────────────────
 
@@ -342,6 +750,277 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
 
     return lines.join('\n').trimRight();
+  }
+
+  String _exportToSvg(double width, double height) {
+    final graphData = {
+      'version': 2,
+
+      'nodes': _nodes.values.map((n) {
+        return {'id': n.id, 'x': n.position.dx, 'y': n.position.dy, 'label': n.label, 'accept': n.isAccept};
+      }).toList(),
+
+      'lines': _lines.values.map((l) {
+        return {
+          'id': l.id,
+          'a': l.nodeAId,
+          'b': l.nodeBId,
+          'label': l.label,
+          'curve': l.perpendicularPart,
+          'loopAngle': l.selfLoopAngle,
+        };
+      }).toList(),
+
+      'startArrow': _startArrow == null
+          ? null
+          : {
+              'nodeId': _startArrow!.nodeId,
+              'dx': _startArrow!.offset.dx,
+              'dy': _startArrow!.offset.dy,
+              'length': _startArrow!.length,
+              'label': _startArrow!.label,
+            },
+    };
+
+    final buffer = StringBuffer();
+
+    buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
+
+    buffer.writeln('''
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="$width"
+  height="$height"
+  viewBox="0 0 $width $height">
+''');
+
+    buffer.writeln('<script type="application/json" id="automata-data">');
+
+    buffer.writeln(const JsonEncoder.withIndent('  ').convert(graphData));
+
+    buffer.writeln('</script>');
+
+    buffer.writeln('''
+<defs>
+  <marker
+  id="arrowhead"
+  viewBox="0 0 10 10"
+  refX="8"
+  refY="5"
+  markerWidth="4"
+  markerHeight="4"
+  orient="auto">
+
+  <path
+    d="M 0 0 L 10 5 L 0 10 z"
+    fill="black"/>
+</marker>
+</defs>
+''');
+
+    // ─────────────────────────────
+    // LINES
+    // ─────────────────────────────
+
+    for (final line in _lines.values) {
+      final nodeA = _nodes[line.nodeAId];
+      final nodeB = _nodes[line.nodeBId];
+
+      if (nodeA == null || nodeB == null) continue;
+
+      final geometry = line.computeGeometry(nodeA.center, nodeB.center);
+
+      if (line.nodeAId == line.nodeBId) {
+        final radius = geometry.circleRadius!;
+
+        final start = geometry.startPoint;
+        final end = geometry.endPoint;
+
+        buffer.writeln('''
+<path
+  class="transition"
+  data-id="${line.id}"
+  data-label="${htmlEscape.convert(line.label)}"
+
+  d="
+    M ${start.dx} ${start.dy}
+    A $radius $radius 0 1 1 ${end.dx} ${end.dy}
+  "
+
+  fill="none"
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+''');
+      } else if (geometry.hasCircle) {
+        final radius = geometry.circleRadius!;
+
+        final start = geometry.startPoint;
+        final end = geometry.endPoint;
+
+        final largeArc = geometry.sweepAngle!.abs() > pi ? 1 : 0;
+
+        final sweep = geometry.sweepAngle! > 0 ? 1 : 0;
+
+        buffer.writeln('''
+<path
+  class="transition"
+  data-id="${line.id}"
+  data-label="${htmlEscape.convert(line.label)}"
+
+  d="
+    M ${start.dx} ${start.dy}
+    A $radius $radius 0 $largeArc $sweep ${end.dx} ${end.dy}
+  "
+
+  fill="none"
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+''');
+      } else {
+        buffer.writeln('''
+<line
+  class="transition"
+  data-id="${line.id}"
+  data-label="${htmlEscape.convert(line.label)}"
+
+  x1="${geometry.startPoint.dx}"
+  y1="${geometry.startPoint.dy}"
+
+  x2="${geometry.endPoint.dx}"
+  y2="${geometry.endPoint.dy}"
+
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+''');
+      }
+
+      final textPos = line.getTextBoxLocation(nodeA.center, nodeB.center, 120, 36, line.label);
+
+      buffer.writeln('''
+<text
+  x="${textPos.dx + 60}"
+  y="${textPos.dy + 24}"
+  font-family="Courier New"
+  font-size="30"
+  text-anchor="middle">
+${htmlEscape.convert(line.label)}
+</text>
+''');
+    }
+
+    // ─────────────────────────────
+    // NODES
+    // ─────────────────────────────
+
+    const nodeRadius = 42.0;
+const acceptRadius = 34.0;
+const strokeWidth = 3.0;
+
+for (final node in _nodes.values) {
+  final center = node.center;
+
+  final label =
+      node.label.trim().isEmpty
+          ? '∅'
+          : node.label;
+
+  buffer.writeln('''
+<g
+  class="node"
+  data-id="${node.id}">
+
+  <circle
+    cx="${center.dx}"
+    cy="${center.dy}"
+    r="$nodeRadius"
+
+    fill="white"
+    stroke="black"
+    stroke-width="$strokeWidth"/>
+
+''');
+
+  if (node.isAccept) {
+    buffer.writeln('''
+  <circle
+    cx="${center.dx}"
+    cy="${center.dy}"
+    r="$acceptRadius"
+
+    fill="none"
+    stroke="black"
+    stroke-width="$strokeWidth"/>
+''');
+  }
+
+  buffer.writeln('''
+  <text
+    x="${center.dx}"
+    y="${center.dy}"
+
+    dominant-baseline="middle"
+    text-anchor="middle"
+
+    font-family="Courier New"
+    font-size="24"
+
+    fill="black">
+
+    ${htmlEscape.convert(label)}
+
+  </text>
+
+</g>
+''');
+}
+
+    // ─────────────────────────────
+    // START ARROW
+    // ─────────────────────────────
+
+    if (_startArrow != null) {
+      final node = _nodes[_startArrow!.nodeId];
+
+      if (node != null) {
+        var dir = _startArrow!.direction();
+
+        if (dir.distance == 0) {
+          dir = const Offset(-0.7071, -0.7071);
+        }
+
+        final center = node.center;
+
+        final end = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
+
+        final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
+
+        buffer.writeln('''
+<line
+  class="start-arrow"
+
+  x1="${start.dx}"
+  y1="${start.dy}"
+
+  x2="${end.dx}"
+  y2="${end.dy}"
+
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
+''');
+      }
+    }
+
+    buffer.writeln('</svg>');
+
+    return buffer.toString();
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -583,6 +1262,35 @@ class _AutomataScreenState extends State<AutomataScreen> {
           continue;
         }
 
+        // ── "lineLabel loop angle = N" ─────────────────────────────
+        final loopAngleRe = RegExp(r'^(.+?)\s+loop\s+angle\s*=\s*(-?[\d.]+)$', caseSensitive: false);
+
+        final loopAngleMatch = loopAngleRe.firstMatch(line);
+
+        if (loopAngleMatch != null) {
+          final lbl = unescapeDsl(loopAngleMatch.group(1)!.trim());
+
+          final val = double.parse(loopAngleMatch.group(2)!);
+
+          String? lid;
+
+          final explicitRef = RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
+
+          if (explicitRef != null) {
+            lid = explicitRef.group(1);
+          } else if (newLines.containsKey(lbl)) {
+            lid = lbl;
+          } else {
+            lid = lineLabelToId[lbl];
+          }
+
+          if (lid != null && newLines.containsKey(lid)) {
+            newLines[lid]!.selfLoopAngle = val;
+          }
+
+          continue;
+        }
+
         // ── "label is accepted" ───────────────────────────────
         final acceptRe = RegExp(r'^(.+?)\s+is\s+accepted$', caseSensitive: false);
 
@@ -716,6 +1424,101 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
   }
 
+  String? _importFromSvg(String svg) {
+    try {
+      final scriptMatch = RegExp(r'<script[^>]*id="automata-data"[^>]*>(.*?)</script>', dotAll: true).firstMatch(svg);
+
+      if (scriptMatch == null) {
+        return 'No embedded automata data found.';
+      }
+
+      final jsonText = scriptMatch.group(1)!.trim();
+
+      final data = jsonDecode(jsonText);
+
+      final newNodes = <String, NodeData>{};
+      final newLines = <String, LineData>{};
+
+      for (final n in data['nodes']) {
+        final node = NodeData(
+          id: n['id'],
+
+          position: Offset((n['x'] as num).toDouble(), (n['y'] as num).toDouble()),
+
+          label: n['label'] ?? '',
+        );
+
+        node.isAccept = n['accept'] == true;
+
+        newNodes[node.id] = node;
+      }
+
+      for (final l in data['lines']) {
+        final line = LineData(id: l['id'], nodeAId: l['a'], nodeBId: l['b'], label: l['label'] ?? '');
+
+        line.perpendicularPart = (l['curve'] as num?)?.toDouble() ?? 0;
+
+        line.selfLoopAngle = (l['loopAngle'] as num?)?.toDouble() ?? 0;
+
+        newLines[line.id] = line;
+
+        newNodes[line.nodeAId]?.connectedLineIds.add(line.id);
+
+        newNodes[line.nodeBId]?.connectedLineIds.add(line.id);
+      }
+
+      StartArrowData? startArrow;
+
+      if (data['startArrow'] != null) {
+        final sa = data['startArrow'];
+
+        startArrow = StartArrowData(
+          nodeId: sa['nodeId'],
+
+          offset: Offset((sa['dx'] as num).toDouble(), (sa['dy'] as num).toDouble()),
+
+          length: (sa['length'] as num).toDouble(),
+
+          label: sa['label'] ?? '',
+        );
+      }
+
+      int highestNode = 0;
+      int highestLine = 0;
+
+      for (final id in newNodes.keys) {
+        final num = int.tryParse(id.substring(1)) ?? 0;
+
+        highestNode = max(highestNode, num + 1);
+      }
+
+      for (final id in newLines.keys) {
+        final num = int.tryParse(id.substring(1)) ?? 0;
+
+        highestLine = max(highestLine, num + 1);
+      }
+
+      setState(() {
+        _nodes
+          ..clear()
+          ..addAll(newNodes);
+
+        _lines
+          ..clear()
+          ..addAll(newLines);
+
+        _startArrow = startArrow;
+
+        _nodeCounter = highestNode;
+        _lineCounter = highestLine;
+      });
+
+      return null;
+    } catch (e) {
+      return 'SVG import failed: $e';
+    }
+  }
+
   /// Find the index of the first " to " that is NOT inside a word.
   /// Returns the index of the space before "to", or -1 if not found.
   int _findToSeparator(String s) {
@@ -781,9 +1584,79 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
         actions: [
           TextButton(
+            onPressed: () async {
+              final widthController = TextEditingController(text: '1920');
+
+              final heightController = TextEditingController(text: '1080');
+
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) {
+                  return AlertDialog(
+                    title: const Text('SVG Size'),
+
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: widthController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Width'),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        TextField(
+                          controller: heightController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Height'),
+                        ),
+                      ],
+                    ),
+
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context, false);
+                        },
+                        child: const Text('Cancel'),
+                      ),
+
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context, true);
+                        },
+                        child: const Text('Export'),
+                      ),
+                    ],
+                  );
+                },
+              );
+
+              if (confirmed != true) return;
+
+              final width = double.tryParse(widthController.text) ?? 1920;
+
+              final height = double.tryParse(heightController.text) ?? 1080;
+
+              final svg = _exportToSvg(width, height);
+
+              await Clipboard.setData(ClipboardData(text: svg));
+
+              if (!mounted) return;
+
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('SVG copied (${width.toInt()}×${height.toInt()})')));
+            },
+
+            child: const Text('Export SVG'),
+          ),
+          TextButton(
             onPressed: () {
               setState(() {
-                _savedExports.insert(0,
+                _savedExports.insert(
+                  0,
                   SavedExport(
                     name: nameController.text.trim().isEmpty ? 'Untitled' : nameController.text.trim(),
 
@@ -880,7 +1753,13 @@ class _AutomataScreenState extends State<AutomataScreen> {
             TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
-                final err = _importFromDsl(controller.text.trim());
+                final text = controller.text.trim();
+
+                final lower = text.toLowerCase();
+
+                final isSvg = lower.contains('<svg') && lower.contains('</svg>');
+
+                final err = isSvg ? _importFromSvg(text) : _importFromDsl(text);
                 if (err == null) {
                   Navigator.of(ctx).pop();
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import successful')));
@@ -1237,6 +2116,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
         }
       });
     }
+    _refreshSimulation();
   }
 
   void _onPanEnd(DragEndDetails details) {
@@ -1277,6 +2157,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
     _cancelRubberBand();
     _lineSourceNodeId = null;
     _rubberBandEnd = null;
+    _refreshSimulation();
   }
 
   void _onPanUpdateWithTracking(DragUpdateDetails details) {
@@ -1298,9 +2179,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return Scaffold(
       drawer: Drawer(
         child: SafeArea(
-          child: Column(
+          child: ListView(
+            padding: EdgeInsets.zero,
             children: [
-              const Spacer(),
+              const SizedBox(height: 8),
 
               SwitchListTile(
                 title: const Text('Show Help'),
@@ -1313,7 +2195,16 @@ class _AutomataScreenState extends State<AutomataScreen> {
                 },
               ),
 
-              const SizedBox(height: 8),
+              SwitchListTile(
+                title: const Text('String Simulator'),
+                subtitle: const Text('Show/hide the simulator panel.'),
+                value: _showSimulator,
+                onChanged: (value) {
+                  setState(() {
+                    _showSimulator = value;
+                  });
+                },
+              ),
 
               const Divider(),
 
@@ -1434,6 +2325,20 @@ class _AutomataScreenState extends State<AutomataScreen> {
             onPressed: () => _setLineMode(!_lineMode),
             child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
           ),
+
+          const SizedBox(height: 12),
+
+          FloatingActionButton.small(
+            heroTag: 'toggleSim',
+            tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
+            backgroundColor: _showSimulator ? Colors.purple.shade100 : null,
+            onPressed: () {
+              setState(() {
+                _showSimulator = !_showSimulator;
+              });
+            },
+            child: const Icon(Icons.science, size: 20),
+          ),
         ],
       ),
 
@@ -1453,6 +2358,8 @@ class _AutomataScreenState extends State<AutomataScreen> {
               if (tappedNode != null) {
                 setState(() {
                   _startArrow = StartArrowData(nodeId: tappedNode.id);
+
+                  _refreshSimulation();
 
                   _placingStartArrow = false;
                 });
@@ -1485,6 +2392,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                     nodeCenter: _nodes[_startArrow!.nodeId]!.center,
 
                     deleteMode: _deleteMode,
+                    highlighted: _simStep == -1 && _simTokens.isNotEmpty,
 
                     onDelete: () {
                       setState(() {
@@ -1519,9 +2427,11 @@ class _AutomataScreenState extends State<AutomataScreen> {
                       centerA: nodeA.center,
                       centerB: nodeB.center,
                       deleteMode: _deleteMode,
+                      highlighted: _simActiveLines.contains(line.id),
                       onLabelChanged: (text) {
                         setState(() {
                           line.label = text;
+                          _refreshSimulation();
                         });
                       },
                     ),
@@ -1588,18 +2498,238 @@ class _AutomataScreenState extends State<AutomataScreen> {
                   ),
                 ),
 
+              // ═══════════════════════════════════════════════════
+              // STRING SIMULATION OVERLAY (top-left)
+              // ═══════════════════════════════════════════════════
+              if (_showSimulator)
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Material(
+                    elevation: 6,
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withOpacity(0.96),
+                    child: Container(
+                      width: 280,
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      child: StatefulBuilder(
+                        builder: (ctx, setPanel) {
+                          void rebuild() {
+                            setState(() => _simRebuild());
+                            setPanel(() {});
+                          }
+
+                          String stepLabel() {
+                            if (_simTokens.isEmpty) return '—';
+                            if (_simStep < 0) return 'start';
+                            return '${_simStep} / ${_simTokens.length}';
+                          }
+
+                          Widget statusBox() {
+                            IconData icon;
+                            Color color;
+                            final atEnd = _simStep == _simTokens.length && _simTokens.isNotEmpty;
+                            if (!atEnd || _simStates.isEmpty) {
+                              icon = Icons.question_mark;
+                              color = Colors.grey.shade400;
+                            } else {
+                              final r = _simFinalResult();
+                              if (r == 1) {
+                                icon = Icons.check;
+                                color = Colors.green;
+                              } else if (r == 0) {
+                                icon = Icons.close;
+                                color = Colors.red;
+                              } else {
+                                icon = Icons.question_mark;
+                                color = Colors.orange;
+                              }
+                            }
+                            return Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.black54, width: 1.5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Icon(icon, color: color, size: 20),
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'String Simulation',
+                                    style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  const Spacer(),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _showSimulator = false),
+                                    child: const Icon(Icons.close, size: 16, color: Colors.black54),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+
+                              TextField(
+                                controller: _simController,
+                                style: GoogleFonts.courierPrime(fontSize: 13),
+                                decoration: InputDecoration(
+                                  hintText: 'Enter input string…',
+                                  hintStyle: GoogleFonts.courierPrime(fontSize: 12, color: Colors.black38),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  suffixIcon: _simController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 16),
+                                          onPressed: () {
+                                            _simController.clear();
+                                            setState(() {
+                                              _simTokens = [];
+                                              _simStep = -1;
+                                              _simStates.clear();
+                                              _simLines.clear();
+                                            });
+                                            setPanel(() {});
+                                          },
+                                        )
+                                      : null,
+                                ),
+                                onChanged: (v) {
+                                  rebuild();
+                                  setState(() => _simStep = -1);
+                                  setPanel(() {});
+                                },
+                              ),
+
+                              const SizedBox(height: 6),
+
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.skip_previous, size: 20),
+                                    tooltip: 'Go to start',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: _simTokens.isEmpty
+                                        ? null
+                                        : () {
+                                            setState(() => _simStep = -1);
+                                            setPanel(() {});
+                                          },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_left, size: 20),
+                                    tooltip: 'Step back',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: (_simStep <= -1 || _simTokens.isEmpty)
+                                        ? null
+                                        : () {
+                                            setState(() => _simStep--);
+                                            setPanel(() {});
+                                          },
+                                  ),
+                                  const Spacer(),
+                                  statusBox(),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_right, size: 20),
+                                    tooltip: 'Step forward',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: (_simTokens.isEmpty || _simStep >= _simTokens.length)
+                                        ? null
+                                        : () {
+                                            setState(() => _simStep++);
+                                            setPanel(() {});
+                                          },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.skip_next, size: 20),
+                                    tooltip: 'Go to end',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: (_simTokens.isEmpty || _simStep == _simTokens.length)
+                                        ? null
+                                        : () {
+                                            setState(() => _simStep = _simTokens.length);
+                                            setPanel(() {});
+                                          },
+                                  ),
+                                ],
+                              ),
+
+                              Center(
+                                child: Text(
+                                  stepLabel(),
+                                  style: GoogleFonts.courierPrime(fontSize: 11, color: Colors.black54),
+                                ),
+                              ),
+
+                              if (_simTokens.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: List.generate(_simTokens.length, (i) {
+                                      final consumed = _simStep > i;
+                                      final current = _simStep == i;
+                                      return Container(
+                                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: current
+                                              ? Colors.lightBlueAccent.withOpacity(0.4)
+                                              : consumed
+                                              ? Colors.grey.shade200
+                                              : Colors.transparent,
+                                          border: Border.all(
+                                            color: current ? Colors.lightBlueAccent : Colors.black26,
+                                            width: current ? 2 : 1,
+                                          ),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          _simTokens[i],
+                                          style: GoogleFonts.courierPrime(
+                                            fontSize: 12,
+                                            color: consumed ? Colors.black38 : Colors.black,
+                                            fontWeight: current ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+
               ..._nodes.values.map(
                 (node) => Node(
                   key: ValueKey(node.id),
                   data: node,
                   lineMode: _lineMode,
                   deleteMode: _deleteMode,
+                  highlighted: _simActiveNodes.contains(node.id),
 
                   isLabelTaken: _isLabelTaken,
 
                   onLabelChanged: (text) {
                     setState(() {
                       node.label = text;
+                      _refreshSimulation();
                     });
                   },
 
@@ -1613,6 +2743,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                     setState(() {
                       node.isAccept = !node.isAccept;
                     });
+                    _refreshSimulation();
                   },
 
                   onDelete: () {
