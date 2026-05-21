@@ -77,6 +77,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // _simStep: -1 = before any input (only start arrow/node lit),
   //           0..n = after consuming token[0..n-1]
   int _simStep = -1;
+
   // Each step maps to a SET of active node IDs (NFA support)
   // _simStates[i] = set of node IDs active after consuming i tokens
   // _simStates[-1+1=0] = initial states
@@ -144,10 +145,23 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
       visitedStates.add(stateKey);
 
-      for (final line in _lines.values) {
-        if (line.nodeAId != current.nodeId) {
-          continue;
-        }
+      final currentNode = _nodes[current.nodeId];
+
+if (currentNode == null) {
+  continue;
+}
+
+// Halt states terminate immediately.
+// No epsilon/free/null transitions allowed.
+if (currentNode.isHaltAccept ||
+    currentNode.isHaltReject) {
+  continue;
+}
+
+for (final line in _lines.values) {
+  if (line.nodeAId != current.nodeId) {
+    continue;
+  }
 
         final alternatives = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
 
@@ -402,15 +416,43 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
 
     // Halt accept:
-    // instantly accept entire simulation
-    if (currentNode.isHaltAccept) {
-      current = {nodeId};
+// instantly end ALL processing
+if (currentNode.isHaltAccept) {
+  current = {nodeId};
 
-      _simStates.add(Set.from(current));
-      _simLines.add(Set.from(usedLines));
+  // Clear any future partial states
+  while (_simStates.length > _simStep + 2) {
+    _simStates.removeLast();
+  }
 
-      return;
-    }
+  while (_simLines.length > _simStep + 2) {
+    _simLines.removeLast();
+  }
+
+  _simStates.add({nodeId});
+  _simLines.add(Set.from(usedLines));
+
+  // Force simulation to final step
+  _simStep = _simTokens.length;
+
+  return;
+}
+
+// Halt reject kills only this branch
+if (currentNode.isHaltReject) {
+  continue;
+}
+
+// Halt accept instantly ends ALL processing
+if (currentNode.isHaltAccept) {
+  current = {nodeId};
+
+  _simStates.add(Set.from(current));
+  _simLines.add(Set.from(usedLines));
+
+
+  return;
+}
 
     // Normal transitions
     for (final line in _lines.values) {
@@ -480,6 +522,18 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   bool anyAccept = false;
   bool anyReject = false;
+
+  // If any state ever reached halt accept,
+// simulation is accepted forever.
+for (final states in _simStates) {
+  for (final nid in states) {
+    final node = _nodes[nid];
+
+    if (node?.isHaltAccept == true) {
+      return 1;
+    }
+  }
+}
 
   for (final nid in finalStates) {
     final node = _nodes[nid];
@@ -2870,11 +2924,35 @@ if (node.isHaltReject) {
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                     onPressed: (_simTokens.isEmpty || _simStep >= _simTokens.length)
-                                        ? null
-                                        : () {
-                                            setState(() => _simStep++);
-                                            setPanel(() {});
-                                          },
+    ? null
+    : () {
+        setState(() {
+          _simStep++;
+
+          // If the newly displayed state contains
+          // a halt accept node, next frame becomes final.
+          if (_simStep < _simStates.length) {
+            final states = _simStates[_simStep];
+
+            bool hasHaltAccept = false;
+
+            for (final nid in states) {
+              final node = _nodes[nid];
+
+              if (node?.isHaltAccept == true) {
+                hasHaltAccept = true;
+                break;
+              }
+            }
+
+            if (hasHaltAccept) {
+              _simStep = _simTokens.length;
+            }
+          }
+        });
+
+        setPanel(() {});
+      },
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.skip_next, size: 20),
