@@ -752,14 +752,138 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return lines.join('\n').trimRight();
   }
 
-  String _exportToSvg(double width, double height) {
+  // ═══════════════════════════════════════════════════════════════
+  // SVG ARROW HELPER — draws a filled triangle arrowhead at [tip]
+  // pointing in [angle] radians, and returns the shortened endpoint
+  // (base of the arrowhead) so the stroke doesn't poke through.
+  // ═══════════════════════════════════════════════════════════════
+  static const double _svgArrowLen = 15;
+  static const double _svgArrowWing = 9;
+
+  /// Returns SVG markup for a filled arrowhead polygon at [tip] pointing
+  /// in direction [angle].
+  String _svgArrowhead(Offset tip, double angle) {
+    final dx = cos(angle);
+    final dy = sin(angle);
+    final p1x = tip.dx - _svgArrowLen * dx + _svgArrowWing * dy;
+    final p1y = tip.dy - _svgArrowLen * dy - _svgArrowWing * dx;
+    final p2x = tip.dx - _svgArrowLen * dx - _svgArrowWing * dy;
+    final p2y = tip.dy - _svgArrowLen * dy + _svgArrowWing * dx;
+    return '<polygon points="${tip.dx},${tip.dy} $p1x,$p1y $p2x,$p2y" fill="var(--fg)"/>';
+  }
+
+  /// Returns the endpoint shortened by [_svgArrowLen] along [angle].
+  Offset _shortenedEnd(Offset tip, double angle) {
+    return Offset(
+      tip.dx - cos(angle) * _svgArrowLen,
+      tip.dy - sin(angle) * _svgArrowLen,
+    );
+  }
+
+  String _exportToSvg() {
+    // ─────────────────────────────────────────────
+    // BOUNDING BOX COMPUTATION
+    // We collect every rectangle that must be visible:
+    //   • node circles (center ± nodeRadius + strokeWidth)
+    //   • line label text boxes
+    //   • start-arrow line + its label text box
+    // Lines themselves are only expanded if their midpoint already
+    // falls outside the box formed by the above elements.
+    // ─────────────────────────────────────────────
+
+    const double nodeRadius = 42.0;
+    const double nodePad = nodeRadius + 4; // stroke clearance
+    const double pad = 30.0; // outer SVG padding
+
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = double.negativeInfinity;
+    double maxY = double.negativeInfinity;
+
+    void expandPoint(double x, double y) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+
+    void expandRect(double left, double top, double right, double bottom) {
+      expandPoint(left, top);
+      expandPoint(right, bottom);
+    }
+
+    // Nodes
+    for (final node in _nodes.values) {
+      final c = node.center;
+      expandRect(c.dx - nodePad, c.dy - nodePad, c.dx + nodePad, c.dy + nodePad);
+    }
+
+    // Line label text boxes (always included)
+    for (final line in _lines.values) {
+      final nodeA = _nodes[line.nodeAId];
+      final nodeB = _nodes[line.nodeBId];
+      if (nodeA == null || nodeB == null) continue;
+
+      if (line.label.trim().isNotEmpty) {
+        const double boxW = 120;
+        const double lineH = 36.0;
+        final lineCount = '\n'.allMatches(line.label).length + 1;
+        final double boxH = lineH * lineCount;
+        final pos = line.getTextBoxLocation(nodeA.center, nodeB.center, boxW, boxH, line.label);
+        expandRect(pos.dx, pos.dy, pos.dx + boxW, pos.dy + boxH);
+      }
+
+      // Expand for arc/loop geometry mid-point (only if already off-canvas)
+      final geometry = line.computeGeometry(nodeA.center, nodeB.center);
+      // We include the arc's midpoint so arcs don't clip unexpectedly
+      expandPoint(geometry.midPoint.dx, geometry.midPoint.dy);
+      expandPoint(geometry.startPoint.dx, geometry.startPoint.dy);
+      expandPoint(geometry.endPoint.dx, geometry.endPoint.dy);
+    }
+
+    // Start arrow
+    if (_startArrow != null) {
+      final node = _nodes[_startArrow!.nodeId];
+      if (node != null) {
+        var dir = _startArrow!.direction();
+        if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071);
+        final center = node.center;
+        final arrowEnd = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
+        final arrowStart = Offset(arrowEnd.dx + dir.dx * _startArrow!.length, arrowEnd.dy + dir.dy * _startArrow!.length);
+        expandPoint(arrowStart.dx, arrowStart.dy);
+        expandPoint(arrowEnd.dx, arrowEnd.dy);
+
+        if (_startArrow!.label.trim().isNotEmpty) {
+          const double boxW = 120;
+          const double lineH = 36.0;
+          final lineCount = '\n'.allMatches(_startArrow!.label).length + 1;
+          final double boxH = lineH * lineCount;
+          final perp = Offset(-dir.dy, dir.dx);
+          final labelPos = Offset(arrowStart.dx + perp.dx * 30 - boxW / 2, arrowStart.dy + perp.dy * 30 - boxH / 2);
+          expandRect(labelPos.dx, labelPos.dy, labelPos.dx + boxW, labelPos.dy + boxH);
+        }
+      }
+    }
+
+    // Fallback if graph is empty
+    if (minX == double.infinity) {
+      minX = 0; minY = 0; maxX = 400; maxY = 300;
+    }
+
+    final double vx = minX - pad;
+    final double vy = minY - pad;
+    final double vw = (maxX - minX) + pad * 2;
+    final double vh = (maxY - minY) + pad * 2;
+
+    // ─────────────────────────────────────────────
+    // GRAPH DATA EMBEDDED AS JSON
+    // ─────────────────────────────────────────────
+
     final graphData = {
       'version': 2,
-
       'nodes': _nodes.values.map((n) {
         return {'id': n.id, 'x': n.position.dx, 'y': n.position.dy, 'label': n.label, 'accept': n.isAccept};
       }).toList(),
-
       'lines': _lines.values.map((l) {
         return {
           'id': l.id,
@@ -770,7 +894,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
           'loopAngle': l.selfLoopAngle,
         };
       }).toList(),
-
       'startArrow': _startArrow == null
           ? null
           : {
@@ -786,37 +909,33 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
     buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
 
-    buffer.writeln('''
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="$width"
-  height="$height"
-  viewBox="0 0 $width $height">
+    // Emit viewBox tightly fitted to content; width/height in px match viewBox.
+    buffer.writeln(
+      '<svg xmlns="http://www.w3.org/2000/svg"'
+      ' width="${vw.toStringAsFixed(1)}"'
+      ' height="${vh.toStringAsFixed(1)}"'
+      ' viewBox="${vx.toStringAsFixed(1)} ${vy.toStringAsFixed(1)} ${vw.toStringAsFixed(1)} ${vh.toStringAsFixed(1)}">',
+    );
+    buffer.writeln();
+
+    // ─────────────────────────────────────────────
+    // COLOR VARIABLES — edit these to retheme everything
+    // ─────────────────────────────────────────────
+    buffer.writeln('''<style>
+  :root {
+    --fg:          black;   /* stroke, arrow fill, text */
+    --node-fill:   none;    /* node circle interior     */
+    --label-fill:  black;   /* text inside nodes        */
+    --hint-fill:   #888;    /* hint text color          */
+  }
+</style>
 ''');
 
+    // Embedded graph data
     buffer.writeln('<script type="application/json" id="automata-data">');
-
     buffer.writeln(const JsonEncoder.withIndent('  ').convert(graphData));
-
     buffer.writeln('</script>');
-
-    buffer.writeln('''
-<defs>
-  <marker
-  id="arrowhead"
-  viewBox="0 0 10 10"
-  refX="8"
-  refY="5"
-  markerWidth="4"
-  markerHeight="4"
-  orient="auto">
-
-  <path
-    d="M 0 0 L 10 5 L 0 10 z"
-    fill="black"/>
-</marker>
-</defs>
-''');
+    buffer.writeln();
 
     // ─────────────────────────────
     // LINES
@@ -825,160 +944,128 @@ class _AutomataScreenState extends State<AutomataScreen> {
     for (final line in _lines.values) {
       final nodeA = _nodes[line.nodeAId];
       final nodeB = _nodes[line.nodeBId];
-
       if (nodeA == null || nodeB == null) continue;
 
       final geometry = line.computeGeometry(nodeA.center, nodeB.center);
+      const double strokeW = 4;
 
       if (line.nodeAId == line.nodeBId) {
+        // ── Self loop ──
         final radius = geometry.circleRadius!;
+        final startPt = geometry.startPoint;
+        final tipPt = geometry.endPoint;
+        final arrowAngle = geometry.arrowAngle!;
+        final shortenedEnd = _shortenedEnd(tipPt, arrowAngle);
 
-        final start = geometry.startPoint;
-        final end = geometry.endPoint;
-
-        buffer.writeln('''
-<path
-  class="transition"
-  data-id="${line.id}"
-  data-label="${htmlEscape.convert(line.label)}"
-
-  d="
-    M ${start.dx} ${start.dy}
-    A $radius $radius 0 1 1 ${end.dx} ${end.dy}
-  "
-
-  fill="none"
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('<g class="transition" data-id="${line.id}" data-label="${htmlEscape.convert(line.label)}">');
+        buffer.writeln(
+          '  <path d="M ${startPt.dx} ${startPt.dy} A $radius $radius 0 1 1 ${shortenedEnd.dx} ${shortenedEnd.dy}"'
+          ' fill="none" stroke="var(--fg)" stroke-width="$strokeW" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, arrowAngle)}');
+        buffer.writeln('</g>');
       } else if (geometry.hasCircle) {
+        // ── Curved arc ──
         final radius = geometry.circleRadius!;
-
-        final start = geometry.startPoint;
-        final end = geometry.endPoint;
-
+        final startPt = geometry.startPoint;
+        final tipPt = geometry.endPoint;
+        final arrowAngle = geometry.arrowAngle!;
+        final shortenedEnd = _shortenedEnd(tipPt, arrowAngle);
         final largeArc = geometry.sweepAngle!.abs() > pi ? 1 : 0;
-
         final sweep = geometry.sweepAngle! > 0 ? 1 : 0;
 
-        buffer.writeln('''
-<path
-  class="transition"
-  data-id="${line.id}"
-  data-label="${htmlEscape.convert(line.label)}"
-
-  d="
-    M ${start.dx} ${start.dy}
-    A $radius $radius 0 $largeArc $sweep ${end.dx} ${end.dy}
-  "
-
-  fill="none"
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('<g class="transition" data-id="${line.id}" data-label="${htmlEscape.convert(line.label)}">');
+        buffer.writeln(
+          '  <path d="M ${startPt.dx} ${startPt.dy} A $radius $radius 0 $largeArc $sweep ${shortenedEnd.dx} ${shortenedEnd.dy}"'
+          ' fill="none" stroke="var(--fg)" stroke-width="$strokeW" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, arrowAngle)}');
+        buffer.writeln('</g>');
       } else {
-        buffer.writeln('''
-<line
-  class="transition"
-  data-id="${line.id}"
-  data-label="${htmlEscape.convert(line.label)}"
+        // ── Straight line ──
+        final startPt = geometry.startPoint;
+        final tipPt = geometry.endPoint;
+        final angle = atan2(tipPt.dy - startPt.dy, tipPt.dx - startPt.dx);
+        final shortenedEnd = _shortenedEnd(tipPt, angle);
 
-  x1="${geometry.startPoint.dx}"
-  y1="${geometry.startPoint.dy}"
-
-  x2="${geometry.endPoint.dx}"
-  y2="${geometry.endPoint.dy}"
-
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('<g class="transition" data-id="${line.id}" data-label="${htmlEscape.convert(line.label)}">');
+        buffer.writeln(
+          '  <line x1="${startPt.dx}" y1="${startPt.dy}" x2="${shortenedEnd.dx}" y2="${shortenedEnd.dy}"'
+          ' stroke="var(--fg)" stroke-width="$strokeW" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, angle)}');
+        buffer.writeln('</g>');
       }
 
-      final textPos = line.getTextBoxLocation(nodeA.center, nodeB.center, 120, 36, line.label);
-
-      buffer.writeln('''
-<text
-  x="${textPos.dx + 60}"
-  y="${textPos.dy + 24}"
-  font-family="Courier New"
-  font-size="30"
-  text-anchor="middle">
-${htmlEscape.convert(line.label)}
-</text>
-''');
+      // Label
+      if (line.label.trim().isNotEmpty) {
+        const double boxW = 120;
+        const double lineH = 36.0;
+        final lineCount = '\n'.allMatches(line.label).length + 1;
+        final double boxH = lineH * lineCount;
+        final textPos = line.getTextBoxLocation(nodeA.center, nodeB.center, boxW, boxH, line.label);
+        final parts = line.label.split('\n');
+        buffer.writeln('<text x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(textPos.dy + 24).toStringAsFixed(1)}"'
+            ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
+            ' text-anchor="middle" fill="var(--fg)">');
+        for (int i = 0; i < parts.length; i++) {
+          if (i == 0) {
+            buffer.writeln('  <tspan>${htmlEscape.convert(parts[i])}</tspan>');
+          } else {
+            buffer.writeln('  <tspan x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>');
+          }
+        }
+        buffer.writeln('</text>');
+      }
+      buffer.writeln();
     }
 
     // ─────────────────────────────
     // NODES
     // ─────────────────────────────
 
-    const nodeRadius = 42.0;
-const acceptRadius = 34.0;
-const strokeWidth = 3.0;
+    const double acceptRadius = 34.0;
+    const double strokeWidth = 3.0;
 
-for (final node in _nodes.values) {
-  final center = node.center;
+    for (final node in _nodes.values) {
+      final center = node.center;
+      final hasLabel = node.label.trim().isNotEmpty;
+      // Hint text: alphabetic ID (same logic as getDisplayId in node.dart)
+      String getDisplayId(String rawId) {
+        final number = int.tryParse(rawId.replaceFirst('n', ''));
+        if (number == null || number < 0) return rawId;
+        int n = number;
+        String result = '';
+        do {
+          result = String.fromCharCode(65 + (n % 26)) + result;
+          n = (n ~/ 26) - 1;
+        } while (n >= 0);
+        return result;
+      }
 
-  final label =
-      node.label.trim().isEmpty
-          ? '∅'
-          : node.label;
+      final displayText = hasLabel ? node.label : getDisplayId(node.id);
+      final textColor = hasLabel ? 'var(--label-fill)' : 'var(--hint-fill)';
 
-  buffer.writeln('''
-<g
-  class="node"
-  data-id="${node.id}">
-
-  <circle
-    cx="${center.dx}"
-    cy="${center.dy}"
-    r="$nodeRadius"
-
-    fill="white"
-    stroke="black"
-    stroke-width="$strokeWidth"/>
-
-''');
-
-  if (node.isAccept) {
-    buffer.writeln('''
-  <circle
-    cx="${center.dx}"
-    cy="${center.dy}"
-    r="$acceptRadius"
-
-    fill="none"
-    stroke="black"
-    stroke-width="$strokeWidth"/>
-''');
-  }
-
-  buffer.writeln('''
-  <text
-    x="${center.dx}"
-    y="${center.dy}"
-
-    dominant-baseline="middle"
-    text-anchor="middle"
-
-    font-family="Courier New"
-    font-size="24"
-
-    fill="black">
-
-    ${htmlEscape.convert(label)}
-
-  </text>
-
-</g>
-''');
-}
+      buffer.writeln('<g class="node" data-id="${node.id}">');
+      buffer.writeln(
+        '  <circle cx="${center.dx}" cy="${center.dy}" r="$nodeRadius"'
+        ' fill="var(--node-fill)" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+      );
+      if (node.isAccept) {
+        buffer.writeln(
+          '  <circle cx="${center.dx}" cy="${center.dy}" r="$acceptRadius"'
+          ' fill="none" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+        );
+      }
+      buffer.writeln(
+        '  <text x="${center.dx}" y="${center.dy}"'
+        ' dominant-baseline="middle" text-anchor="middle"'
+        ' font-family="Courier New, monospace" font-weight="bold" font-size="24"'
+        ' fill="$textColor">${htmlEscape.convert(displayText)}</text>',
+      );
+      buffer.writeln('</g>');
+      buffer.writeln();
+    }
 
     // ─────────────────────────────
     // START ARROW
@@ -986,40 +1073,50 @@ for (final node in _nodes.values) {
 
     if (_startArrow != null) {
       final node = _nodes[_startArrow!.nodeId];
-
       if (node != null) {
         var dir = _startArrow!.direction();
-
-        if (dir.distance == 0) {
-          dir = const Offset(-0.7071, -0.7071);
-        }
+        if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071);
 
         final center = node.center;
+        final tipPt = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
+        final arrowStart = Offset(tipPt.dx + dir.dx * _startArrow!.length, tipPt.dy + dir.dy * _startArrow!.length);
+        final angle = atan2(tipPt.dy - arrowStart.dy, tipPt.dx - arrowStart.dx);
+        final shortenedTip = _shortenedEnd(tipPt, angle);
 
-        final end = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
+        buffer.writeln('<g class="start-arrow">');
+        buffer.writeln(
+          '  <line x1="${arrowStart.dx}" y1="${arrowStart.dy}" x2="${shortenedTip.dx}" y2="${shortenedTip.dy}"'
+          ' stroke="var(--fg)" stroke-width="4" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, angle)}');
 
-        final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
+        // Start arrow label
+        if (_startArrow!.label.trim().isNotEmpty) {
+          const double boxW = 120;
+          const double lineH = 36.0;
+          final lineCount = '\n'.allMatches(_startArrow!.label).length + 1;
+          final double boxH = lineH * lineCount;
+          final perp = Offset(-dir.dy, dir.dx);
+          final labelPos = Offset(arrowStart.dx + perp.dx * 30 - boxW / 2, arrowStart.dy + perp.dy * 30 - boxH / 2);
+          final parts = _startArrow!.label.split('\n');
+          buffer.writeln('<text x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(labelPos.dy + 24).toStringAsFixed(1)}"'
+              ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
+              ' text-anchor="middle" fill="var(--fg)">');
+          for (int i = 0; i < parts.length; i++) {
+            if (i == 0) {
+              buffer.writeln('  <tspan>${htmlEscape.convert(parts[i])}</tspan>');
+            } else {
+              buffer.writeln('  <tspan x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>');
+            }
+          }
+          buffer.writeln('</text>');
+        }
 
-        buffer.writeln('''
-<line
-  class="start-arrow"
-
-  x1="${start.dx}"
-  y1="${start.dy}"
-
-  x2="${end.dx}"
-  y2="${end.dy}"
-
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('</g>');
       }
     }
 
     buffer.writeln('</svg>');
-
     return buffer.toString();
   }
 
@@ -1635,11 +1732,7 @@ for (final node in _nodes.values) {
 
               if (confirmed != true) return;
 
-              final width = double.tryParse(widthController.text) ?? 1920;
-
-              final height = double.tryParse(heightController.text) ?? 1080;
-
-              final svg = _exportToSvg(width, height);
+              final svg = _exportToSvg();
 
               await Clipboard.setData(ClipboardData(text: svg));
 
@@ -1647,7 +1740,7 @@ for (final node in _nodes.values) {
 
               ScaffoldMessenger.of(
                 context,
-              ).showSnackBar(SnackBar(content: Text('SVG copied (${width.toInt()}×${height.toInt()})')));
+              ).showSnackBar(const SnackBar(content: Text('SVG copied (auto-sized)')));
             },
 
             child: const Text('Export SVG'),
