@@ -7,8 +7,52 @@ import 'models.dart';
 import 'node.dart';
 import 'line.dart';
 import 'start_arrow.dart';
+import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 
 void main() => runApp(const MyApp());
+
+class BatchHighlightController extends TextEditingController {
+  final bool Function(int lineIndex) isAccepted;
+  final bool Function(int lineIndex) isRejected;
+
+  BatchHighlightController({required this.isAccepted, required this.isRejected});
+
+  @override
+  TextSpan buildTextSpan({required BuildContext context, TextStyle? style, required bool withComposing}) {
+    final lines = text.split('\n');
+
+    final children = <InlineSpan>[];
+
+    for (int i = 0; i < lines.length; i++) {
+      Color color = Colors.white;
+
+      if (isAccepted(i)) {
+        color = Colors.green;
+      } else if (isRejected(i)) {
+        color = Colors.red;
+      }
+
+      children.add(
+        TextSpan(
+          text: lines[i],
+          style: GoogleFonts.courierPrime(color: color, fontSize: 16),
+        ),
+      );
+
+      if (i != lines.length - 1) {
+        children.add(
+          TextSpan(
+            text: '\n',
+            style: GoogleFonts.courierPrime(color: Colors.white, fontSize: 16),
+          ),
+        );
+      }
+    }
+
+    return TextSpan(children: children);
+  }
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -67,6 +111,136 @@ class _AutomataScreenState extends State<AutomataScreen> {
     final normalized = _normalizeSimToken(token);
 
     return normalized == '∅';
+  }
+
+  Future<void> _openBatchSimulatorDialog() async {
+    final accepted = <int>{};
+    final rejected = <int>{};
+
+    late BatchHighlightController controller;
+
+    void rebuildResults() {
+      accepted.clear();
+      rejected.clear();
+
+      final lines = controller.text.split('\n');
+
+      for (int i = 0; i < lines.length; i++) {
+        final str = lines[i].replaceAll('\r', '');
+
+        final isComplete = i < lines.length - 1 || controller.text.endsWith('\n');
+
+        if (!isComplete || str.isEmpty) {
+          continue;
+        }
+
+        final oldTokens = List<String>.from(_simTokens);
+        final oldStates = List<Set<String>>.from(_simStates);
+        final oldLines = List<Set<String>>.from(_simLines);
+
+        _simTokens = _tokenize(str);
+
+        _buildSimulation();
+
+        final result = _simFinalResult();
+
+        if (result == 1 || result == -1) {
+          accepted.add(i);
+        } else {
+          rejected.add(i);
+        }
+
+        _simTokens = oldTokens;
+
+        _simStates
+          ..clear()
+          ..addAll(oldStates);
+
+        _simLines
+          ..clear()
+          ..addAll(oldLines);
+      }
+    }
+
+    controller = BatchHighlightController(
+      isAccepted: (i) => accepted.contains(i),
+      isRejected: (i) => rejected.contains(i),
+    );
+
+    controller.addListener(() {
+      rebuildResults();
+    });
+
+    rebuildResults();
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return AlertDialog(
+              backgroundColor: Colors.black,
+              title: Text('Batch String Simulator', style: GoogleFonts.courierPrime(color: Colors.white)),
+              content: SizedBox(
+                width: 700,
+                height: 500,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        expands: true,
+                        maxLines: null,
+                        minLines: null,
+                        cursorColor: Colors.white,
+                        style: GoogleFonts.courierPrime(color: Colors.white, fontSize: 16),
+                        decoration: InputDecoration(
+                          hintText: 'One string per line...\nPress enter to simulate.',
+                          hintStyle: GoogleFonts.courierPrime(color: Colors.grey),
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (_) {
+                          setLocalState(() {});
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final result = await FilePicker.platform.pickFiles(
+                                type: FileType.custom,
+                                allowedExtensions: ['txt'],
+                              );
+
+                              if (result == null || result.files.single.bytes == null) {
+                                return;
+                              }
+
+                              final text = String.fromCharCodes(result.files.single.bytes!);
+
+                              setLocalState(() {
+                                controller.text = text;
+                                rebuildResults();
+                              });
+                            },
+                            child: Text('Import .txt', style: GoogleFonts.courierPrime()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1856,63 +2030,20 @@ class _AutomataScreenState extends State<AutomataScreen> {
         actions: [
           TextButton(
             onPressed: () async {
-              final widthController = TextEditingController(text: '1920');
-
-              final heightController = TextEditingController(text: '1080');
-
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) {
-                  return AlertDialog(
-                    title: const Text('SVG Size'),
-
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: widthController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Width'),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        TextField(
-                          controller: heightController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Height'),
-                        ),
-                      ],
-                    ),
-
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context, false);
-                        },
-                        child: const Text('Cancel'),
-                      ),
-
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context, true);
-                        },
-                        child: const Text('Export'),
-                      ),
-                    ],
-                  );
-                },
-              );
-
-              if (confirmed != true) return;
-
               final svg = _exportToSvg();
 
               await Clipboard.setData(ClipboardData(text: svg));
 
               if (!mounted) return;
 
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SVG copied (auto-sized)')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: Colors.black,
+                  content: Text('SVG copied to clipboard', style: GoogleFonts.courierPrime()),
+                ),
+              );
+
+              Navigator.pop(context);
             },
 
             child: const Text('Export SVG'),
@@ -2448,6 +2579,14 @@ class _AutomataScreenState extends State<AutomataScreen> {
             padding: EdgeInsets.zero,
             children: [
               const SizedBox(height: 8),
+
+              ListTile(
+                title: Text('Batch Simulator', style: GoogleFonts.courierPrime()),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openBatchSimulatorDialog();
+                },
+              ),
 
               SwitchListTile(
                 title: const Text('Show Help'),
