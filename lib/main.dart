@@ -383,6 +383,23 @@ class _AutomataScreenState extends State<AutomataScreen> {
       final usedLines = <String>{};
       final isLastToken = token == _simTokens.last;
 
+      bool halted = false;
+
+for (final nid in current) {
+  final node = _nodes[nid];
+
+  if (node == null) continue;
+
+  if (node.isHaltAccept || node.isHaltReject) {
+    halted = true;
+    break;
+  }
+}
+
+if (halted) {
+  break;
+}
+
       // Consume token transitions
       for (final nodeId in current) {
         for (final line in _lines.values) {
@@ -414,6 +431,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
       _simLines.add({...usedLines, ...closureLines});
     }
+    
   }
 
   void _simRebuild() {
@@ -428,24 +446,43 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // Result at final step: ✓ / ✗ / ?
   // Returns 1 = accept, 0 = reject, -1 = mixed
   int _simFinalResult() {
-    if (_simStates.isEmpty) return 0;
-    final finalStates = _simStates.last;
-    if (finalStates.isEmpty) return 0;
-    bool anyAccept = false;
-    bool anyReject = false;
-    for (final nid in finalStates) {
-      final node = _nodes[nid];
-      if (node == null) continue;
-      if (node.isAccept) {
-        anyAccept = true;
-      } else {
-        anyReject = true;
-      }
+  if (_simStates.isEmpty) return 0;
+
+  final finalStates = _simStates.last;
+
+  if (finalStates.isEmpty) return 0;
+
+  bool anyAccept = false;
+  bool anyReject = false;
+
+  for (final nid in finalStates) {
+    final node = _nodes[nid];
+
+    if (node == null) continue;
+
+    // Halt accept instantly accepts
+    if (node.isHaltAccept) {
+      return 1;
     }
-    if (anyAccept && anyReject) return -1;
-    if (anyAccept) return 1;
-    return 0;
+
+    // Halt reject instantly rejects
+    if (node.isHaltReject) {
+      return 0;
+    }
+
+    if (node.isAccept) {
+      anyAccept = true;
+    } else {
+      anyReject = true;
+    }
   }
+
+  if (anyAccept && anyReject) return -1;
+
+  if (anyAccept) return 1;
+
+  return 0;
+}
 
   void _cancelRubberBand() {
     _lineSourceNodeId = null;
@@ -609,10 +646,20 @@ class _AutomataScreenState extends State<AutomataScreen> {
     // ─────────────────────────────────────────────
 
     for (final n in _nodes.values) {
-      final displayLabel = n.label.trim().isEmpty ? _numberToAlphabetLabel(int.parse(n.id.substring(1))) : n.label;
+  final displayLabel = n.label.trim().isEmpty
+      ? _numberToAlphabetLabel(int.parse(n.id.substring(1)))
+      : n.label;
 
-      lines.add('${n.id} = ${escapeDsl(displayLabel)}');
-    }
+  String finalLabel = escapeDsl(displayLabel);
+
+  if (n.isHaltAccept) {
+    finalLabel = '<<$finalLabel>>';
+  } else if (n.isHaltReject) {
+    finalLabel = '>>$finalLabel<<';
+  }
+
+  lines.add('${n.id} = $finalLabel');
+}
 
     if (_nodes.isNotEmpty) {
       lines.add('');
@@ -882,7 +929,15 @@ class _AutomataScreenState extends State<AutomataScreen> {
     final graphData = {
       'version': 2,
       'nodes': _nodes.values.map((n) {
-        return {'id': n.id, 'x': n.position.dx, 'y': n.position.dy, 'label': n.label, 'accept': n.isAccept};
+        return {
+  'id': n.id,
+  'x': n.position.dx,
+  'y': n.position.dy,
+  'label': n.label,
+  'accept': n.isAccept,
+  'haltAccept': n.isHaltAccept,
+  'haltReject': n.isHaltReject,
+};
       }).toList(),
       'lines': _lines.values.map((l) {
         return {
@@ -1051,12 +1106,40 @@ class _AutomataScreenState extends State<AutomataScreen> {
         '  <circle cx="${center.dx}" cy="${center.dy}" r="$nodeRadius"'
         ' fill="var(--node-fill)" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
       );
-      if (node.isAccept) {
-        buffer.writeln(
-          '  <circle cx="${center.dx}" cy="${center.dy}" r="$acceptRadius"'
-          ' fill="none" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
-        );
-      }
+if (node.isAccept) {
+  buffer.writeln(
+    '  <circle cx="${center.dx}" cy="${center.dy}" r="$acceptRadius"'
+    ' fill="none" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+  );
+}
+
+if (node.isHaltAccept) {
+  final left = center.dx - 24;
+  final top = center.dy - 24;
+
+  buffer.writeln(
+    '  <rect x="$left" y="$top" width="48" height="48"'
+    ' fill="green" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+  );
+}
+
+if (node.isHaltReject) {
+  final points = [
+    '${center.dx - 12},${center.dy - 24}',
+    '${center.dx + 12},${center.dy - 24}',
+    '${center.dx + 24},${center.dy - 12}',
+    '${center.dx + 24},${center.dy + 12}',
+    '${center.dx + 12},${center.dy + 24}',
+    '${center.dx - 12},${center.dy + 24}',
+    '${center.dx - 24},${center.dy + 12}',
+    '${center.dx - 24},${center.dy - 12}',
+  ].join(' ');
+
+  buffer.writeln(
+    '  <polygon points="$points"'
+    ' fill="red" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+  );
+}
       buffer.writeln(
         '  <text x="${center.dx}" y="${center.dy}"'
         ' dominant-baseline="middle" text-anchor="middle"'
@@ -1224,24 +1307,48 @@ class _AutomataScreenState extends State<AutomataScreen> {
         return labelToId[lbl];
       }
 
-      String ensureNode(String lbl) {
-        lbl = unescapeDsl(lbl);
+        String ensureNode(String lbl) {
+  lbl = unescapeDsl(lbl);
 
-        final existing = idForLabel(lbl);
+  bool haltAccept = false;
+  bool haltReject = false;
 
-        if (existing != null) return existing;
+  if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
+    haltAccept = true;
+    lbl = lbl.substring(2, lbl.length - 2);
+  } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
+    haltReject = true;
+    lbl = lbl.substring(2, lbl.length - 2);
+  }
 
-        final id = 'n${nodeCounter++}';
+  final existing = idForLabel(lbl);
 
-        final pos = _defaultPosition(newNodes.length);
+  if (existing != null) {
+    final node = newNodes[existing]!;
 
-        final node = NodeData(id: id, position: pos, label: lbl);
+    node.isHaltAccept = haltAccept;
+    node.isHaltReject = haltReject;
 
-        newNodes[id] = node;
+    return existing;
+  }
 
-        labelToId[lbl.trim()] = id;
+  final id = 'n${nodeCounter++}';
 
-        return id;
+  final pos = _defaultPosition(newNodes.length);
+
+  final node = NodeData(
+    id: id,
+    position: pos,
+    label: lbl,
+    isHaltAccept: haltAccept,
+    isHaltReject: haltReject,
+  );
+
+  newNodes[id] = node;
+
+  labelToId[lbl] = id;
+
+  return id;
       }
 
       final rawLines = src.split('\n');

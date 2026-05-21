@@ -36,6 +36,45 @@ class Node extends StatefulWidget {
   State<Node> createState() => _NodeState();
 }
 
+class _OctagonPainter extends CustomPainter {
+  final Color color;
+  final Color borderColor;
+
+  _OctagonPainter({required this.color, required this.borderColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final border = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+
+    final path = Path();
+
+    const cut = 12.0;
+
+    path.moveTo(cut, 0);
+    path.lineTo(size.width - cut, 0);
+    path.lineTo(size.width, cut);
+    path.lineTo(size.width, size.height - cut);
+    path.lineTo(size.width - cut, size.height);
+    path.lineTo(cut, size.height);
+    path.lineTo(0, size.height - cut);
+    path.lineTo(0, cut);
+    path.close();
+
+    canvas.drawPath(path, paint);
+    canvas.drawPath(path, border);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _NodeState extends State<Node> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
@@ -82,6 +121,8 @@ class _NodeState extends State<Node> {
 
   widget.onLabelChanged(value);
 }
+
+
 
   void _onFocusChange() {
     if (!_focusNode.hasFocus) {
@@ -221,6 +262,8 @@ class _NodeState extends State<Node> {
   // NODE ID DISPLAY
   // ─────────────────────────────────────────────
 
+  
+
   String getDisplayId(String rawId) {
     final number = int.tryParse(rawId.replaceFirst('n', ''));
 
@@ -274,15 +317,42 @@ class _NodeState extends State<Node> {
               ),
 
               if (widget.data.isAccept)
-                Center(
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _borderColor, width: 4),
-                      ),
+  Center(
+    child: IgnorePointer(
+      child: Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: _borderColor, width: 4),
+        ),
+      ),
+    ),
+  ),
+
+if (widget.data.isHaltAccept)
+  Center(
+    child: IgnorePointer(
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: Colors.green,
+          border: Border.all(color: _borderColor, width: 4),
+        ),
+      ),
+    ),
+  ),
+
+if (widget.data.isHaltReject)
+  Center(
+    child: IgnorePointer(
+      child: CustomPaint(
+        size: const Size(60, 60),
+        painter: _OctagonPainter(
+          color: Colors.red,
+          borderColor: _borderColor,
+        ),
                     ),
                   ),
                 ),
@@ -330,5 +400,6 @@ class _NodeState extends State<Node> {
         ),
       ),
     );
+    
   }
 }
