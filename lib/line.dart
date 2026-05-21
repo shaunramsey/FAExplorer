@@ -26,12 +26,20 @@ class LinePainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = deleteMode ? Colors.red : highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black
+        ..color = deleteMode
+            ? Colors.red
+            : highlighted
+            ? const Color.fromARGB(255, 208, 0, 255)
+            : Colors.black
         ..style = PaintingStyle.fill,
     );
   }
 
-  Color get _lineColor => deleteMode ? Colors.red : highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black;
+  Color get _lineColor => deleteMode
+      ? Colors.red
+      : highlighted
+      ? const Color.fromARGB(255, 208, 0, 255)
+      : Colors.black;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -76,7 +84,10 @@ class LinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(LinePainter oldDelegate) => oldDelegate.geometry != geometry || oldDelegate.highlighted != highlighted || oldDelegate.deleteMode != deleteMode;
+  bool shouldRepaint(LinePainter oldDelegate) =>
+      oldDelegate.geometry != geometry ||
+      oldDelegate.highlighted != highlighted ||
+      oldDelegate.deleteMode != deleteMode;
 }
 
 class LineWidget extends StatefulWidget {
@@ -308,39 +319,43 @@ class _LineWidgetState extends State<LineWidget> {
             child: TextField(
               controller: _controller,
               focusNode: _focusNode,
-                        
+
               textAlign: TextAlign.center,
-                        
+
               maxLines: null,
               keyboardType: TextInputType.multiline,
               textInputAction: TextInputAction.newline,
-                        
+
               style: GoogleFonts.courierPrime(
                 fontSize: 30,
                 height: 1,
                 fontWeight: FontWeight.bold,
-                color: widget.deleteMode ? Colors.red : widget.highlighted ? const Color.fromARGB(255, 208, 0, 255) : Colors.black,
+                color: widget.deleteMode
+                    ? Colors.red
+                    : widget.highlighted
+                    ? const Color.fromARGB(255, 208, 0, 255)
+                    : Colors.black,
               ),
-                        
+
               // LIVE TOKEN PARSING
               onChanged: (value) {
                 final parsed = parseNodeText(value);
-                        
+
                 final newLineCount = '\n'.allMatches(parsed).length + 1;
-                        
+
                 if (newLineCount != _lineCount) {
                   setState(() => _lineCount = newLineCount);
                 }
-                        
+
                 if (parsed != value) {
                   _controller.value = TextEditingValue(
                     text: parsed,
-                        
+
                     selection: TextSelection.collapsed(offset: parsed.length),
                   );
                 }
               },
-                        
+
               //onTapOutside: (_) => _focusNode.unfocus(),
               decoration: InputDecoration(
                 border: InputBorder.none,

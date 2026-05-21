@@ -36,6 +36,45 @@ class Node extends StatefulWidget {
   State<Node> createState() => _NodeState();
 }
 
+class _OctagonPainter extends CustomPainter {
+  final Color color;
+  final Color borderColor;
+
+  _OctagonPainter({required this.color, required this.borderColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final border = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+
+    final path = Path();
+
+    const cut = 12.0;
+
+    path.moveTo(cut, 0);
+    path.lineTo(size.width - cut, 0);
+    path.lineTo(size.width, cut);
+    path.lineTo(size.width, size.height - cut);
+    path.lineTo(size.width - cut, size.height);
+    path.lineTo(cut, size.height);
+    path.lineTo(0, size.height - cut);
+    path.lineTo(0, cut);
+    path.close();
+
+    canvas.drawPath(path, paint);
+    canvas.drawPath(path, border);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _NodeState extends State<Node> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
@@ -74,14 +113,14 @@ class _NodeState extends State<Node> {
   }
 
   void _deselect() {
-  final value = _controller.text;
+    final value = _controller.text;
 
-  setState(() {
-    _selected = false;
-  });
+    setState(() {
+      _selected = false;
+    });
 
-  widget.onLabelChanged(value);
-}
+    widget.onLabelChanged(value);
+  }
 
   void _onFocusChange() {
     if (!_focusNode.hasFocus) {
@@ -90,22 +129,18 @@ class _NodeState extends State<Node> {
   }
 
   Color get _borderColor {
-  final isDuplicate =
-      widget.isLabelTaken(
-        _controller.text,
-        widget.data.id,
-      );
+    final isDuplicate = widget.isLabelTaken(_controller.text, widget.data.id);
 
-  return widget.deleteMode
-      ? Colors.red
-      : widget.highlighted
-      ? const Color.fromARGB(255, 208, 0, 255)
-      : isDuplicate
-      ? Colors.orange
-      : _selected
-      ? Colors.lightBlueAccent
-      : Colors.black;
-}
+    return widget.deleteMode
+        ? Colors.red
+        : widget.highlighted
+        ? const Color.fromARGB(255, 208, 0, 255)
+        : isDuplicate
+        ? Colors.orange
+        : _selected
+        ? Colors.lightBlueAccent
+        : Colors.black;
+  }
 
   // ─────────────────────────────────────────────
   // TOKEN PARSER
@@ -287,6 +322,30 @@ class _NodeState extends State<Node> {
                   ),
                 ),
 
+              if (widget.data.isHaltAccept)
+                Center(
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        border: Border.all(color: _borderColor, width: 4),
+                      ),
+                    ),
+                  ),
+                ),
+
+              if (widget.data.isHaltReject)
+                Center(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      size: const Size(60, 60),
+                      painter: _OctagonPainter(color: Colors.red, borderColor: _borderColor),
+                    ),
+                  ),
+                ),
+
               Center(
                 child: SizedBox(
                   width: 80,
@@ -303,10 +362,26 @@ class _NodeState extends State<Node> {
                       onChanged: (value) {
                         final parsed = parseNodeText(value);
 
-                        if (parsed != value) {
+                        String finalText = parsed;
+
+                        bool haltAccept = false;
+                        bool haltReject = false;
+
+                        if (parsed.startsWith('<<') && parsed.endsWith('>>')) {
+                          haltAccept = true;
+                          finalText = parsed.substring(2, parsed.length - 2);
+                        } else if (parsed.startsWith('>>') && parsed.endsWith('<<')) {
+                          haltReject = true;
+                          finalText = parsed.substring(2, parsed.length - 2);
+                        }
+
+                        widget.data.isHaltAccept = haltAccept;
+                        widget.data.isHaltReject = haltReject;
+
+                        if (finalText != _controller.text) {
                           _controller.value = TextEditingValue(
-                            text: parsed,
-                            selection: TextSelection.collapsed(offset: parsed.length),
+                            text: finalText,
+                            selection: TextSelection.collapsed(offset: finalText.length),
                           );
                         }
 

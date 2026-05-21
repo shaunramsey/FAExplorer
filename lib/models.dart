@@ -12,9 +12,20 @@ class NodeData {
 
   bool isAccept;
 
+  // NEW
+  bool isHaltAccept;
+  bool isHaltReject;
+
   final Set<String> connectedLineIds = {};
 
-  NodeData({required this.id, required this.position, this.label = '', this.isAccept = false});
+  NodeData({
+    required this.id,
+    required this.position,
+    this.label = '',
+    this.isAccept = false,
+    this.isHaltAccept = false,
+    this.isHaltReject = false,
+  });
 
   Offset get center => Offset(position.dx + 50, position.dy + 50);
 

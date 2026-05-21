@@ -7,8 +7,52 @@ import 'models.dart';
 import 'node.dart';
 import 'line.dart';
 import 'start_arrow.dart';
+import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 
 void main() => runApp(const MyApp());
+
+class BatchHighlightController extends TextEditingController {
+  final bool Function(int lineIndex) isAccepted;
+  final bool Function(int lineIndex) isRejected;
+
+  BatchHighlightController({required this.isAccepted, required this.isRejected});
+
+  @override
+  TextSpan buildTextSpan({required BuildContext context, TextStyle? style, required bool withComposing}) {
+    final lines = text.split('\n');
+
+    final children = <InlineSpan>[];
+
+    for (int i = 0; i < lines.length; i++) {
+      Color color = Colors.white;
+
+      if (isAccepted(i)) {
+        color = Colors.green;
+      } else if (isRejected(i)) {
+        color = Colors.red;
+      }
+
+      children.add(
+        TextSpan(
+          text: lines[i],
+          style: GoogleFonts.courierPrime(color: color, fontSize: 16),
+        ),
+      );
+
+      if (i != lines.length - 1) {
+        children.add(
+          TextSpan(
+            text: '\n',
+            style: GoogleFonts.courierPrime(color: Colors.white, fontSize: 16),
+          ),
+        );
+      }
+    }
+
+    return TextSpan(children: children);
+  }
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -69,6 +113,136 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return normalized == '∅';
   }
 
+  Future<void> _openBatchSimulatorDialog() async {
+    final accepted = <int>{};
+    final rejected = <int>{};
+
+    late BatchHighlightController controller;
+
+    void rebuildResults() {
+      accepted.clear();
+      rejected.clear();
+
+      final lines = controller.text.split('\n');
+
+      for (int i = 0; i < lines.length; i++) {
+        final str = lines[i].replaceAll('\r', '');
+
+        final isComplete = i < lines.length - 1 || controller.text.endsWith('\n');
+
+        if (!isComplete || str.isEmpty) {
+          continue;
+        }
+
+        final oldTokens = List<String>.from(_simTokens);
+        final oldStates = List<Set<String>>.from(_simStates);
+        final oldLines = List<Set<String>>.from(_simLines);
+
+        _simTokens = _tokenize(str);
+
+        _buildSimulation();
+
+        final result = _simFinalResult();
+
+        if (result == 1 || result == -1) {
+          accepted.add(i);
+        } else {
+          rejected.add(i);
+        }
+
+        _simTokens = oldTokens;
+
+        _simStates
+          ..clear()
+          ..addAll(oldStates);
+
+        _simLines
+          ..clear()
+          ..addAll(oldLines);
+      }
+    }
+
+    controller = BatchHighlightController(
+      isAccepted: (i) => accepted.contains(i),
+      isRejected: (i) => rejected.contains(i),
+    );
+
+    controller.addListener(() {
+      rebuildResults();
+    });
+
+    rebuildResults();
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return AlertDialog(
+              backgroundColor: Colors.black,
+              title: Text('Batch String Simulator', style: GoogleFonts.courierPrime(color: Colors.white)),
+              content: SizedBox(
+                width: 700,
+                height: 500,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        expands: true,
+                        maxLines: null,
+                        minLines: null,
+                        cursorColor: Colors.white,
+                        style: GoogleFonts.courierPrime(color: Colors.white, fontSize: 16),
+                        decoration: InputDecoration(
+                          hintText: 'One string per line...\nPress enter to simulate.',
+                          hintStyle: GoogleFonts.courierPrime(color: Colors.grey),
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (_) {
+                          setLocalState(() {});
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final result = await FilePicker.platform.pickFiles(
+                                type: FileType.custom,
+                                allowedExtensions: ['txt'],
+                              );
+
+                              if (result == null || result.files.single.bytes == null) {
+                                return;
+                              }
+
+                              final text = String.fromCharCodes(result.files.single.bytes!);
+
+                              setLocalState(() {
+                                controller.text = text;
+                                rebuildResults();
+                              });
+                            },
+                            child: Text('Import .txt', style: GoogleFonts.courierPrime()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // STRING SIMULATION STATE
   // ═══════════════════════════════════════════════════════════════
@@ -77,6 +251,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // _simStep: -1 = before any input (only start arrow/node lit),
   //           0..n = after consuming token[0..n-1]
   int _simStep = -1;
+
   // Each step maps to a SET of active node IDs (NFA support)
   // _simStates[i] = set of node IDs active after consuming i tokens
   // _simStates[-1+1=0] = initial states
@@ -143,6 +318,18 @@ class _AutomataScreenState extends State<AutomataScreen> {
       }
 
       visitedStates.add(stateKey);
+
+      final currentNode = _nodes[current.nodeId];
+
+      if (currentNode == null) {
+        continue;
+      }
+
+      // Halt states terminate immediately.
+      // No epsilon/free/null transitions allowed.
+      if (currentNode.isHaltAccept || currentNode.isHaltReject) {
+        continue;
+      }
 
       for (final line in _lines.values) {
         if (line.nodeAId != current.nodeId) {
@@ -381,17 +568,71 @@ class _AutomataScreenState extends State<AutomataScreen> {
     for (final token in _simTokens) {
       final nextNodes = <String>{};
       final usedLines = <String>{};
+
       final isLastToken = token == _simTokens.last;
 
-      // Consume token transitions
+      // ─────────────────────────────
+      // Process every active branch
+      // ─────────────────────────────
+
       for (final nodeId in current) {
+        final currentNode = _nodes[nodeId];
+
+        if (currentNode == null) {
+          continue;
+        }
+
+        // Halt reject:
+        // kill ONLY this branch
+        if (currentNode.isHaltReject) {
+          continue;
+        }
+
+        // Halt accept:
+        // instantly end ALL processing
+        if (currentNode.isHaltAccept) {
+          current = {nodeId};
+
+          // Clear any future partial states
+          while (_simStates.length > _simStep + 2) {
+            _simStates.removeLast();
+          }
+
+          while (_simLines.length > _simStep + 2) {
+            _simLines.removeLast();
+          }
+
+          _simStates.add({nodeId});
+          _simLines.add(Set.from(usedLines));
+
+          // Force simulation to final step
+          _simStep = _simTokens.length;
+
+          return;
+        }
+
+        // Halt reject kills only this branch
+        if (currentNode.isHaltReject) {
+          continue;
+        }
+
+        // Halt accept instantly ends ALL processing
+        if (currentNode.isHaltAccept) {
+          current = {nodeId};
+
+          _simStates.add(Set.from(current));
+          _simLines.add(Set.from(usedLines));
+
+          return;
+        }
+
+        // Normal transitions
         for (final line in _lines.values) {
           if (line.nodeAId != nodeId) continue;
 
-          final alternatives = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
+          final alternatives = line.label.split(RegExp(r'[,\\n]')).map((s) => s.trim());
 
           for (final alt in alternatives) {
-            // Skip epsilon transitions here
             if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) {
               continue;
             }
@@ -405,7 +646,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
         }
       }
 
-      // Follow epsilon transitions afterward
+      // Epsilon closure
       final (closureNodes, closureLines) = _epsilonClosure(nextNodes, isLastToken, nullWasExplicitlyTyped);
 
       current = closureNodes;
@@ -413,6 +654,11 @@ class _AutomataScreenState extends State<AutomataScreen> {
       _simStates.add(Set.from(current));
 
       _simLines.add({...usedLines, ...closureLines});
+
+      // No branches left → reject
+      if (current.isEmpty) {
+        break;
+      }
     }
   }
 
@@ -429,21 +675,52 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // Returns 1 = accept, 0 = reject, -1 = mixed
   int _simFinalResult() {
     if (_simStates.isEmpty) return 0;
+
     final finalStates = _simStates.last;
+
     if (finalStates.isEmpty) return 0;
+
     bool anyAccept = false;
     bool anyReject = false;
+
+    // If any state ever reached halt accept,
+    // simulation is accepted forever.
+    for (final states in _simStates) {
+      for (final nid in states) {
+        final node = _nodes[nid];
+
+        if (node?.isHaltAccept == true) {
+          return 1;
+        }
+      }
+    }
+
     for (final nid in finalStates) {
       final node = _nodes[nid];
+
       if (node == null) continue;
+
+      // Halt accept instantly accepts
+      if (node.isHaltAccept) {
+        return 1;
+      }
+
+      // Halt reject instantly rejects
+      if (node.isHaltReject) {
+        return 0;
+      }
+
       if (node.isAccept) {
         anyAccept = true;
       } else {
         anyReject = true;
       }
     }
+
     if (anyAccept && anyReject) return -1;
+
     if (anyAccept) return 1;
+
     return 0;
   }
 
@@ -611,7 +888,15 @@ class _AutomataScreenState extends State<AutomataScreen> {
     for (final n in _nodes.values) {
       final displayLabel = n.label.trim().isEmpty ? _numberToAlphabetLabel(int.parse(n.id.substring(1))) : n.label;
 
-      lines.add('${n.id} = ${escapeDsl(displayLabel)}');
+      String finalLabel = escapeDsl(displayLabel);
+
+      if (n.isHaltAccept) {
+        finalLabel = '<<$finalLabel>>';
+      } else if (n.isHaltReject) {
+        finalLabel = '>>$finalLabel<<';
+      }
+
+      lines.add('${n.id} = $finalLabel');
     }
 
     if (_nodes.isNotEmpty) {
@@ -752,14 +1037,149 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return lines.join('\n').trimRight();
   }
 
-  String _exportToSvg(double width, double height) {
+  // ═══════════════════════════════════════════════════════════════
+  // SVG ARROW HELPER — draws a filled triangle arrowhead at [tip]
+  // pointing in [angle] radians, and returns the shortened endpoint
+  // (base of the arrowhead) so the stroke doesn't poke through.
+  // ═══════════════════════════════════════════════════════════════
+  static const double _svgArrowLen = 15;
+  static const double _svgArrowWing = 9;
+
+  /// Returns SVG markup for a filled arrowhead polygon at [tip] pointing
+  /// in direction [angle].
+  String _svgArrowhead(Offset tip, double angle) {
+    final dx = cos(angle);
+    final dy = sin(angle);
+    final p1x = tip.dx - _svgArrowLen * dx + _svgArrowWing * dy;
+    final p1y = tip.dy - _svgArrowLen * dy - _svgArrowWing * dx;
+    final p2x = tip.dx - _svgArrowLen * dx - _svgArrowWing * dy;
+    final p2y = tip.dy - _svgArrowLen * dy + _svgArrowWing * dx;
+    return '<polygon points="${tip.dx},${tip.dy} $p1x,$p1y $p2x,$p2y" fill="var(--fg)"/>';
+  }
+
+  /// Returns the endpoint shortened by [_svgArrowLen] along [angle].
+  Offset _shortenedEnd(Offset tip, double angle) {
+    return Offset(tip.dx - cos(angle) * _svgArrowLen, tip.dy - sin(angle) * _svgArrowLen);
+  }
+
+  String _exportToSvg() {
+    // ─────────────────────────────────────────────
+    // BOUNDING BOX COMPUTATION
+    // We collect every rectangle that must be visible:
+    //   • node circles (center ± nodeRadius + strokeWidth)
+    //   • line label text boxes
+    //   • start-arrow line + its label text box
+    // Lines themselves are only expanded if their midpoint already
+    // falls outside the box formed by the above elements.
+    // ─────────────────────────────────────────────
+
+    const double nodeRadius = 42.0;
+    const double nodePad = nodeRadius + 4; // stroke clearance
+    const double pad = 30.0; // outer SVG padding
+
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = double.negativeInfinity;
+    double maxY = double.negativeInfinity;
+
+    void expandPoint(double x, double y) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+
+    void expandRect(double left, double top, double right, double bottom) {
+      expandPoint(left, top);
+      expandPoint(right, bottom);
+    }
+
+    // Nodes
+    for (final node in _nodes.values) {
+      final c = node.center;
+      expandRect(c.dx - nodePad, c.dy - nodePad, c.dx + nodePad, c.dy + nodePad);
+    }
+
+    // Line label text boxes (always included)
+    for (final line in _lines.values) {
+      final nodeA = _nodes[line.nodeAId];
+      final nodeB = _nodes[line.nodeBId];
+      if (nodeA == null || nodeB == null) continue;
+
+      if (line.label.trim().isNotEmpty) {
+        const double boxW = 120;
+        const double lineH = 36.0;
+        final lineCount = '\n'.allMatches(line.label).length + 1;
+        final double boxH = lineH * lineCount;
+        final pos = line.getTextBoxLocation(nodeA.center, nodeB.center, boxW, boxH, line.label);
+        expandRect(pos.dx, pos.dy, pos.dx + boxW, pos.dy + boxH);
+      }
+
+      // Expand for arc/loop geometry mid-point (only if already off-canvas)
+      final geometry = line.computeGeometry(nodeA.center, nodeB.center);
+      // We include the arc's midpoint so arcs don't clip unexpectedly
+      expandPoint(geometry.midPoint.dx, geometry.midPoint.dy);
+      expandPoint(geometry.startPoint.dx, geometry.startPoint.dy);
+      expandPoint(geometry.endPoint.dx, geometry.endPoint.dy);
+    }
+
+    // Start arrow
+    if (_startArrow != null) {
+      final node = _nodes[_startArrow!.nodeId];
+      if (node != null) {
+        var dir = _startArrow!.direction();
+        if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071);
+        final center = node.center;
+        final arrowEnd = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
+        final arrowStart = Offset(
+          arrowEnd.dx + dir.dx * _startArrow!.length,
+          arrowEnd.dy + dir.dy * _startArrow!.length,
+        );
+        expandPoint(arrowStart.dx, arrowStart.dy);
+        expandPoint(arrowEnd.dx, arrowEnd.dy);
+
+        if (_startArrow!.label.trim().isNotEmpty) {
+          const double boxW = 120;
+          const double lineH = 36.0;
+          final lineCount = '\n'.allMatches(_startArrow!.label).length + 1;
+          final double boxH = lineH * lineCount;
+          final perp = Offset(-dir.dy, dir.dx);
+          final labelPos = Offset(arrowStart.dx + perp.dx * 30 - boxW / 2, arrowStart.dy + perp.dy * 30 - boxH / 2);
+          expandRect(labelPos.dx, labelPos.dy, labelPos.dx + boxW, labelPos.dy + boxH);
+        }
+      }
+    }
+
+    // Fallback if graph is empty
+    if (minX == double.infinity) {
+      minX = 0;
+      minY = 0;
+      maxX = 400;
+      maxY = 300;
+    }
+
+    final double vx = minX - pad;
+    final double vy = minY - pad;
+    final double vw = (maxX - minX) + pad * 2;
+    final double vh = (maxY - minY) + pad * 2;
+
+    // ─────────────────────────────────────────────
+    // GRAPH DATA EMBEDDED AS JSON
+    // ─────────────────────────────────────────────
+
     final graphData = {
       'version': 2,
-
       'nodes': _nodes.values.map((n) {
-        return {'id': n.id, 'x': n.position.dx, 'y': n.position.dy, 'label': n.label, 'accept': n.isAccept};
+        return {
+          'id': n.id,
+          'x': n.position.dx,
+          'y': n.position.dy,
+          'label': n.label,
+          'accept': n.isAccept,
+          'haltAccept': n.isHaltAccept,
+          'haltReject': n.isHaltReject,
+        };
       }).toList(),
-
       'lines': _lines.values.map((l) {
         return {
           'id': l.id,
@@ -770,7 +1190,6 @@ class _AutomataScreenState extends State<AutomataScreen> {
           'loopAngle': l.selfLoopAngle,
         };
       }).toList(),
-
       'startArrow': _startArrow == null
           ? null
           : {
@@ -786,37 +1205,33 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
     buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
 
-    buffer.writeln('''
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width="$width"
-  height="$height"
-  viewBox="0 0 $width $height">
+    // Emit viewBox tightly fitted to content; width/height in px match viewBox.
+    buffer.writeln(
+      '<svg xmlns="http://www.w3.org/2000/svg"'
+      ' width="${vw.toStringAsFixed(1)}"'
+      ' height="${vh.toStringAsFixed(1)}"'
+      ' viewBox="${vx.toStringAsFixed(1)} ${vy.toStringAsFixed(1)} ${vw.toStringAsFixed(1)} ${vh.toStringAsFixed(1)}">',
+    );
+    buffer.writeln();
+
+    // ─────────────────────────────────────────────
+    // COLOR VARIABLES — edit these to retheme everything
+    // ─────────────────────────────────────────────
+    buffer.writeln('''<style>
+  :root {
+    --fg:          black;   /* stroke, arrow fill, text */
+    --node-fill:   none;    /* node circle interior     */
+    --label-fill:  black;   /* text inside nodes        */
+    --hint-fill:   #888;    /* hint text color          */
+  }
+</style>
 ''');
 
+    // Embedded graph data
     buffer.writeln('<script type="application/json" id="automata-data">');
-
     buffer.writeln(const JsonEncoder.withIndent('  ').convert(graphData));
-
     buffer.writeln('</script>');
-
-    buffer.writeln('''
-<defs>
-  <marker
-  id="arrowhead"
-  viewBox="0 0 10 10"
-  refX="8"
-  refY="5"
-  markerWidth="4"
-  markerHeight="4"
-  orient="auto">
-
-  <path
-    d="M 0 0 L 10 5 L 0 10 z"
-    fill="black"/>
-</marker>
-</defs>
-''');
+    buffer.writeln();
 
     // ─────────────────────────────
     // LINES
@@ -825,160 +1240,160 @@ class _AutomataScreenState extends State<AutomataScreen> {
     for (final line in _lines.values) {
       final nodeA = _nodes[line.nodeAId];
       final nodeB = _nodes[line.nodeBId];
-
       if (nodeA == null || nodeB == null) continue;
 
       final geometry = line.computeGeometry(nodeA.center, nodeB.center);
+      const double strokeW = 4;
 
       if (line.nodeAId == line.nodeBId) {
+        // ── Self loop ──
         final radius = geometry.circleRadius!;
+        final startPt = geometry.startPoint;
+        final tipPt = geometry.endPoint;
+        final arrowAngle = geometry.arrowAngle!;
+        final shortenedEnd = _shortenedEnd(tipPt, arrowAngle);
 
-        final start = geometry.startPoint;
-        final end = geometry.endPoint;
-
-        buffer.writeln('''
-<path
-  class="transition"
-  data-id="${line.id}"
-  data-label="${htmlEscape.convert(line.label)}"
-
-  d="
-    M ${start.dx} ${start.dy}
-    A $radius $radius 0 1 1 ${end.dx} ${end.dy}
-  "
-
-  fill="none"
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('<g class="transition" data-id="${line.id}" data-label="${htmlEscape.convert(line.label)}">');
+        buffer.writeln(
+          '  <path d="M ${startPt.dx} ${startPt.dy} A $radius $radius 0 1 1 ${shortenedEnd.dx} ${shortenedEnd.dy}"'
+          ' fill="none" stroke="var(--fg)" stroke-width="$strokeW" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, arrowAngle)}');
+        buffer.writeln('</g>');
       } else if (geometry.hasCircle) {
+        // ── Curved arc ──
         final radius = geometry.circleRadius!;
-
-        final start = geometry.startPoint;
-        final end = geometry.endPoint;
-
+        final startPt = geometry.startPoint;
+        final tipPt = geometry.endPoint;
+        final arrowAngle = geometry.arrowAngle!;
+        final shortenedEnd = _shortenedEnd(tipPt, arrowAngle);
         final largeArc = geometry.sweepAngle!.abs() > pi ? 1 : 0;
-
         final sweep = geometry.sweepAngle! > 0 ? 1 : 0;
 
-        buffer.writeln('''
-<path
-  class="transition"
-  data-id="${line.id}"
-  data-label="${htmlEscape.convert(line.label)}"
-
-  d="
-    M ${start.dx} ${start.dy}
-    A $radius $radius 0 $largeArc $sweep ${end.dx} ${end.dy}
-  "
-
-  fill="none"
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('<g class="transition" data-id="${line.id}" data-label="${htmlEscape.convert(line.label)}">');
+        buffer.writeln(
+          '  <path d="M ${startPt.dx} ${startPt.dy} A $radius $radius 0 $largeArc $sweep ${shortenedEnd.dx} ${shortenedEnd.dy}"'
+          ' fill="none" stroke="var(--fg)" stroke-width="$strokeW" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, arrowAngle)}');
+        buffer.writeln('</g>');
       } else {
-        buffer.writeln('''
-<line
-  class="transition"
-  data-id="${line.id}"
-  data-label="${htmlEscape.convert(line.label)}"
+        // ── Straight line ──
+        final startPt = geometry.startPoint;
+        final tipPt = geometry.endPoint;
+        final angle = atan2(tipPt.dy - startPt.dy, tipPt.dx - startPt.dx);
+        final shortenedEnd = _shortenedEnd(tipPt, angle);
 
-  x1="${geometry.startPoint.dx}"
-  y1="${geometry.startPoint.dy}"
-
-  x2="${geometry.endPoint.dx}"
-  y2="${geometry.endPoint.dy}"
-
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('<g class="transition" data-id="${line.id}" data-label="${htmlEscape.convert(line.label)}">');
+        buffer.writeln(
+          '  <line x1="${startPt.dx}" y1="${startPt.dy}" x2="${shortenedEnd.dx}" y2="${shortenedEnd.dy}"'
+          ' stroke="var(--fg)" stroke-width="$strokeW" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, angle)}');
+        buffer.writeln('</g>');
       }
 
-      final textPos = line.getTextBoxLocation(nodeA.center, nodeB.center, 120, 36, line.label);
-
-      buffer.writeln('''
-<text
-  x="${textPos.dx + 60}"
-  y="${textPos.dy + 24}"
-  font-family="Courier New"
-  font-size="30"
-  text-anchor="middle">
-${htmlEscape.convert(line.label)}
-</text>
-''');
+      // Label
+      if (line.label.trim().isNotEmpty) {
+        const double boxW = 120;
+        const double lineH = 36.0;
+        final lineCount = '\n'.allMatches(line.label).length + 1;
+        final double boxH = lineH * lineCount;
+        final textPos = line.getTextBoxLocation(nodeA.center, nodeB.center, boxW, boxH, line.label);
+        final parts = line.label.split('\n');
+        buffer.writeln(
+          '<text x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(textPos.dy + 24).toStringAsFixed(1)}"'
+          ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
+          ' text-anchor="middle" fill="var(--fg)">',
+        );
+        for (int i = 0; i < parts.length; i++) {
+          if (i == 0) {
+            buffer.writeln('  <tspan>${htmlEscape.convert(parts[i])}</tspan>');
+          } else {
+            buffer.writeln(
+              '  <tspan x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>',
+            );
+          }
+        }
+        buffer.writeln('</text>');
+      }
+      buffer.writeln();
     }
 
     // ─────────────────────────────
     // NODES
     // ─────────────────────────────
 
-    const nodeRadius = 42.0;
-const acceptRadius = 34.0;
-const strokeWidth = 3.0;
+    const double acceptRadius = 34.0;
+    const double strokeWidth = 3.0;
 
-for (final node in _nodes.values) {
-  final center = node.center;
+    for (final node in _nodes.values) {
+      final center = node.center;
+      final hasLabel = node.label.trim().isNotEmpty;
+      // Hint text: alphabetic ID (same logic as getDisplayId in node.dart)
+      String getDisplayId(String rawId) {
+        final number = int.tryParse(rawId.replaceFirst('n', ''));
+        if (number == null || number < 0) return rawId;
+        int n = number;
+        String result = '';
+        do {
+          result = String.fromCharCode(65 + (n % 26)) + result;
+          n = (n ~/ 26) - 1;
+        } while (n >= 0);
+        return result;
+      }
 
-  final label =
-      node.label.trim().isEmpty
-          ? '∅'
-          : node.label;
+      final displayText = hasLabel ? node.label : getDisplayId(node.id);
+      final textColor = hasLabel ? 'var(--label-fill)' : 'var(--hint-fill)';
 
-  buffer.writeln('''
-<g
-  class="node"
-  data-id="${node.id}">
+      buffer.writeln('<g class="node" data-id="${node.id}">');
+      buffer.writeln(
+        '  <circle cx="${center.dx}" cy="${center.dy}" r="$nodeRadius"'
+        ' fill="var(--node-fill)" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+      );
+      if (node.isAccept) {
+        buffer.writeln(
+          '  <circle cx="${center.dx}" cy="${center.dy}" r="$acceptRadius"'
+          ' fill="none" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+        );
+      }
 
-  <circle
-    cx="${center.dx}"
-    cy="${center.dy}"
-    r="$nodeRadius"
+      if (node.isHaltAccept) {
+        final left = center.dx - 24;
+        final top = center.dy - 24;
 
-    fill="white"
-    stroke="black"
-    stroke-width="$strokeWidth"/>
+        buffer.writeln(
+          '  <rect x="$left" y="$top" width="48" height="48"'
+          ' fill="green" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+        );
+      }
 
-''');
+      if (node.isHaltReject) {
+        final points = [
+          '${center.dx - 12},${center.dy - 24}',
+          '${center.dx + 12},${center.dy - 24}',
+          '${center.dx + 24},${center.dy - 12}',
+          '${center.dx + 24},${center.dy + 12}',
+          '${center.dx + 12},${center.dy + 24}',
+          '${center.dx - 12},${center.dy + 24}',
+          '${center.dx - 24},${center.dy + 12}',
+          '${center.dx - 24},${center.dy - 12}',
+        ].join(' ');
 
-  if (node.isAccept) {
-    buffer.writeln('''
-  <circle
-    cx="${center.dx}"
-    cy="${center.dy}"
-    r="$acceptRadius"
-
-    fill="none"
-    stroke="black"
-    stroke-width="$strokeWidth"/>
-''');
-  }
-
-  buffer.writeln('''
-  <text
-    x="${center.dx}"
-    y="${center.dy}"
-
-    dominant-baseline="middle"
-    text-anchor="middle"
-
-    font-family="Courier New"
-    font-size="24"
-
-    fill="black">
-
-    ${htmlEscape.convert(label)}
-
-  </text>
-
-</g>
-''');
-}
+        buffer.writeln(
+          '  <polygon points="$points"'
+          ' fill="red" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+        );
+      }
+      buffer.writeln(
+        '  <text x="${center.dx}" y="${center.dy}"'
+        ' dominant-baseline="middle" text-anchor="middle"'
+        ' font-family="Courier New, monospace" font-weight="bold" font-size="24"'
+        ' fill="$textColor">${htmlEscape.convert(displayText)}</text>',
+      );
+      buffer.writeln('</g>');
+      buffer.writeln();
+    }
 
     // ─────────────────────────────
     // START ARROW
@@ -986,40 +1401,54 @@ for (final node in _nodes.values) {
 
     if (_startArrow != null) {
       final node = _nodes[_startArrow!.nodeId];
-
       if (node != null) {
         var dir = _startArrow!.direction();
-
-        if (dir.distance == 0) {
-          dir = const Offset(-0.7071, -0.7071);
-        }
+        if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071);
 
         final center = node.center;
+        final tipPt = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
+        final arrowStart = Offset(tipPt.dx + dir.dx * _startArrow!.length, tipPt.dy + dir.dy * _startArrow!.length);
+        final angle = atan2(tipPt.dy - arrowStart.dy, tipPt.dx - arrowStart.dx);
+        final shortenedTip = _shortenedEnd(tipPt, angle);
 
-        final end = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
+        buffer.writeln('<g class="start-arrow">');
+        buffer.writeln(
+          '  <line x1="${arrowStart.dx}" y1="${arrowStart.dy}" x2="${shortenedTip.dx}" y2="${shortenedTip.dy}"'
+          ' stroke="var(--fg)" stroke-width="4" stroke-linecap="round"/>',
+        );
+        buffer.writeln('  ${_svgArrowhead(tipPt, angle)}');
 
-        final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
+        // Start arrow label
+        if (_startArrow!.label.trim().isNotEmpty) {
+          const double boxW = 120;
+          const double lineH = 36.0;
+          final lineCount = '\n'.allMatches(_startArrow!.label).length + 1;
+          final double boxH = lineH * lineCount;
+          final perp = Offset(-dir.dy, dir.dx);
+          final labelPos = Offset(arrowStart.dx + perp.dx * 30 - boxW / 2, arrowStart.dy + perp.dy * 30 - boxH / 2);
+          final parts = _startArrow!.label.split('\n');
+          buffer.writeln(
+            '<text x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(labelPos.dy + 24).toStringAsFixed(1)}"'
+            ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
+            ' text-anchor="middle" fill="var(--fg)">',
+          );
+          for (int i = 0; i < parts.length; i++) {
+            if (i == 0) {
+              buffer.writeln('  <tspan>${htmlEscape.convert(parts[i])}</tspan>');
+            } else {
+              buffer.writeln(
+                '  <tspan x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>',
+              );
+            }
+          }
+          buffer.writeln('</text>');
+        }
 
-        buffer.writeln('''
-<line
-  class="start-arrow"
-
-  x1="${start.dx}"
-  y1="${start.dy}"
-
-  x2="${end.dx}"
-  y2="${end.dy}"
-
-  stroke="black"
-  stroke-width="4"
-  marker-end="url(#arrowhead)"
-  stroke-linecap="round"/>
-''');
+        buffer.writeln('</g>');
       }
     }
 
     buffer.writeln('</svg>');
-
     return buffer.toString();
   }
 
@@ -1130,19 +1559,37 @@ for (final node in _nodes.values) {
       String ensureNode(String lbl) {
         lbl = unescapeDsl(lbl);
 
+        bool haltAccept = false;
+        bool haltReject = false;
+
+        if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
+          haltAccept = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
+          haltReject = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        }
+
         final existing = idForLabel(lbl);
 
-        if (existing != null) return existing;
+        if (existing != null) {
+          final node = newNodes[existing]!;
+
+          node.isHaltAccept = haltAccept;
+          node.isHaltReject = haltReject;
+
+          return existing;
+        }
 
         final id = 'n${nodeCounter++}';
 
         final pos = _defaultPosition(newNodes.length);
 
-        final node = NodeData(id: id, position: pos, label: lbl);
+        final node = NodeData(id: id, position: pos, label: lbl, isHaltAccept: haltAccept, isHaltReject: haltReject);
 
         newNodes[id] = node;
 
-        labelToId[lbl.trim()] = id;
+        labelToId[lbl] = id;
 
         return id;
       }
@@ -1539,8 +1986,6 @@ for (final node in _nodes.values) {
   void _showExportDialog() {
     final dsl = _exportToDsl();
 
-    Clipboard.setData(ClipboardData(text: dsl));
-
     final nameController = TextEditingController(text: 'Export ${_savedExports.length + 1}');
 
     showDialog(
@@ -1585,69 +2030,20 @@ for (final node in _nodes.values) {
         actions: [
           TextButton(
             onPressed: () async {
-              final widthController = TextEditingController(text: '1920');
-
-              final heightController = TextEditingController(text: '1080');
-
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) {
-                  return AlertDialog(
-                    title: const Text('SVG Size'),
-
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: widthController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Width'),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        TextField(
-                          controller: heightController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Height'),
-                        ),
-                      ],
-                    ),
-
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context, false);
-                        },
-                        child: const Text('Cancel'),
-                      ),
-
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context, true);
-                        },
-                        child: const Text('Export'),
-                      ),
-                    ],
-                  );
-                },
-              );
-
-              if (confirmed != true) return;
-
-              final width = double.tryParse(widthController.text) ?? 1920;
-
-              final height = double.tryParse(heightController.text) ?? 1080;
-
-              final svg = _exportToSvg(width, height);
+              final svg = _exportToSvg();
 
               await Clipboard.setData(ClipboardData(text: svg));
 
               if (!mounted) return;
 
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text('SVG copied (${width.toInt()}×${height.toInt()})')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: Colors.black,
+                  content: Text('SVG copied to clipboard', style: GoogleFonts.courierPrime()),
+                ),
+              );
+
+              Navigator.pop(context);
             },
 
             child: const Text('Export SVG'),
@@ -2184,6 +2580,14 @@ for (final node in _nodes.values) {
             children: [
               const SizedBox(height: 8),
 
+              ListTile(
+                title: Text('Batch Simulator', style: GoogleFonts.courierPrime()),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openBatchSimulatorDialog();
+                },
+              ),
+
               SwitchListTile(
                 title: const Text('Show Help'),
                 subtitle: const Text('Displays controls and textbox commands.'),
@@ -2646,7 +3050,31 @@ for (final node in _nodes.values) {
                                     onPressed: (_simTokens.isEmpty || _simStep >= _simTokens.length)
                                         ? null
                                         : () {
-                                            setState(() => _simStep++);
+                                            setState(() {
+                                              _simStep++;
+
+                                              // If the newly displayed state contains
+                                              // a halt accept node, next frame becomes final.
+                                              if (_simStep < _simStates.length) {
+                                                final states = _simStates[_simStep];
+
+                                                bool hasHaltAccept = false;
+
+                                                for (final nid in states) {
+                                                  final node = _nodes[nid];
+
+                                                  if (node?.isHaltAccept == true) {
+                                                    hasHaltAccept = true;
+                                                    break;
+                                                  }
+                                                }
+
+                                                if (hasHaltAccept) {
+                                                  _simStep = _simTokens.length;
+                                                }
+                                              }
+                                            });
+
                                             setPanel(() {});
                                           },
                                   ),
