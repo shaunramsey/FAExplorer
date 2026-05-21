@@ -753,23 +753,23 @@ class _AutomataScreenState extends State<AutomataScreen> {
   }
 
   String _exportToSvg(double width, double height) {
-    final metadata = {
-      'nodes': _nodes.values
-          .map((n) => {'id': n.id, 'x': n.position.dx, 'y': n.position.dy, 'label': n.label, 'accept': n.isAccept})
-          .toList(),
+    final graphData = {
+      'version': 2,
 
-      'lines': _lines.values
-          .map(
-            (l) => {
-              'id': l.id,
-              'a': l.nodeAId,
-              'b': l.nodeBId,
-              'label': l.label,
-              'curve': l.perpendicularPart,
-              'loopAngle': l.selfLoopAngle,
-            },
-          )
-          .toList(),
+      'nodes': _nodes.values.map((n) {
+        return {'id': n.id, 'x': n.position.dx, 'y': n.position.dy, 'label': n.label, 'accept': n.isAccept};
+      }).toList(),
+
+      'lines': _lines.values.map((l) {
+        return {
+          'id': l.id,
+          'a': l.nodeAId,
+          'b': l.nodeBId,
+          'label': l.label,
+          'curve': l.perpendicularPart,
+          'loopAngle': l.selfLoopAngle,
+        };
+      }).toList(),
 
       'startArrow': _startArrow == null
           ? null
@@ -784,19 +784,39 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
     final buffer = StringBuffer();
 
-    buffer.writeln('<?xml version="1.0" standalone="no"?>');
+    buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
 
     buffer.writeln('''
 <svg
+  xmlns="http://www.w3.org/2000/svg"
   width="$width"
   height="$height"
-  viewBox="0 0 $width $height"
-  xmlns="http://www.w3.org/2000/svg">
+  viewBox="0 0 $width $height">
 ''');
 
-    buffer.writeln('<metadata>');
-    buffer.writeln(jsonEncode(metadata));
-    buffer.writeln('</metadata>');
+    buffer.writeln('<script type="application/json" id="automata-data">');
+
+    buffer.writeln(const JsonEncoder.withIndent('  ').convert(graphData));
+
+    buffer.writeln('</script>');
+
+    buffer.writeln('''
+<defs>
+  <marker
+  id="arrowhead"
+  viewBox="0 0 10 10"
+  refX="8"
+  refY="5"
+  markerWidth="4"
+  markerHeight="4"
+  orient="auto">
+
+  <path
+    d="M 0 0 L 10 5 L 0 10 z"
+    fill="black"/>
+</marker>
+</defs>
+''');
 
     // ─────────────────────────────
     // LINES
@@ -818,13 +838,20 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
         buffer.writeln('''
 <path
+  class="transition"
+  data-id="${line.id}"
+  data-label="${htmlEscape.convert(line.label)}"
+
   d="
     M ${start.dx} ${start.dy}
     A $radius $radius 0 1 1 ${end.dx} ${end.dy}
   "
-  stroke="black"
+
   fill="none"
-  stroke-width="4"/>
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
 ''');
       } else if (geometry.hasCircle) {
         final radius = geometry.circleRadius!;
@@ -838,21 +865,38 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
         buffer.writeln('''
 <path
-  d="M ${start.dx} ${start.dy}
-     A $radius $radius 0 $largeArc $sweep ${end.dx} ${end.dy}"
-  stroke="black"
+  class="transition"
+  data-id="${line.id}"
+  data-label="${htmlEscape.convert(line.label)}"
+
+  d="
+    M ${start.dx} ${start.dy}
+    A $radius $radius 0 $largeArc $sweep ${end.dx} ${end.dy}
+  "
+
   fill="none"
-  stroke-width="4"/>
+  stroke="black"
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
 ''');
       } else {
         buffer.writeln('''
 <line
+  class="transition"
+  data-id="${line.id}"
+  data-label="${htmlEscape.convert(line.label)}"
+
   x1="${geometry.startPoint.dx}"
   y1="${geometry.startPoint.dy}"
+
   x2="${geometry.endPoint.dx}"
   y2="${geometry.endPoint.dy}"
+
   stroke="black"
-  stroke-width="4"/>
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
 ''');
       }
 
@@ -878,12 +922,19 @@ ${htmlEscape.convert(line.label)}
       final center = node.center;
 
       buffer.writeln('''
+<g
+  class="node"
+  data-id="${node.id}">
+''');
+
+      buffer.writeln('''
 <circle
   cx="${center.dx}"
   cy="${center.dy}"
   r="50"
-  stroke="black"
+
   fill="white"
+  stroke="black"
   stroke-width="4"/>
 ''');
 
@@ -893,8 +944,9 @@ ${htmlEscape.convert(line.label)}
   cx="${center.dx}"
   cy="${center.dy}"
   r="42"
-  stroke="black"
+
   fill="none"
+  stroke="black"
   stroke-width="4"/>
 ''');
       }
@@ -909,6 +961,8 @@ ${htmlEscape.convert(line.label)}
 ${htmlEscape.convert(node.label)}
 </text>
 ''');
+
+      buffer.writeln('</g>');
     }
 
     // ─────────────────────────────
@@ -933,12 +987,18 @@ ${htmlEscape.convert(node.label)}
 
         buffer.writeln('''
 <line
+  class="start-arrow"
+
   x1="${start.dx}"
   y1="${start.dy}"
+
   x2="${end.dx}"
   y2="${end.dy}"
+
   stroke="black"
-  stroke-width="4"/>
+  stroke-width="4"
+  marker-end="url(#arrowhead)"
+  stroke-linecap="round"/>
 ''');
       }
     }
@@ -1351,13 +1411,13 @@ ${htmlEscape.convert(node.label)}
 
   String? _importFromSvg(String svg) {
     try {
-      final metadataMatch = RegExp(r'<metadata>(.*?)</metadata>', dotAll: true).firstMatch(svg);
+      final scriptMatch = RegExp(r'<script[^>]*id="automata-data"[^>]*>(.*?)</script>', dotAll: true).firstMatch(svg);
 
-      if (metadataMatch == null) {
-        return 'No metadata found.';
+      if (scriptMatch == null) {
+        return 'No embedded automata data found.';
       }
 
-      final jsonText = metadataMatch.group(1)!;
+      final jsonText = scriptMatch.group(1)!.trim();
 
       final data = jsonDecode(jsonText);
 
@@ -1365,19 +1425,25 @@ ${htmlEscape.convert(node.label)}
       final newLines = <String, LineData>{};
 
       for (final n in data['nodes']) {
-        newNodes[n['id']] = NodeData(
+        final node = NodeData(
           id: n['id'],
-          position: Offset((n['x'] as num).toDouble(), (n['y'] as num).toDouble()) - const Offset(50, 50),
-          label: n['label'],
-        )..isAccept = n['accept'];
+
+          position: Offset((n['x'] as num).toDouble(), (n['y'] as num).toDouble()),
+
+          label: n['label'] ?? '',
+        );
+
+        node.isAccept = n['accept'] == true;
+
+        newNodes[node.id] = node;
       }
 
       for (final l in data['lines']) {
-        final line = LineData(id: l['id'], nodeAId: l['a'], nodeBId: l['b'], label: l['label']);
+        final line = LineData(id: l['id'], nodeAId: l['a'], nodeBId: l['b'], label: l['label'] ?? '');
 
-        line.perpendicularPart = (l['curve'] as num).toDouble();
+        line.perpendicularPart = (l['curve'] as num?)?.toDouble() ?? 0;
 
-        line.selfLoopAngle = (l['loopAngle'] as num).toDouble();
+        line.selfLoopAngle = (l['loopAngle'] as num?)?.toDouble() ?? 0;
 
         newLines[line.id] = line;
 
@@ -1393,10 +1459,28 @@ ${htmlEscape.convert(node.label)}
 
         startArrow = StartArrowData(
           nodeId: sa['nodeId'],
+
           offset: Offset((sa['dx'] as num).toDouble(), (sa['dy'] as num).toDouble()),
+
           length: (sa['length'] as num).toDouble(),
-          label: sa['label'],
+
+          label: sa['label'] ?? '',
         );
+      }
+
+      int highestNode = 0;
+      int highestLine = 0;
+
+      for (final id in newNodes.keys) {
+        final num = int.tryParse(id.substring(1)) ?? 0;
+
+        highestNode = max(highestNode, num + 1);
+      }
+
+      for (final id in newLines.keys) {
+        final num = int.tryParse(id.substring(1)) ?? 0;
+
+        highestLine = max(highestLine, num + 1);
       }
 
       setState(() {
@@ -1409,6 +1493,9 @@ ${htmlEscape.convert(node.label)}
           ..addAll(newLines);
 
         _startArrow = startArrow;
+
+        _nodeCounter = highestNode;
+        _lineCounter = highestLine;
       });
 
       return null;
