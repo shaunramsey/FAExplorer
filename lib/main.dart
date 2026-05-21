@@ -42,6 +42,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
   bool _deleteMode = false;
 
   bool _showHelpOverlay = false;
+  bool _showSimulator = true;
 
   StartArrowData? _startArrow;
 
@@ -759,6 +760,28 @@ void _refreshSimulation() {
       lines.add('');
     }
 
+// ─────────────────────────────────────────────
+// SELF LOOP ANGLES
+// ─────────────────────────────────────────────
+
+bool wroteLoopAngles = false;
+
+for (final l in _lines.values) {
+  if (l.nodeAId != l.nodeBId) continue;
+
+  final loopRef = _lineRef(l);
+
+  lines.add(
+    '$loopRef loop angle = ${l.selfLoopAngle.toStringAsFixed(4)}'
+  );
+
+  wroteLoopAngles = true;
+}
+
+if (wroteLoopAngles) {
+  lines.add('');
+}
+
     // ─────────────────────────────────────────────
     // START ARROW
     // ─────────────────────────────────────────────
@@ -1026,6 +1049,39 @@ void _refreshSimulation() {
 
           continue;
         }
+
+        // ── "lineLabel loop angle = N" ─────────────────────────────
+final loopAngleRe = RegExp(
+  r'^(.+?)\s+loop\s+angle\s*=\s*(-?[\d.]+)$',
+  caseSensitive: false,
+);
+
+final loopAngleMatch = loopAngleRe.firstMatch(line);
+
+if (loopAngleMatch != null) {
+  final lbl = unescapeDsl(loopAngleMatch.group(1)!.trim());
+
+  final val = double.parse(loopAngleMatch.group(2)!);
+
+  String? lid;
+
+  final explicitRef =
+      RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
+
+  if (explicitRef != null) {
+    lid = explicitRef.group(1);
+  } else if (newLines.containsKey(lbl)) {
+    lid = lbl;
+  } else {
+    lid = lineLabelToId[lbl];
+  }
+
+  if (lid != null && newLines.containsKey(lid)) {
+    newLines[lid]!.selfLoopAngle = val;
+  }
+
+  continue;
+}
 
         // ── "label is accepted" ───────────────────────────────
         final acceptRe = RegExp(r'^(.+?)\s+is\s+accepted$', caseSensitive: false);
@@ -1744,208 +1800,10 @@ void _refreshSimulation() {
     return Scaffold(
       drawer: Drawer(
         child: SafeArea(
-          child: Column(
+          child: ListView(
+            padding: EdgeInsets.zero,
             children: [
-              // ═══════════════════════════════════════════════════
-              // STRING SIMULATION PANEL
-              // ═══════════════════════════════════════════════════
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
-                child: StatefulBuilder(
-                  builder: (ctx, setPanel) {
-                    // Helper to rebuild sim and refresh both panel and canvas
-                    void rebuild() {
-                      setState(() => _simRebuild());
-                      setPanel(() {});
-                    }
-
-                    // Step display: "3 / 5" or "start"
-                    String stepLabel() {
-                      if (_simTokens.isEmpty) return '—';
-                      if (_simStep < 0) return 'start';
-                      return '${_simStep} / ${_simTokens.length}';
-                    }
-
-                    // The status icon widget
-                    Widget statusBox() {
-                      IconData icon;
-                      Color color;
-                      final atEnd = _simStep == _simTokens.length && _simTokens.isNotEmpty;
-                      if (!atEnd || _simStates.isEmpty) {
-                        icon = Icons.question_mark;
-                        color = Colors.grey.shade400;
-                      } else {
-                        final r = _simFinalResult();
-                        if (r == 1) {
-                          icon = Icons.check;
-                          color = Colors.green;
-                        } else if (r == 0) {
-                          icon = Icons.close;
-                          color = Colors.red;
-                        } else {
-                          icon = Icons.question_mark;
-                          color = Colors.orange;
-                        }
-                      }
-                      return Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.black54, width: 1.5),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Icon(icon, color: color, size: 22),
-                      );
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'String Simulation',
-                          style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 15),
-                        ),
-                        const SizedBox(height: 8),
-
-                        // Input textbox
-                        TextField(
-                          controller: _simController,
-                          style: GoogleFonts.courierPrime(fontSize: 14),
-                          decoration: InputDecoration(
-                            hintText: 'Enter input string…',
-                            hintStyle: GoogleFonts.courierPrime(fontSize: 13, color: Colors.black38),
-                            border: const OutlineInputBorder(),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                            suffixIcon: _simController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () {
-                                      _simController.clear();
-                                      setState(() {
-                                        _simTokens = [];
-                                        _simStep = -1;
-                                        _simStates.clear();
-                                        _simLines.clear();
-                                      });
-                                      setPanel(() {});
-                                    },
-                                  )
-                                : null,
-                          ),
-                          onChanged: (v) {
-                            rebuild();
-                            // Reset to start when input changes
-                            setState(() => _simStep = -1);
-                            setPanel(() {});
-                          },
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        // Controls row
-                        Row(
-                          children: [
-                            // ◀◀ Skip to start
-                            IconButton(
-                              icon: const Icon(Icons.skip_previous),
-                              tooltip: 'Go to start',
-                              onPressed: _simTokens.isEmpty ? null : () {
-                                setState(() => _simStep = -1);
-                                setPanel(() {});
-                              },
-                            ),
-
-                            // ◀ Step back
-                            IconButton(
-                              icon: const Icon(Icons.chevron_left),
-                              tooltip: 'Step back',
-                              onPressed: (_simStep <= -1 || _simTokens.isEmpty) ? null : () {
-                                setState(() => _simStep--);
-                                setPanel(() {});
-                              },
-                            ),
-
-                            // Status box (center)
-                            const Spacer(),
-                            statusBox(),
-                            const Spacer(),
-
-                            // ▶ Step forward
-                            IconButton(
-                              icon: const Icon(Icons.chevron_right),
-                              tooltip: 'Step forward',
-                              onPressed: (_simTokens.isEmpty || _simStep >= _simTokens.length) ? null : () {
-                                setState(() => _simStep++);
-                                setPanel(() {});
-                              },
-                            ),
-
-                            // ▶▶ Skip to end
-                            IconButton(
-                              icon: const Icon(Icons.skip_next),
-                              tooltip: 'Go to end',
-                              onPressed: (_simTokens.isEmpty || _simStep == _simTokens.length) ? null : () {
-                                setState(() => _simStep = _simTokens.length);
-                                setPanel(() {});
-                              },
-                            ),
-                          ],
-                        ),
-
-                        // Step indicator
-                        Center(
-                          child: Text(
-                            stepLabel(),
-                            style: GoogleFonts.courierPrime(fontSize: 12, color: Colors.black54),
-                          ),
-                        ),
-
-                        // Token display
-                        if (_simTokens.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: List.generate(_simTokens.length, (i) {
-                                final consumed = _simStep > i;
-                                final current = _simStep == i;
-                                return Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: current
-                                        ? Colors.lightBlueAccent.withOpacity(0.4)
-                                        : consumed
-                                            ? Colors.grey.shade200
-                                            : Colors.transparent,
-                                    border: Border.all(
-                                      color: current ? Colors.lightBlueAccent : Colors.black26,
-                                      width: current ? 2 : 1,
-                                    ),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    _simTokens[i],
-                                    style: GoogleFonts.courierPrime(
-                                      fontSize: 13,
-                                      color: consumed ? Colors.black38 : Colors.black,
-                                      fontWeight: current ? FontWeight.bold : FontWeight.normal,
-                                    ),
-                                  ),
-                                );
-                              }),
-                            ),
-                          ),
-                        ],
-                      ],
-                    );
-                  },
-                ),
-              ),
-
-              const Divider(),
-              const Spacer(),
+              const SizedBox(height: 8),
 
               SwitchListTile(
                 title: const Text('Show Help'),
@@ -1958,7 +1816,16 @@ void _refreshSimulation() {
                 },
               ),
 
-              const SizedBox(height: 8),
+              SwitchListTile(
+                title: const Text('String Simulator'),
+                subtitle: const Text('Show/hide the simulator panel.'),
+                value: _showSimulator,
+                onChanged: (value) {
+                  setState(() {
+                    _showSimulator = value;
+                  });
+                },
+              ),
 
               const Divider(),
 
@@ -2078,6 +1945,20 @@ void _refreshSimulation() {
             backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
             onPressed: () => _setLineMode(!_lineMode),
             child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
+          ),
+
+          const SizedBox(height: 12),
+
+          FloatingActionButton.small(
+            heroTag: 'toggleSim',
+            tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
+            backgroundColor: _showSimulator ? Colors.purple.shade100 : null,
+            onPressed: () {
+              setState(() {
+                _showSimulator = !_showSimulator;
+              });
+            },
+            child: const Icon(Icons.science, size: 20),
           ),
         ],
       ),
@@ -2233,6 +2114,216 @@ void _refreshSimulation() {
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // ═══════════════════════════════════════════════════
+              // STRING SIMULATION OVERLAY (top-left)
+              // ═══════════════════════════════════════════════════
+              if (_showSimulator)
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Material(
+                    elevation: 6,
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withOpacity(0.96),
+                    child: Container(
+                      width: 280,
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      child: StatefulBuilder(
+                        builder: (ctx, setPanel) {
+                          void rebuild() {
+                            setState(() => _simRebuild());
+                            setPanel(() {});
+                          }
+
+                          String stepLabel() {
+                            if (_simTokens.isEmpty) return '—';
+                            if (_simStep < 0) return 'start';
+                            return '${_simStep} / ${_simTokens.length}';
+                          }
+
+                          Widget statusBox() {
+                            IconData icon;
+                            Color color;
+                            final atEnd = _simStep == _simTokens.length && _simTokens.isNotEmpty;
+                            if (!atEnd || _simStates.isEmpty) {
+                              icon = Icons.question_mark;
+                              color = Colors.grey.shade400;
+                            } else {
+                              final r = _simFinalResult();
+                              if (r == 1) {
+                                icon = Icons.check;
+                                color = Colors.green;
+                              } else if (r == 0) {
+                                icon = Icons.close;
+                                color = Colors.red;
+                              } else {
+                                icon = Icons.question_mark;
+                                color = Colors.orange;
+                              }
+                            }
+                            return Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.black54, width: 1.5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Icon(icon, color: color, size: 20),
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'String Simulation',
+                                    style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  const Spacer(),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _showSimulator = false),
+                                    child: const Icon(Icons.close, size: 16, color: Colors.black54),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+
+                              TextField(
+                                controller: _simController,
+                                style: GoogleFonts.courierPrime(fontSize: 13),
+                                decoration: InputDecoration(
+                                  hintText: 'Enter input string…',
+                                  hintStyle: GoogleFonts.courierPrime(fontSize: 12, color: Colors.black38),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  suffixIcon: _simController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 16),
+                                          onPressed: () {
+                                            _simController.clear();
+                                            setState(() {
+                                              _simTokens = [];
+                                              _simStep = -1;
+                                              _simStates.clear();
+                                              _simLines.clear();
+                                            });
+                                            setPanel(() {});
+                                          },
+                                        )
+                                      : null,
+                                ),
+                                onChanged: (v) {
+                                  rebuild();
+                                  setState(() => _simStep = -1);
+                                  setPanel(() {});
+                                },
+                              ),
+
+                              const SizedBox(height: 6),
+
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.skip_previous, size: 20),
+                                    tooltip: 'Go to start',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: _simTokens.isEmpty ? null : () {
+                                      setState(() => _simStep = -1);
+                                      setPanel(() {});
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_left, size: 20),
+                                    tooltip: 'Step back',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: (_simStep <= -1 || _simTokens.isEmpty) ? null : () {
+                                      setState(() => _simStep--);
+                                      setPanel(() {});
+                                    },
+                                  ),
+                                  const Spacer(),
+                                  statusBox(),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_right, size: 20),
+                                    tooltip: 'Step forward',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: (_simTokens.isEmpty || _simStep >= _simTokens.length) ? null : () {
+                                      setState(() => _simStep++);
+                                      setPanel(() {});
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.skip_next, size: 20),
+                                    tooltip: 'Go to end',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    onPressed: (_simTokens.isEmpty || _simStep == _simTokens.length) ? null : () {
+                                      setState(() => _simStep = _simTokens.length);
+                                      setPanel(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+
+                              Center(
+                                child: Text(
+                                  stepLabel(),
+                                  style: GoogleFonts.courierPrime(fontSize: 11, color: Colors.black54),
+                                ),
+                              ),
+
+                              if (_simTokens.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: List.generate(_simTokens.length, (i) {
+                                      final consumed = _simStep > i;
+                                      final current = _simStep == i;
+                                      return Container(
+                                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: current
+                                              ? Colors.lightBlueAccent.withOpacity(0.4)
+                                              : consumed
+                                                  ? Colors.grey.shade200
+                                                  : Colors.transparent,
+                                          border: Border.all(
+                                            color: current ? Colors.lightBlueAccent : Colors.black26,
+                                            width: current ? 2 : 1,
+                                          ),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          _simTokens[i],
+                                          style: GoogleFonts.courierPrime(
+                                            fontSize: 12,
+                                            color: consumed ? Colors.black38 : Colors.black,
+                                            fontWeight: current ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
