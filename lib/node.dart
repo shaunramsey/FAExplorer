@@ -113,16 +113,14 @@ class _NodeState extends State<Node> {
   }
 
   void _deselect() {
-  final value = _controller.text;
+    final value = _controller.text;
 
-  setState(() {
-    _selected = false;
-  });
+    setState(() {
+      _selected = false;
+    });
 
-  widget.onLabelChanged(value);
-}
-
-
+    widget.onLabelChanged(value);
+  }
 
   void _onFocusChange() {
     if (!_focusNode.hasFocus) {
@@ -131,22 +129,18 @@ class _NodeState extends State<Node> {
   }
 
   Color get _borderColor {
-  final isDuplicate =
-      widget.isLabelTaken(
-        _controller.text,
-        widget.data.id,
-      );
+    final isDuplicate = widget.isLabelTaken(_controller.text, widget.data.id);
 
-  return widget.deleteMode
-      ? Colors.red
-      : widget.highlighted
-      ? const Color.fromARGB(255, 208, 0, 255)
-      : isDuplicate
-      ? Colors.orange
-      : _selected
-      ? Colors.lightBlueAccent
-      : Colors.black;
-}
+    return widget.deleteMode
+        ? Colors.red
+        : widget.highlighted
+        ? const Color.fromARGB(255, 208, 0, 255)
+        : isDuplicate
+        ? Colors.orange
+        : _selected
+        ? Colors.lightBlueAccent
+        : Colors.black;
+  }
 
   // ─────────────────────────────────────────────
   // TOKEN PARSER
@@ -262,8 +256,6 @@ class _NodeState extends State<Node> {
   // NODE ID DISPLAY
   // ─────────────────────────────────────────────
 
-  
-
   String getDisplayId(String rawId) {
     final number = int.tryParse(rawId.replaceFirst('n', ''));
 
@@ -317,42 +309,39 @@ class _NodeState extends State<Node> {
               ),
 
               if (widget.data.isAccept)
-  Center(
-    child: IgnorePointer(
-      child: Container(
-        width: 80,
-        height: 80,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: _borderColor, width: 4),
-        ),
-      ),
-    ),
-  ),
+                Center(
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _borderColor, width: 4),
+                      ),
+                    ),
+                  ),
+                ),
 
-if (widget.data.isHaltAccept)
-  Center(
-    child: IgnorePointer(
-      child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: Colors.green,
-          border: Border.all(color: _borderColor, width: 4),
-        ),
-      ),
-    ),
-  ),
+              if (widget.data.isHaltAccept)
+                Center(
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        border: Border.all(color: _borderColor, width: 4),
+                      ),
+                    ),
+                  ),
+                ),
 
-if (widget.data.isHaltReject)
-  Center(
-    child: IgnorePointer(
-      child: CustomPaint(
-        size: const Size(60, 60),
-        painter: _OctagonPainter(
-          color: Colors.red,
-          borderColor: _borderColor,
-        ),
+              if (widget.data.isHaltReject)
+                Center(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      size: const Size(60, 60),
+                      painter: _OctagonPainter(color: Colors.red, borderColor: _borderColor),
                     ),
                   ),
                 ),
@@ -371,32 +360,32 @@ if (widget.data.isHaltReject)
                       onTapOutside: (_) => _deselect(),
 
                       onChanged: (value) {
-  final parsed = parseNodeText(value);
+                        final parsed = parseNodeText(value);
 
-  String finalText = parsed;
+                        String finalText = parsed;
 
-  bool haltAccept = false;
-  bool haltReject = false;
+                        bool haltAccept = false;
+                        bool haltReject = false;
 
-  if (parsed.startsWith('<<') && parsed.endsWith('>>')) {
-    haltAccept = true;
-    finalText = parsed.substring(2, parsed.length - 2);
-  } else if (parsed.startsWith('>>') && parsed.endsWith('<<')) {
-    haltReject = true;
-    finalText = parsed.substring(2, parsed.length - 2);
-  }
+                        if (parsed.startsWith('<<') && parsed.endsWith('>>')) {
+                          haltAccept = true;
+                          finalText = parsed.substring(2, parsed.length - 2);
+                        } else if (parsed.startsWith('>>') && parsed.endsWith('<<')) {
+                          haltReject = true;
+                          finalText = parsed.substring(2, parsed.length - 2);
+                        }
 
-  widget.data.isHaltAccept = haltAccept;
-  widget.data.isHaltReject = haltReject;
+                        widget.data.isHaltAccept = haltAccept;
+                        widget.data.isHaltReject = haltReject;
 
-  if (finalText != _controller.text) {
-    _controller.value = TextEditingValue(
-      text: finalText,
-      selection: TextSelection.collapsed(offset: finalText.length),
-    );
-  }
+                        if (finalText != _controller.text) {
+                          _controller.value = TextEditingValue(
+                            text: finalText,
+                            selection: TextSelection.collapsed(offset: finalText.length),
+                          );
+                        }
 
-  setState(() {});
+                        setState(() {});
                       },
 
                       decoration: InputDecoration(
@@ -416,6 +405,5 @@ if (widget.data.isHaltReject)
         ),
       ),
     );
-    
   }
 }

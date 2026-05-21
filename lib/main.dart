@@ -147,21 +147,20 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
       final currentNode = _nodes[current.nodeId];
 
-if (currentNode == null) {
-  continue;
-}
+      if (currentNode == null) {
+        continue;
+      }
 
-// Halt states terminate immediately.
-// No epsilon/free/null transitions allowed.
-if (currentNode.isHaltAccept ||
-    currentNode.isHaltReject) {
-  continue;
-}
+      // Halt states terminate immediately.
+      // No epsilon/free/null transitions allowed.
+      if (currentNode.isHaltAccept || currentNode.isHaltReject) {
+        continue;
+      }
 
-for (final line in _lines.values) {
-  if (line.nodeAId != current.nodeId) {
-    continue;
-  }
+      for (final line in _lines.values) {
+        if (line.nodeAId != current.nodeId) {
+          continue;
+        }
 
         final alternatives = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
 
@@ -393,113 +392,100 @@ for (final line in _lines.values) {
     _simLines.add(Set.from(initialLines));
 
     for (final token in _simTokens) {
-  final nextNodes = <String>{};
-  final usedLines = <String>{};
+      final nextNodes = <String>{};
+      final usedLines = <String>{};
 
-  final isLastToken = token == _simTokens.last;
+      final isLastToken = token == _simTokens.last;
 
-  // ─────────────────────────────
-  // Process every active branch
-  // ─────────────────────────────
+      // ─────────────────────────────
+      // Process every active branch
+      // ─────────────────────────────
 
-  for (final nodeId in current) {
-    final currentNode = _nodes[nodeId];
+      for (final nodeId in current) {
+        final currentNode = _nodes[nodeId];
 
-    if (currentNode == null) {
-      continue;
-    }
-
-    // Halt reject:
-    // kill ONLY this branch
-    if (currentNode.isHaltReject) {
-      continue;
-    }
-
-    // Halt accept:
-// instantly end ALL processing
-if (currentNode.isHaltAccept) {
-  current = {nodeId};
-
-  // Clear any future partial states
-  while (_simStates.length > _simStep + 2) {
-    _simStates.removeLast();
-  }
-
-  while (_simLines.length > _simStep + 2) {
-    _simLines.removeLast();
-  }
-
-  _simStates.add({nodeId});
-  _simLines.add(Set.from(usedLines));
-
-  // Force simulation to final step
-  _simStep = _simTokens.length;
-
-  return;
-}
-
-// Halt reject kills only this branch
-if (currentNode.isHaltReject) {
-  continue;
-}
-
-// Halt accept instantly ends ALL processing
-if (currentNode.isHaltAccept) {
-  current = {nodeId};
-
-  _simStates.add(Set.from(current));
-  _simLines.add(Set.from(usedLines));
-
-
-  return;
-}
-
-    // Normal transitions
-    for (final line in _lines.values) {
-      if (line.nodeAId != nodeId) continue;
-
-      final alternatives = line.label
-          .split(RegExp(r'[,\\n]'))
-          .map((s) => s.trim());
-
-      for (final alt in alternatives) {
-        if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) {
+        if (currentNode == null) {
           continue;
         }
 
-        if (_normalizeSimToken(alt) ==
-            _normalizeSimToken(token)) {
-          nextNodes.add(line.nodeBId);
-          usedLines.add(line.id);
-          break;
+        // Halt reject:
+        // kill ONLY this branch
+        if (currentNode.isHaltReject) {
+          continue;
+        }
+
+        // Halt accept:
+        // instantly end ALL processing
+        if (currentNode.isHaltAccept) {
+          current = {nodeId};
+
+          // Clear any future partial states
+          while (_simStates.length > _simStep + 2) {
+            _simStates.removeLast();
+          }
+
+          while (_simLines.length > _simStep + 2) {
+            _simLines.removeLast();
+          }
+
+          _simStates.add({nodeId});
+          _simLines.add(Set.from(usedLines));
+
+          // Force simulation to final step
+          _simStep = _simTokens.length;
+
+          return;
+        }
+
+        // Halt reject kills only this branch
+        if (currentNode.isHaltReject) {
+          continue;
+        }
+
+        // Halt accept instantly ends ALL processing
+        if (currentNode.isHaltAccept) {
+          current = {nodeId};
+
+          _simStates.add(Set.from(current));
+          _simLines.add(Set.from(usedLines));
+
+          return;
+        }
+
+        // Normal transitions
+        for (final line in _lines.values) {
+          if (line.nodeAId != nodeId) continue;
+
+          final alternatives = line.label.split(RegExp(r'[,\\n]')).map((s) => s.trim());
+
+          for (final alt in alternatives) {
+            if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) {
+              continue;
+            }
+
+            if (_normalizeSimToken(alt) == _normalizeSimToken(token)) {
+              nextNodes.add(line.nodeBId);
+              usedLines.add(line.id);
+              break;
+            }
+          }
         }
       }
+
+      // Epsilon closure
+      final (closureNodes, closureLines) = _epsilonClosure(nextNodes, isLastToken, nullWasExplicitlyTyped);
+
+      current = closureNodes;
+
+      _simStates.add(Set.from(current));
+
+      _simLines.add({...usedLines, ...closureLines});
+
+      // No branches left → reject
+      if (current.isEmpty) {
+        break;
+      }
     }
-  }
-
-  // Epsilon closure
-  final (closureNodes, closureLines) =
-      _epsilonClosure(
-    nextNodes,
-    isLastToken,
-    nullWasExplicitlyTyped,
-  );
-
-  current = closureNodes;
-
-  _simStates.add(Set.from(current));
-
-  _simLines.add({
-    ...usedLines,
-    ...closureLines,
-  });
-
-  // No branches left → reject
-  if (current.isEmpty) {
-    break;
-  }
-}
-    
   }
 
   void _simRebuild() {
@@ -514,55 +500,55 @@ if (currentNode.isHaltAccept) {
   // Result at final step: ✓ / ✗ / ?
   // Returns 1 = accept, 0 = reject, -1 = mixed
   int _simFinalResult() {
-  if (_simStates.isEmpty) return 0;
+    if (_simStates.isEmpty) return 0;
 
-  final finalStates = _simStates.last;
+    final finalStates = _simStates.last;
 
-  if (finalStates.isEmpty) return 0;
+    if (finalStates.isEmpty) return 0;
 
-  bool anyAccept = false;
-  bool anyReject = false;
+    bool anyAccept = false;
+    bool anyReject = false;
 
-  // If any state ever reached halt accept,
-// simulation is accepted forever.
-for (final states in _simStates) {
-  for (final nid in states) {
-    final node = _nodes[nid];
+    // If any state ever reached halt accept,
+    // simulation is accepted forever.
+    for (final states in _simStates) {
+      for (final nid in states) {
+        final node = _nodes[nid];
 
-    if (node?.isHaltAccept == true) {
-      return 1;
+        if (node?.isHaltAccept == true) {
+          return 1;
+        }
+      }
     }
+
+    for (final nid in finalStates) {
+      final node = _nodes[nid];
+
+      if (node == null) continue;
+
+      // Halt accept instantly accepts
+      if (node.isHaltAccept) {
+        return 1;
+      }
+
+      // Halt reject instantly rejects
+      if (node.isHaltReject) {
+        return 0;
+      }
+
+      if (node.isAccept) {
+        anyAccept = true;
+      } else {
+        anyReject = true;
+      }
+    }
+
+    if (anyAccept && anyReject) return -1;
+
+    if (anyAccept) return 1;
+
+    return 0;
   }
-}
-
-  for (final nid in finalStates) {
-    final node = _nodes[nid];
-
-    if (node == null) continue;
-
-    // Halt accept instantly accepts
-    if (node.isHaltAccept) {
-      return 1;
-    }
-
-    // Halt reject instantly rejects
-    if (node.isHaltReject) {
-      return 0;
-    }
-
-    if (node.isAccept) {
-      anyAccept = true;
-    } else {
-      anyReject = true;
-    }
-  }
-
-  if (anyAccept && anyReject) return -1;
-
-  if (anyAccept) return 1;
-
-  return 0;
-}
 
   void _cancelRubberBand() {
     _lineSourceNodeId = null;
@@ -726,20 +712,18 @@ for (final states in _simStates) {
     // ─────────────────────────────────────────────
 
     for (final n in _nodes.values) {
-  final displayLabel = n.label.trim().isEmpty
-      ? _numberToAlphabetLabel(int.parse(n.id.substring(1)))
-      : n.label;
+      final displayLabel = n.label.trim().isEmpty ? _numberToAlphabetLabel(int.parse(n.id.substring(1))) : n.label;
 
-  String finalLabel = escapeDsl(displayLabel);
+      String finalLabel = escapeDsl(displayLabel);
 
-  if (n.isHaltAccept) {
-    finalLabel = '<<$finalLabel>>';
-  } else if (n.isHaltReject) {
-    finalLabel = '>>$finalLabel<<';
-  }
+      if (n.isHaltAccept) {
+        finalLabel = '<<$finalLabel>>';
+      } else if (n.isHaltReject) {
+        finalLabel = '>>$finalLabel<<';
+      }
 
-  lines.add('${n.id} = $finalLabel');
-}
+      lines.add('${n.id} = $finalLabel');
+    }
 
     if (_nodes.isNotEmpty) {
       lines.add('');
@@ -901,10 +885,7 @@ for (final states in _simStates) {
 
   /// Returns the endpoint shortened by [_svgArrowLen] along [angle].
   Offset _shortenedEnd(Offset tip, double angle) {
-    return Offset(
-      tip.dx - cos(angle) * _svgArrowLen,
-      tip.dy - sin(angle) * _svgArrowLen,
-    );
+    return Offset(tip.dx - cos(angle) * _svgArrowLen, tip.dy - sin(angle) * _svgArrowLen);
   }
 
   String _exportToSvg() {
@@ -976,7 +957,10 @@ for (final states in _simStates) {
         if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071);
         final center = node.center;
         final arrowEnd = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
-        final arrowStart = Offset(arrowEnd.dx + dir.dx * _startArrow!.length, arrowEnd.dy + dir.dy * _startArrow!.length);
+        final arrowStart = Offset(
+          arrowEnd.dx + dir.dx * _startArrow!.length,
+          arrowEnd.dy + dir.dy * _startArrow!.length,
+        );
         expandPoint(arrowStart.dx, arrowStart.dy);
         expandPoint(arrowEnd.dx, arrowEnd.dy);
 
@@ -994,7 +978,10 @@ for (final states in _simStates) {
 
     // Fallback if graph is empty
     if (minX == double.infinity) {
-      minX = 0; minY = 0; maxX = 400; maxY = 300;
+      minX = 0;
+      minY = 0;
+      maxX = 400;
+      maxY = 300;
     }
 
     final double vx = minX - pad;
@@ -1010,14 +997,14 @@ for (final states in _simStates) {
       'version': 2,
       'nodes': _nodes.values.map((n) {
         return {
-  'id': n.id,
-  'x': n.position.dx,
-  'y': n.position.dy,
-  'label': n.label,
-  'accept': n.isAccept,
-  'haltAccept': n.isHaltAccept,
-  'haltReject': n.isHaltReject,
-};
+          'id': n.id,
+          'x': n.position.dx,
+          'y': n.position.dy,
+          'label': n.label,
+          'accept': n.isAccept,
+          'haltAccept': n.isHaltAccept,
+          'haltReject': n.isHaltReject,
+        };
       }).toList(),
       'lines': _lines.values.map((l) {
         return {
@@ -1140,14 +1127,18 @@ for (final states in _simStates) {
         final double boxH = lineH * lineCount;
         final textPos = line.getTextBoxLocation(nodeA.center, nodeB.center, boxW, boxH, line.label);
         final parts = line.label.split('\n');
-        buffer.writeln('<text x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(textPos.dy + 24).toStringAsFixed(1)}"'
-            ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
-            ' text-anchor="middle" fill="var(--fg)">');
+        buffer.writeln(
+          '<text x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(textPos.dy + 24).toStringAsFixed(1)}"'
+          ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
+          ' text-anchor="middle" fill="var(--fg)">',
+        );
         for (int i = 0; i < parts.length; i++) {
           if (i == 0) {
             buffer.writeln('  <tspan>${htmlEscape.convert(parts[i])}</tspan>');
           } else {
-            buffer.writeln('  <tspan x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>');
+            buffer.writeln(
+              '  <tspan x="${(textPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>',
+            );
           }
         }
         buffer.writeln('</text>');
@@ -1186,40 +1177,40 @@ for (final states in _simStates) {
         '  <circle cx="${center.dx}" cy="${center.dy}" r="$nodeRadius"'
         ' fill="var(--node-fill)" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
       );
-if (node.isAccept) {
-  buffer.writeln(
-    '  <circle cx="${center.dx}" cy="${center.dy}" r="$acceptRadius"'
-    ' fill="none" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
-  );
-}
+      if (node.isAccept) {
+        buffer.writeln(
+          '  <circle cx="${center.dx}" cy="${center.dy}" r="$acceptRadius"'
+          ' fill="none" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+        );
+      }
 
-if (node.isHaltAccept) {
-  final left = center.dx - 24;
-  final top = center.dy - 24;
+      if (node.isHaltAccept) {
+        final left = center.dx - 24;
+        final top = center.dy - 24;
 
-  buffer.writeln(
-    '  <rect x="$left" y="$top" width="48" height="48"'
-    ' fill="green" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
-  );
-}
+        buffer.writeln(
+          '  <rect x="$left" y="$top" width="48" height="48"'
+          ' fill="green" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+        );
+      }
 
-if (node.isHaltReject) {
-  final points = [
-    '${center.dx - 12},${center.dy - 24}',
-    '${center.dx + 12},${center.dy - 24}',
-    '${center.dx + 24},${center.dy - 12}',
-    '${center.dx + 24},${center.dy + 12}',
-    '${center.dx + 12},${center.dy + 24}',
-    '${center.dx - 12},${center.dy + 24}',
-    '${center.dx - 24},${center.dy + 12}',
-    '${center.dx - 24},${center.dy - 12}',
-  ].join(' ');
+      if (node.isHaltReject) {
+        final points = [
+          '${center.dx - 12},${center.dy - 24}',
+          '${center.dx + 12},${center.dy - 24}',
+          '${center.dx + 24},${center.dy - 12}',
+          '${center.dx + 24},${center.dy + 12}',
+          '${center.dx + 12},${center.dy + 24}',
+          '${center.dx - 12},${center.dy + 24}',
+          '${center.dx - 24},${center.dy + 12}',
+          '${center.dx - 24},${center.dy - 12}',
+        ].join(' ');
 
-  buffer.writeln(
-    '  <polygon points="$points"'
-    ' fill="red" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
-  );
-}
+        buffer.writeln(
+          '  <polygon points="$points"'
+          ' fill="red" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
+        );
+      }
       buffer.writeln(
         '  <text x="${center.dx}" y="${center.dy}"'
         ' dominant-baseline="middle" text-anchor="middle"'
@@ -1262,14 +1253,18 @@ if (node.isHaltReject) {
           final perp = Offset(-dir.dy, dir.dx);
           final labelPos = Offset(arrowStart.dx + perp.dx * 30 - boxW / 2, arrowStart.dy + perp.dy * 30 - boxH / 2);
           final parts = _startArrow!.label.split('\n');
-          buffer.writeln('<text x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(labelPos.dy + 24).toStringAsFixed(1)}"'
-              ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
-              ' text-anchor="middle" fill="var(--fg)">');
+          buffer.writeln(
+            '<text x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" y="${(labelPos.dy + 24).toStringAsFixed(1)}"'
+            ' font-family="Courier New, monospace" font-weight="bold" font-size="30"'
+            ' text-anchor="middle" fill="var(--fg)">',
+          );
           for (int i = 0; i < parts.length; i++) {
             if (i == 0) {
               buffer.writeln('  <tspan>${htmlEscape.convert(parts[i])}</tspan>');
             } else {
-              buffer.writeln('  <tspan x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>');
+              buffer.writeln(
+                '  <tspan x="${(labelPos.dx + boxW / 2).toStringAsFixed(1)}" dy="36">${htmlEscape.convert(parts[i])}</tspan>',
+              );
             }
           }
           buffer.writeln('</text>');
@@ -1387,48 +1382,42 @@ if (node.isHaltReject) {
         return labelToId[lbl];
       }
 
-        String ensureNode(String lbl) {
-  lbl = unescapeDsl(lbl);
+      String ensureNode(String lbl) {
+        lbl = unescapeDsl(lbl);
 
-  bool haltAccept = false;
-  bool haltReject = false;
+        bool haltAccept = false;
+        bool haltReject = false;
 
-  if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
-    haltAccept = true;
-    lbl = lbl.substring(2, lbl.length - 2);
-  } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
-    haltReject = true;
-    lbl = lbl.substring(2, lbl.length - 2);
-  }
+        if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
+          haltAccept = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
+          haltReject = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        }
 
-  final existing = idForLabel(lbl);
+        final existing = idForLabel(lbl);
 
-  if (existing != null) {
-    final node = newNodes[existing]!;
+        if (existing != null) {
+          final node = newNodes[existing]!;
 
-    node.isHaltAccept = haltAccept;
-    node.isHaltReject = haltReject;
+          node.isHaltAccept = haltAccept;
+          node.isHaltReject = haltReject;
 
-    return existing;
-  }
+          return existing;
+        }
 
-  final id = 'n${nodeCounter++}';
+        final id = 'n${nodeCounter++}';
 
-  final pos = _defaultPosition(newNodes.length);
+        final pos = _defaultPosition(newNodes.length);
 
-  final node = NodeData(
-    id: id,
-    position: pos,
-    label: lbl,
-    isHaltAccept: haltAccept,
-    isHaltReject: haltReject,
-  );
+        final node = NodeData(id: id, position: pos, label: lbl, isHaltAccept: haltAccept, isHaltReject: haltReject);
 
-  newNodes[id] = node;
+        newNodes[id] = node;
 
-  labelToId[lbl] = id;
+        labelToId[lbl] = id;
 
-  return id;
+        return id;
       }
 
       final rawLines = src.split('\n');
@@ -1823,8 +1812,6 @@ if (node.isHaltReject) {
   void _showExportDialog() {
     final dsl = _exportToDsl();
 
-    Clipboard.setData(ClipboardData(text: dsl));
-
     final nameController = TextEditingController(text: 'Export ${_savedExports.length + 1}');
 
     showDialog(
@@ -1925,9 +1912,7 @@ if (node.isHaltReject) {
 
               if (!mounted) return;
 
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('SVG copied (auto-sized)')));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('SVG copied (auto-sized)')));
             },
 
             child: const Text('Export SVG'),
@@ -2924,35 +2909,35 @@ if (node.isHaltReject) {
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                     onPressed: (_simTokens.isEmpty || _simStep >= _simTokens.length)
-    ? null
-    : () {
-        setState(() {
-          _simStep++;
+                                        ? null
+                                        : () {
+                                            setState(() {
+                                              _simStep++;
 
-          // If the newly displayed state contains
-          // a halt accept node, next frame becomes final.
-          if (_simStep < _simStates.length) {
-            final states = _simStates[_simStep];
+                                              // If the newly displayed state contains
+                                              // a halt accept node, next frame becomes final.
+                                              if (_simStep < _simStates.length) {
+                                                final states = _simStates[_simStep];
 
-            bool hasHaltAccept = false;
+                                                bool hasHaltAccept = false;
 
-            for (final nid in states) {
-              final node = _nodes[nid];
+                                                for (final nid in states) {
+                                                  final node = _nodes[nid];
 
-              if (node?.isHaltAccept == true) {
-                hasHaltAccept = true;
-                break;
-              }
-            }
+                                                  if (node?.isHaltAccept == true) {
+                                                    hasHaltAccept = true;
+                                                    break;
+                                                  }
+                                                }
 
-            if (hasHaltAccept) {
-              _simStep = _simTokens.length;
-            }
-          }
-        });
+                                                if (hasHaltAccept) {
+                                                  _simStep = _simTokens.length;
+                                                }
+                                              }
+                                            });
 
-        setPanel(() {});
-      },
+                                            setPanel(() {});
+                                          },
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.skip_next, size: 20),
