@@ -95,8 +95,28 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   final TextEditingController _simController = TextEditingController();
 
-  Set<String> get _simActiveNodes => _simulator.activeNodes;
-  Set<String> get _simActiveLines => _simulator.activeLines;
+  /// Whether we are at the final step and the result is accepted.
+  bool get _isAtAcceptedFinalStep {
+    if (_simulator.tokens.isEmpty) return false;
+    if (_simulator.step != _simulator.tokens.length) return false;
+    return _simulator.finalResult() == SimResult.accept;
+  }
+
+  /// At the accepted final step, union all nodes/lines from every step to
+  /// highlight the complete accepted path. Otherwise show only the current step.
+  Set<String> get _simActiveNodes {
+    if (_isAtAcceptedFinalStep) {
+      return _simulator.states.expand((s) => s).toSet();
+    }
+    return _simulator.activeNodes;
+  }
+
+  Set<String> get _simActiveLines {
+    if (_isAtAcceptedFinalStep) {
+      return _simulator.usedLines.expand((s) => s).toSet();
+    }
+    return _simulator.activeLines;
+  }
 
   void _refreshSimulation() {
     if (_simController.text.isEmpty && _simulator.states.isEmpty) {
