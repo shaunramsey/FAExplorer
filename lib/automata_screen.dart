@@ -56,6 +56,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   final List<SavedExport> _savedExports = [];
 
   late final AutomataSimulator _simulator;
+  final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
   PreferencesStore? _prefs;
   Timer? _persistTimer;
   bool _persistenceReady = false;
@@ -463,8 +464,23 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     return distance < 30;
   }
 
+  bool _isPointerOverSimulatorPanel(Offset globalPosition) {
+    if (!_showSimulator) return false;
+
+    final panelBox =
+        _simulatorPanelBoundaryKey.currentContext?.findRenderObject() as RenderBox?;
+    if (panelBox == null || !panelBox.hasSize) return false;
+
+    final local = panelBox.globalToLocal(globalPosition);
+    return local.dx >= 0 &&
+        local.dy >= 0 &&
+        local.dx < panelBox.size.width &&
+        local.dy < panelBox.size.height;
+  }
+
   void _onDoubleTapDown(TapDownDetails details) {
     if (_lineMode) return;
+    if (_isPointerOverSimulatorPanel(details.globalPosition)) return;
 
     final clickedNode = _nodeAt(details.localPosition);
 
@@ -751,10 +767,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         focusNode: _focusNode,
         autofocus: true,
         onKeyEvent: _onKeyEvent,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
 
-          onTapDown: (details) {
+                onTapDown: (details) {
             _lastTapPosition = details.localPosition;
 
             if (_placingStartArrow) {
@@ -789,6 +809,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
           onPanEnd: _onPanEnd,
 
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
               if (_startArrow != null && _nodes[_startArrow!.nodeId] != null)
                 Positioned.fill(
@@ -844,27 +865,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                 );
               }),
 
-              if (_showHelpOverlay) const HelpOverlay(),
-
-              if (_showSimulator)
-                StringSimulatorPanel(
-                  simulator: _simulator,
-                  controller: _simController,
-                  nodes: _nodes,
-                  onClose: () => _setShowSimulator(false),
-                  onTextChanged: () {
-                    setState(() {
-                      _simRebuild();
-                      _simulator.step = -1;
-                    });
-                    _schedulePersist();
-                  },
-                  onStepChanged: () {
-                    setState(() {});
-                    _schedulePersist();
-                  },
-                ),
-
               ..._nodes.values.map(
                 (node) => Node(
                   key: ValueKey(node.id),
@@ -904,6 +904,29 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               ),
             ],
           ),
+        ),
+            ),
+            if (_showHelpOverlay) const HelpOverlay(),
+            if (_showSimulator)
+              StringSimulatorPanel(
+                boundaryKey: _simulatorPanelBoundaryKey,
+                simulator: _simulator,
+                controller: _simController,
+                nodes: _nodes,
+                onClose: () => _setShowSimulator(false),
+                onTextChanged: () {
+                  setState(() {
+                    _simRebuild();
+                    _simulator.step = -1;
+                  });
+                  _schedulePersist();
+                },
+                onStepChanged: () {
+                  setState(() {});
+                  _schedulePersist();
+                },
+              ),
+          ],
         ),
       ),
     );
