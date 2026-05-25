@@ -415,7 +415,7 @@ class AutomataSimulator {
 
         for (final line in outgoing[nodeId] ?? const <LineData>[]) {
           final alts = line.label
-              .split(RegExp(r'[,\n]'))
+              .split(RegExp(r'[,\\n]'))
               .map((s) => s.trim());
 
           for (final alt in alts) {

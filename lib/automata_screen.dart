@@ -1,0 +1,793 @@
+﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:math';
+import 'models.dart';
+import 'node.dart';
+import 'line.dart';
+import 'start_arrow.dart';
+import 'dsl_code.dart';
+import 'simulator.dart';
+import 'saved_export.dart';
+import 'dialogs/automata_dialogs.dart';
+import 'dialogs/batch_simulator_dialog.dart';
+import 'widgets/automata_drawer.dart';
+import 'widgets/help_overlay.dart';
+import 'widgets/rubber_band_painter.dart';
+import 'widgets/string_simulator_panel.dart';
+
+class AutomataScreen extends StatefulWidget {
+  const AutomataScreen({super.key});
+
+  @override
+  State<AutomataScreen> createState() => _AutomataScreenState();
+}
+
+class _AutomataScreenState extends State<AutomataScreen> {
+  final Map<String, NodeData> _nodes = {};
+  final Map<String, LineData> _lines = {};
+
+  bool _lineMode = false;
+  bool _placingStartArrow = false;
+  bool _deleteMode = false;
+
+  bool _showHelpOverlay = false;
+  bool _showSimulator = true;
+
+  StartArrowData? _startArrow;
+
+  bool _draggingStartArrow = false;
+
+  String? _draggingNodeId;
+  String? _draggingLineId;
+  String? _lineSourceNodeId;
+
+  Offset? _lastPanPosition;
+  Offset? _lastTapPosition;
+  Offset? _rubberBandEnd;
+
+  int _nodeCounter = 0;
+  int _lineCounter = 0;
+
+  final FocusNode _focusNode = FocusNode();
+
+  final List<SavedExport> _savedExports = [];
+
+  late final AutomataSimulator _simulator;
+
+  Future<void> _openBatchSimulatorDialog() => showBatchSimulatorDialog(
+        context,
+        simulator: _simulator,
+        startArrow: _startArrow,
+      );
+
+  GraphState get _graphState => GraphState(
+        nodes: _nodes,
+        lines: _lines,
+        startArrow: _startArrow,
+        nodeCounter: _nodeCounter,
+        lineCounter: _lineCounter,
+      );
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // STRING SIMULATION (delegates to AutomataSimulator)
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  final TextEditingController _simController = TextEditingController();
+
+  Set<String> get _simActiveNodes => _simulator.activeNodes;
+  Set<String> get _simActiveLines => _simulator.activeLines;
+
+  void _refreshSimulation() {
+    if (_simController.text.isEmpty && _simulator.states.isEmpty) {
+      return;
+    }
+    _simRebuild();
+  }
+
+  void _simRebuild() {
+    _simulator.rebuild(_simController.text, startArrow: _startArrow);
+    if (_simulator.step > _simulator.tokens.length) {
+      _simulator.step = _simulator.tokens.length;
+    }
+  }
+
+  void _cancelRubberBand() {
+    _lineSourceNodeId = null;
+    _rubberBandEnd = null;
+  }
+
+  bool _hitStartArrowSimple(Offset point) {
+    if (_startArrow == null) return false;
+
+    final node = _nodes[_startArrow!.nodeId];
+    if (node == null) return false;
+
+    var dir = _startArrow!.direction();
+
+    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
+      dir = const Offset(-0.7071, -0.7071);
+    }
+
+    const double radius = 50;
+
+    final end = Offset(node.center.dx + dir.dx * radius, node.center.dy + dir.dy * radius);
+
+    final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
+
+    final line = end - start;
+    final lenSq = line.dx * line.dx + line.dy * line.dy;
+
+    if (lenSq == 0) return false;
+
+    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
+
+    t = t.clamp(0.0, 1.0);
+
+    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
+
+    return (point - projection).distance < 30;
+  }
+
+  bool _isLabelTaken(String label, String currentId) {
+    final normalized = label.trim();
+
+    if (normalized.isEmpty) return false;
+
+    return _nodes.values.any((n) => n.id != currentId && n.label.trim() == normalized);
+  }
+
+  String _nextId(String prefix) {
+    if (prefix == 'n') {
+      return '$prefix${_nodeCounter++}';
+    }
+
+    return '$prefix${_lineCounter++}';
+  }
+
+  void _deleteLine(String lineId) {
+    final line = _lines[lineId];
+
+    if (line == null) return;
+
+    _nodes[line.nodeAId]?.connectedLineIds.remove(lineId);
+
+    _nodes[line.nodeBId]?.connectedLineIds.remove(lineId);
+
+    _lines.remove(lineId);
+    _refreshSimulation();
+  }
+
+  void _deleteNode(String nodeId) {
+    final node = _nodes[nodeId];
+
+    if (node == null) return;
+
+    for (final lineId in node.connectedLineIds.toList()) {
+      _deleteLine(lineId);
+    }
+
+    if (_startArrow?.nodeId == nodeId) {
+      _startArrow = null;
+    }
+
+    _nodes.remove(nodeId);
+    _refreshSimulation();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _focusNode.requestFocus();
+
+    _simulator = AutomataSimulator(
+      nodes: _nodes,
+      lines: _lines,
+    );
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _simController.dispose();
+    super.dispose();
+  }
+
+  void _reset() {
+    setState(() {
+      _nodes.clear();
+      _lines.clear();
+
+      _draggingNodeId = null;
+      _draggingLineId = null;
+      _lineSourceNodeId = null;
+
+      _startArrow = null;
+
+      _nodeCounter = 0;
+      _lineCounter = 0;
+    });
+  }
+
+  String _exportToDsl() => DslCodec.exportToDsl(_graphState);
+
+
+  void _applyGraphState(GraphState state) {
+    setState(() {
+      _nodes
+        ..clear()
+        ..addAll(state.nodes);
+      _lines
+        ..clear()
+        ..addAll(state.lines);
+      _startArrow = state.startArrow;
+      _nodeCounter = state.nodeCounter;
+      _lineCounter = state.lineCounter;
+      _draggingNodeId = null;
+      _draggingLineId = null;
+      _lineSourceNodeId = null;
+    });
+    _refreshSimulation();
+  }
+
+  String? _importFromDsl(String src) {
+    try {
+      _applyGraphState(DslCodec.importFromDsl(src));
+      return null;
+    } catch (e) {
+      return 'Parse error: $e';
+    }
+  }
+
+  String? _importFromSvg(String svg) {
+    try {
+      _applyGraphState(DslCodec.importFromSvg(svg));
+      return null;
+    } catch (e) {
+      return 'SVG import failed: $e';
+    }
+  }
+
+  void _showExportDialog() {
+    showExportDialog(
+      context,
+      dsl: _exportToDsl(),
+      savedExportCount: _savedExports.length,
+      nodes: _nodes,
+      lines: _lines,
+      startArrow: _startArrow,
+      onSave: (name, dsl) => setState(() {
+        _savedExports.insert(0, SavedExport(name: name, dsl: dsl));
+      }),
+    );
+  }
+
+  void _showImportDialog() {
+    showImportDialog(
+      context,
+      onImport: (text, {required bool isSvg}) =>
+          isSvg ? _importFromSvg(text) : _importFromDsl(text),
+    );
+  }
+
+  void _setLineMode(bool value) {
+    setState(() {
+      _lineMode = value;
+    });
+  }
+
+  void _showExportHistory() {
+    showExportHistoryDialog(
+      context,
+      savedExports: _savedExports,
+      onImportDsl: _importFromDsl,
+      onListChanged: () => setState(() {}),
+    );
+  }
+
+
+  void _onKeyEvent(KeyEvent event) {
+    final isShift =
+        event.logicalKey == LogicalKeyboardKey.shiftLeft || event.logicalKey == LogicalKeyboardKey.shiftRight;
+
+    if (!isShift) return;
+
+    if (event is KeyDownEvent) {
+      setState(() {
+        _lineMode = !_lineMode;
+        _draggingLineId = null;
+        _draggingNodeId = null;
+
+        _cancelRubberBand();
+      });
+    }
+  }
+
+  NodeData? _nodeAt(Offset point) {
+    for (final node in _nodes.values) {
+      if (node.containsPoint(point)) {
+        return node;
+      }
+    }
+
+    return null;
+  }
+
+  LineData? _lineAt(Offset point) {
+    for (final line in _lines.values) {
+      final nodeA = _nodes[line.nodeAId]!;
+      final nodeB = _nodes[line.nodeBId]!;
+
+      if (line.containsPoint(point, nodeA.center, nodeB.center)) {
+        return line;
+      }
+    }
+
+    return null;
+  }
+
+  bool _hitStartArrow(Offset point) {
+    if (_startArrow == null) return false;
+
+    final node = _nodes[_startArrow!.nodeId];
+
+    if (node == null) return false;
+
+    var dir = _startArrow!.direction();
+
+    // Default top-left
+    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
+      dir = const Offset(-0.7071, -0.7071);
+    }
+
+    const double radius = 50;
+
+    final end = Offset(node.center.dx + dir.dx * radius, node.center.dy + dir.dy * radius);
+
+    final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
+
+    final line = end - start;
+
+    final lenSq = line.dx * line.dx + line.dy * line.dy;
+
+    if (lenSq == 0) return false;
+
+    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
+
+    t = t.clamp(0.0, 1.0);
+
+    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
+
+    final distance = (point - projection).distance;
+
+    return distance < 30;
+  }
+
+  void _onDoubleTapDown(TapDownDetails details) {
+    if (_lineMode) return;
+
+    final clickedNode = _nodeAt(details.localPosition);
+
+    if (clickedNode != null) return;
+
+    setState(() {
+      final pos = details.localPosition - const Offset(50, 50);
+
+      final id = _nextId('n');
+
+      _nodes[id] = NodeData(id: id, position: pos);
+    });
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    final pos = details.localPosition;
+
+    _draggingNodeId = null;
+    _draggingLineId = null;
+
+    if (_deleteMode) {
+      final node = _nodeAt(pos);
+
+      if (node != null) {
+        setState(() {
+          _deleteNode(node.id);
+        });
+        return;
+      }
+
+      final line = _lineAt(pos);
+
+      if (line != null) {
+        setState(() {
+          _deleteLine(line.id);
+        });
+        return;
+      }
+
+      if (_hitStartArrowSimple(pos)) {
+        setState(() {
+          _startArrow = null;
+        });
+        return;
+      }
+
+      return;
+    }
+
+    final node = _nodeAt(pos);
+
+    if (node != null) {
+      if (_lineMode) {
+        _lineSourceNodeId = node.id;
+      } else {
+        _draggingNodeId = node.id;
+      }
+    } else {
+      if (_hitStartArrow(pos)) {
+        _draggingStartArrow = true;
+        return;
+      }
+
+      final line = _lineAt(pos);
+
+      if (line != null) {
+        _draggingLineId = line.id;
+      }
+    }
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    if (_draggingNodeId != null) {
+      setState(() {
+        final node = _nodes[_draggingNodeId!]!;
+
+        node.position = node.position + details.delta;
+      });
+    } else if (_draggingStartArrow && _startArrow != null) {
+      setState(() {
+        final node = _nodes[_startArrow!.nodeId]!;
+
+        final center = node.center;
+
+        final mouse = details.localPosition;
+
+        final dir = Offset(mouse.dx - center.dx, mouse.dy - center.dy);
+
+        final dist = dir.distance;
+
+        if (dist > 10) {
+          _startArrow!.offset = Offset(dir.dx / dist, dir.dy / dist);
+
+          _startArrow!.length = max(40, dist - 50);
+        }
+      });
+    } else if (_draggingLineId != null) {
+      setState(() {
+        final line = _lines[_draggingLineId!]!;
+
+        final nodeA = _nodes[line.nodeAId]!;
+        final nodeB = _nodes[line.nodeBId]!;
+
+        if (line.nodeAId == line.nodeBId) {
+          final center = nodeA.center;
+
+          final mouse = _lastPanPosition ?? center;
+
+          final previous = mouse - details.delta;
+
+          final oldAngle = atan2(previous.dy - center.dy, previous.dx - center.dx);
+
+          final newAngle = atan2(mouse.dy - center.dy, mouse.dx - center.dx);
+
+          line.selfLoopAngle += newAngle - oldAngle;
+
+          return;
+        }
+
+        final dx = nodeB.center.dx - nodeA.center.dx;
+        final dy = nodeB.center.dy - nodeA.center.dy;
+
+        final length = sqrt(dx * dx + dy * dy);
+
+        if (length != 0) {
+          final perpDx = dy / length;
+          final perpDy = -dx / length;
+
+          line.perpendicularPart += details.delta.dx * perpDx + details.delta.dy * perpDy;
+        }
+      });
+    }
+    _refreshSimulation();
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    if (_lineMode && _lineSourceNodeId != null) {
+      final destNode = _lastPanPosition != null ? _nodeAt(_lastPanPosition!) : null;
+
+      if (destNode != null) {
+        final srcId = _lineSourceNodeId!;
+        final destId = destNode.id;
+
+        final alreadyExists = _lines.values.any((line) => line.nodeAId == srcId && line.nodeBId == destId);
+
+        if (!alreadyExists) {
+          setState(() {
+            final id = _nextId('l');
+
+            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+
+            _lines[id] = line;
+
+            _nodes[srcId]?.connectedLineIds.add(id);
+            _nodes[destId]?.connectedLineIds.add(id);
+          });
+        }
+      } else {
+        _cancelRubberBand();
+      }
+
+      _lineSourceNodeId = null;
+    }
+
+    _draggingNodeId = null;
+    _draggingLineId = null;
+    _draggingStartArrow = false;
+
+    _lastPanPosition = null;
+    _rubberBandEnd = null;
+    _cancelRubberBand();
+    _lineSourceNodeId = null;
+    _rubberBandEnd = null;
+    _refreshSimulation();
+  }
+
+  void _onPanUpdateWithTracking(DragUpdateDetails details) {
+    _lastPanPosition = details.localPosition;
+
+    _onPanUpdate(details);
+
+    if (_lineSourceNodeId != null && _lineMode) {
+      setState(() {
+        _rubberBandEnd = details.localPosition;
+      });
+    } else {
+      if (_lineSourceNodeId != null || _rubberBandEnd != null) {
+        setState(_cancelRubberBand);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      drawer: AutomataDrawer(
+        showHelpOverlay: _showHelpOverlay,
+        showSimulator: _showSimulator,
+        onShowHelpChanged: (v) => setState(() => _showHelpOverlay = v),
+        onShowSimulatorChanged: (v) => setState(() => _showSimulator = v),
+        onBatchSimulator: _openBatchSimulatorDialog,
+        onExport: _showExportDialog,
+        onImport: _showImportDialog,
+        onExportHistory: _showExportHistory,
+      ),
+
+      appBar: AppBar(title: const Text('Automata Designer')),
+
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: 'startArrow',
+            tooltip: 'Set start state',
+            backgroundColor: _placingStartArrow ? Colors.orange : null,
+            onPressed: () {
+              setState(() {
+                _placingStartArrow = !_placingStartArrow;
+              });
+            },
+            child: const Icon(Icons.play_arrow),
+          ),
+
+          const SizedBox(height: 12),
+
+          FloatingActionButton(
+            heroTag: 'deleteMode',
+            tooltip: 'Delete mode',
+            backgroundColor: _deleteMode ? Colors.red : null,
+            onPressed: () {
+              setState(() {
+                _deleteMode = !_deleteMode;
+
+                if (_deleteMode) {
+                  _lineMode = false;
+                  _placingStartArrow = false;
+                }
+              });
+            },
+            child: const Icon(Icons.delete),
+          ),
+
+          const SizedBox(height: 12),
+
+          FloatingActionButton(
+            heroTag: 'lineMode',
+            tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
+            backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
+            onPressed: () => _setLineMode(!_lineMode),
+            child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
+          ),
+
+          const SizedBox(height: 12),
+
+          FloatingActionButton.small(
+            heroTag: 'toggleSim',
+            tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
+            backgroundColor: _showSimulator ? Colors.purple.shade100 : null,
+            onPressed: () {
+              setState(() {
+                _showSimulator = !_showSimulator;
+              });
+            },
+            child: const Icon(Icons.science, size: 20),
+          ),
+        ],
+      ),
+
+      body: KeyboardListener(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _onKeyEvent,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+
+          onTapDown: (details) {
+            _lastTapPosition = details.localPosition;
+
+            if (_placingStartArrow) {
+              final tappedNode = _nodeAt(details.localPosition);
+
+              if (tappedNode != null) {
+                setState(() {
+                  _startArrow = StartArrowData(nodeId: tappedNode.id);
+
+                  _refreshSimulation();
+
+                  _placingStartArrow = false;
+                });
+              }
+            }
+          },
+
+          onTap: () {
+            if (_lastTapPosition == null || _nodeAt(_lastTapPosition!) == null) {
+              _focusNode.requestFocus();
+            }
+
+            _lastTapPosition = null;
+          },
+
+          onDoubleTapDown: _onDoubleTapDown,
+
+          onLongPress: _reset,
+
+          onPanStart: _onPanStart,
+          onPanUpdate: _onPanUpdateWithTracking,
+          onPanEnd: _onPanEnd,
+
+          child: Stack(
+            children: [
+              if (_startArrow != null && _nodes[_startArrow!.nodeId] != null)
+                Positioned.fill(
+                  child: StartArrowWidget(
+                    data: _startArrow!,
+                    nodeCenter: _nodes[_startArrow!.nodeId]!.center,
+
+                    deleteMode: _deleteMode,
+                    highlighted: _simulator.step == -1 && _simulator.tokens.isNotEmpty,
+
+                    onDelete: () {
+                      setState(() {
+                        _startArrow = null;
+                      });
+                    },
+                  ),
+                ),
+
+              if (_lineSourceNodeId != null && _rubberBandEnd != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: RubberBandPainter(start: _nodes[_lineSourceNodeId!]!.center, end: _rubberBandEnd!),
+                    ),
+                  ),
+                ),
+
+              ..._lines.values.map((line) {
+                final nodeA = _nodes[line.nodeAId];
+                final nodeB = _nodes[line.nodeBId];
+
+                if (nodeA == null || nodeB == null) {
+                  return const SizedBox.shrink();
+                }
+
+                return KeyedSubtree(
+                  key: ValueKey(line.id),
+                  child: Positioned.fill(
+                    child: LineWidget(
+                      data: line,
+                      centerA: nodeA.center,
+                      centerB: nodeB.center,
+                      deleteMode: _deleteMode,
+                      highlighted: _simActiveLines.contains(line.id),
+                      onLabelChanged: (text) {
+                        setState(() {
+                          line.label = text;
+                          _refreshSimulation();
+                        });
+                      },
+                    ),
+                  ),
+                );
+              }),
+
+              if (_showHelpOverlay) const HelpOverlay(),
+
+              if (_showSimulator)
+                StringSimulatorPanel(
+                  simulator: _simulator,
+                  controller: _simController,
+                  nodes: _nodes,
+                  onClose: () => setState(() => _showSimulator = false),
+                  onTextChanged: () {
+                    setState(() {
+                      _simRebuild();
+                      _simulator.step = -1;
+                    });
+                  },
+                  onStepChanged: () => setState(() {}),
+                ),
+
+              ..._nodes.values.map(
+                (node) => Node(
+                  key: ValueKey(node.id),
+                  data: node,
+                  lineMode: _lineMode,
+                  deleteMode: _deleteMode,
+                  highlighted: _simActiveNodes.contains(node.id),
+
+                  isLabelTaken: _isLabelTaken,
+
+                  onLabelChanged: (text) {
+                    setState(() {
+                      node.label = text;
+                      _refreshSimulation();
+                    });
+                  },
+
+                  onLineModeSelect: () {
+                    if (_lineMode) {
+                      _lineSourceNodeId = node.id;
+                    }
+                  },
+
+                  onDoubleTap: () {
+                    setState(() {
+                      node.isAccept = !node.isAccept;
+                    });
+                    _refreshSimulation();
+                  },
+
+                  onDelete: () {
+                    setState(() {
+                      _deleteNode(node.id);
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

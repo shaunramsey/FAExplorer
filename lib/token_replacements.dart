@@ -1,3 +1,5 @@
+import 'package:characters/characters.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  REPLACEMENT TABLE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +63,7 @@ String parseTokenText(String input) {
     // Strikethrough overlay: [[/word]]
     if (key.startsWith('/')) {
       final text = key.substring(1);
-      return text.runes.map((ch) => ch == 32 ? String.fromCharCode(ch) : '${String.fromCharCode(ch)}\u0338').join();
+      return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
     }
 
     return kTokenReplacements[key] ?? full;
