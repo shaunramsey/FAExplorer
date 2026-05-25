@@ -137,15 +137,12 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel> {
                             widget.simulator.step = -1;
                             widget.simulator.states.clear();
                             widget.simulator.usedLines.clear();
-                            _afterTextChange();
+                            _afterStepChange();
                           },
                         )
                       : null,
                 ),
-                onChanged: (_) {
-                  widget.simulator.step = -1;
-                  _afterTextChange();
-                },
+                onChanged: (_) => _afterTextChange(),
               ),
               const SizedBox(height: 6),
               Row(
