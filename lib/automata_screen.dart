@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'models.dart';
+import 'data/automata_session_store.dart';
 import 'preferences_store.dart';
 import 'node.dart';
 import 'line.dart';
@@ -19,7 +20,18 @@ import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 
 class AutomataScreen extends StatefulWidget {
-  const AutomataScreen({super.key});
+  const AutomataScreen({
+    super.key,
+    required this.sessionStore,
+    this.isGuest = false,
+    this.userEmail,
+    this.onSignOut,
+  });
+
+  final AutomataSessionStore sessionStore;
+  final bool isGuest;
+  final String? userEmail;
+  final Future<void> Function()? onSignOut;
 
   @override
   State<AutomataScreen> createState() => _AutomataScreenState();
@@ -57,7 +69,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   late final AutomataSimulator _simulator;
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
-  PreferencesStore? _prefs;
   Timer? _persistTimer;
   bool _persistenceReady = false;
   bool _loadingPrefs = true;
@@ -93,30 +104,28 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   void _schedulePersist() {
-    if (!_persistenceReady || _prefs == null) return;
+    if (!_persistenceReady) return;
     _persistTimer?.cancel();
     _persistTimer = Timer(const Duration(milliseconds: 400), _persistNow);
   }
 
   Future<void> _persistNow() async {
-    final prefs = _prefs;
-    if (prefs == null || !_persistenceReady) return;
+    if (!_persistenceReady) return;
 
-    await prefs.saveGraphDsl(_exportToDsl());
-    await prefs.saveSavedExports(_savedExports);
-    await prefs.saveUi(
-      showSimulator: _showSimulator,
-      showHelpOverlay: _showHelpOverlay,
-    );
-    await prefs.saveSimulator(
-      input: _simController.text,
-      step: _simulator.step,
+    await widget.sessionStore.save(
+      PersistedSnapshot(
+        graphDsl: _exportToDsl(),
+        savedExports: List<SavedExport>.from(_savedExports),
+        showSimulator: _showSimulator,
+        showHelpOverlay: _showHelpOverlay,
+        simInput: _simController.text,
+        simStep: _simulator.step,
+      ),
     );
   }
 
   Future<void> _loadPreferences() async {
-    final prefs = await PreferencesStore.open();
-    final snapshot = prefs.load();
+    final snapshot = await widget.sessionStore.load();
 
     if (snapshot.graphDsl != null && snapshot.graphDsl!.trim().isNotEmpty) {
       try {
@@ -145,7 +154,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _simRebuild();
     }
 
-    _prefs = prefs;
     _persistenceReady = true;
 
     if (mounted) {
@@ -690,12 +698,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   void _setShowHelpOverlay(bool value) {
     setState(() => _showHelpOverlay = value);
-    _prefs?.saveUi(showHelpOverlay: value);
+    _schedulePersist();
   }
 
   void _setShowSimulator(bool value) {
     setState(() => _showSimulator = value);
-    _prefs?.saveUi(showSimulator: value);
+    _schedulePersist();
   }
 
   @override
@@ -710,15 +718,32 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
+        isGuest: widget.isGuest,
+        accountLabel: widget.isGuest
+            ? 'Guest (local only)'
+            : widget.userEmail,
         onShowHelpChanged: _setShowHelpOverlay,
         onShowSimulatorChanged: _setShowSimulator,
         onBatchSimulator: _openBatchSimulatorDialog,
         onExport: _showExportDialog,
         onImport: _showImportDialog,
         onExportHistory: _showExportHistory,
+        onSignOut: widget.onSignOut,
       ),
 
-      appBar: AppBar(title: const Text('Automata Designer')),
+      appBar: AppBar(
+        title: const Text('Automata Designer'),
+        actions: [
+          if (widget.isGuest)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Chip(
+                label: Text('Guest'),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+        ],
+      ),
 
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,

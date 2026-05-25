@@ -5,23 +5,29 @@ import '../markdown_file_screen.dart';
 class AutomataDrawer extends StatelessWidget {
   final bool showHelpOverlay;
   final bool showSimulator;
+  final bool isGuest;
+  final String? accountLabel;
   final ValueChanged<bool> onShowHelpChanged;
   final ValueChanged<bool> onShowSimulatorChanged;
   final VoidCallback onBatchSimulator;
   final VoidCallback onExport;
   final VoidCallback onImport;
   final VoidCallback onExportHistory;
+  final Future<void> Function()? onSignOut;
 
   const AutomataDrawer({
     super.key,
     required this.showHelpOverlay,
     required this.showSimulator,
+    this.isGuest = false,
+    this.accountLabel,
     required this.onShowHelpChanged,
     required this.onShowSimulatorChanged,
     required this.onBatchSimulator,
     required this.onExport,
     required this.onImport,
     required this.onExportHistory,
+    this.onSignOut,
   });
 
   @override
@@ -32,6 +38,15 @@ class AutomataDrawer extends StatelessWidget {
           padding: EdgeInsets.zero,
           children: [
             const SizedBox(height: 8),
+            if (accountLabel != null)
+              ListTile(
+                leading: Icon(isGuest ? Icons.person_outline : Icons.account_circle),
+                title: Text(
+                  isGuest ? 'Guest mode' : 'Signed in',
+                  style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(accountLabel!),
+              ),
             ListTile(
               title: Text('Batch Simulator', style: GoogleFonts.courierPrime()),
               onTap: () {
@@ -111,6 +126,17 @@ class AutomataDrawer extends StatelessWidget {
               },
               child: const Text('View Version'),
             ),
+            if (onSignOut != null) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Sign out'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await onSignOut!();
+                },
+              ),
+            ],
             const SizedBox(height: 8),
           ],
         ),
