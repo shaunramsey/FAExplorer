@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
-
 import 'models.dart';
+import 'token_replacements.dart'; // ← single source of truth
 
 class StartArrowWidget extends StatefulWidget {
   final StartArrowData data;
@@ -30,77 +30,6 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
   late final FocusNode _focusNode;
 
   int _lineCount = 1;
-
-  static const Map<String, String> _replacements = {
-    '\\0': '∅',
-    'ALPHA': 'α',
-    'BETA': 'β',
-    'GAMMA': 'γ',
-    'ZETA': 'ζ',
-    'ETA': 'η',
-    'THETA': 'θ',
-    'IOTA': 'ι',
-    'KAPPA': 'κ',
-    'LAMDA': 'λ',
-    'DELTA': 'δ',
-    'EPSILON': 'ε',
-    'MU': 'μ',
-    'PI': 'π',
-    'SIGMA': 'σ',
-    'OMEGA': 'ω',
-    'PHI': 'φ',
-    'GAMMA_CAP': 'Γ',
-    'DELTA_CAP': 'Δ',
-    'PI_CAP': 'Π',
-    'SIGMA_CAP': 'Σ',
-    'OMEGA_CAP': 'Ω',
-    'PHI_CAP': 'Φ',
-    'INFINITY': '∞',
-    'SQRT': '√',
-    'PLUSMINUS': '±',
-    'NOTEQUAL': '≠',
-    'LESSEQ': '≤',
-    'GREATEREQ': '≥',
-    'APPROX': '≈',
-    'MULTIPLY': '×',
-    'DIVIDE': '÷',
-    'LEFT': '←',
-    'RIGHT': '→',
-    'UP': '↑',
-    'DOWN': '↓',
-    'LEFTRIGHT': '↔',
-    'CHECK': '✓',
-    'X': '✗',
-    'STAR': '★',
-    'HEART': '♥',
-    'BULLET': '•',
-    'ELLIPSIS': '…',
-    'COPY': '©',
-    'REGISTERED': '®',
-    'TRADEMARK': '™',
-    'DEGREE': '°',
-    'PARAGRAPH': '¶',
-    'SECTION': '§',
-  };
-
-  String parseNodeText(String input) {
-    return input.replaceAllMapped(RegExp(r'\\?\[\[(.*?)\]\]'), (match) {
-      final full = match.group(0)!;
-
-      if (full.startsWith(r'\')) {
-        return full.substring(1);
-      }
-
-      final key = (match.group(1) ?? '').trim();
-
-      if (key.startsWith('/')) {
-        final text = key.substring(1);
-        return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
-      }
-
-      return _replacements[key] ?? full;
-    });
-  }
 
   @override
   void initState() {
@@ -143,16 +72,12 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
     const double radius = 50;
 
     final end = Offset(widget.nodeCenter.dx + dir.dx * radius, widget.nodeCenter.dy + dir.dy * radius);
-
     final start = Offset(end.dx + dir.dx * widget.data.length, end.dy + dir.dy * widget.data.length);
-
     final arrowAngle = atan2(end.dy - start.dy, end.dx - start.dx);
-
     final perp = Offset(-dir.dy, dir.dx);
 
     const double boxWidth = 120;
     const double lineHeight = 36.0;
-
     final double boxHeight = lineHeight * _lineCount;
 
     final labelOffset = Offset(start.dx + perp.dx * 30 - boxWidth / 2, start.dy + perp.dy * 30 - boxHeight / 2);
@@ -204,8 +129,9 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     color: widget.deleteMode ? Colors.red : Colors.black,
                   ),
 
+                  // Use the shared parser from token_replacements.dart
                   onChanged: (value) {
-                    final parsed = parseNodeText(value);
+                    final parsed = parseTokenText(value);
 
                     if (parsed != value) {
                       _controller.value = TextEditingValue(

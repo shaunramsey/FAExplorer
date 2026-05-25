@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'models.dart';
+import 'token_replacements.dart'; // ← single source of truth
 
 class Node extends StatefulWidget {
   final NodeData data;
@@ -143,116 +144,6 @@ class _NodeState extends State<Node> {
   }
 
   // ─────────────────────────────────────────────
-  // TOKEN PARSER
-  // ─────────────────────────────────────────────
-
-  static const Map<String, String> _replacements = {
-    '\\0': '∅',
-
-    'ALPHA': 'α',
-    'BETA': 'β',
-    'GAMMA': 'γ',
-    'ZETA': 'ζ',
-    'ETA': 'η',
-    'THETA': 'θ',
-    'IOTA': 'ι',
-    'KAPPA': 'κ',
-    'LAMDA': 'λ',
-    'DELTA': 'δ',
-    'EPSILON': 'ε',
-    'MU': 'μ',
-    'PI': 'π',
-    'SIGMA': 'σ',
-    'OMEGA': 'ω',
-    'PHI': 'φ',
-
-    'GAMMA_CAP': 'Γ',
-    'DELTA_CAP': 'Δ',
-    'PI_CAP': 'Π',
-    'SIGMA_CAP': 'Σ',
-    'OMEGA_CAP': 'Ω',
-    'PHI_CAP': 'Φ',
-
-    'INFINITY': '∞',
-    'SQRT': '√',
-    'PLUSMINUS': '±',
-    'NOTEQUAL': '≠',
-    'LESSEQ': '≤',
-    'GREATEREQ': '≥',
-    'APPROX': '≈',
-    'MULTIPLY': '×',
-    'DIVIDE': '÷',
-
-    'LEFT': '←',
-    'RIGHT': '→',
-    'UP': '↑',
-    'DOWN': '↓',
-    'LEFTRIGHT': '↔',
-
-    'CHECK': '✓',
-    'X': '✗',
-    'STAR': '★',
-    'HEART': '♥',
-    'BULLET': '•',
-    'ELLIPSIS': '…',
-    'COPY': '©',
-    'REGISTERED': '®',
-    'TRADEMARK': '™',
-    'DEGREE': '°',
-    'PARAGRAPH': '¶',
-    'SECTION': '§',
-    'CURRENCY': '¤',
-    'PILCROW': '¶',
-
-    'PEACE': '☮',
-    "YIN YANG": '☯',
-    "SMILEY": '☺',
-    "BLACK SMILEY": '☻',
-    "SUN": '☀',
-    "CLOUD": '☁',
-    "UMBRELLA": '☂',
-    "SNOWFLAKE": '❄',
-    'SKULL': '☠',
-    'SPADE': '♠',
-    'CLUB': '♣',
-    'DIAMOND': '♦',
-    'MUSIC NOTE': '♪',
-    'BEAMED EIGHTH NOTES': '♫',
-    'RADIOACTIVE': '☢',
-    'BIOHAZARD': '☣',
-    'CLOVER': '☘',
-    'HANDS': '☝',
-    'MALE': '♂',
-    'FEMALE': '♀',
-    'STAR AND CRESCENT': '☪',
-    'FALLING STAR': '☫',
-    'HAMMER AND SICKLE': '☭',
-    'HOT SPRINGS': '♨',
-    'HOTEL': '🏨',
-    'HOSPITAL': '🏥',
-    'HOURGLASS': '⌛',
-  };
-
-  String parseNodeText(String input) {
-    return input.replaceAllMapped(RegExp(r'\\?\[\[(.*?)\]\]'), (match) {
-      final full = match.group(0)!;
-
-      if (full.startsWith(r'\')) {
-        return full.substring(1);
-      }
-
-      final key = (match.group(1) ?? '').trim();
-
-      if (key.startsWith('/')) {
-        final text = key.substring(1);
-        return text.characters.map((ch) => ch == ' ' ? ch : '$ch\u0338').join();
-      }
-
-      return _replacements[key] ?? full;
-    });
-  }
-
-  // ─────────────────────────────────────────────
   // NODE ID DISPLAY
   // ─────────────────────────────────────────────
 
@@ -360,7 +251,8 @@ class _NodeState extends State<Node> {
                       onTapOutside: (_) => _deselect(),
 
                       onChanged: (value) {
-                        final parsed = parseNodeText(value);
+                        // Use the shared parser from token_replacements.dart
+                        final parsed = parseTokenText(value);
 
                         String finalText = parsed;
 
