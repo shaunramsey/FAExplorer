@@ -1,3 +1,20 @@
+# May 25th, 2026
+* Refactored all of the code to improve its readability
+* Added in shared preferences
+* Created a mini-login to work on firebase tomorrow
+* Made it so you can pan the screen 
+* Moved reset into the drawer
+* Changed halt and reject and halt and accept to not place lines out of them
+* Added in a better animation for screen simulator
+* Made it so that the full pathway is shown when a valid pathway is taken
+
+# May 21st, 2026
+* Added in a halt and accept and halt and reject state with string simulation capabilities
+* Added in an SVG import and export to allow users to export their images
+* Moved string simulator out of the drawer and gave it a visibility toggle
+* self linked nodes now import and export their angle
+* added in a batch string simulator to test multiple strings at once for validity
+
 # May 20, 2026
 * Added in an import and export with simple language and an export history feature
 * Changed it so that start arrows are placed on tapdown rather than panning
