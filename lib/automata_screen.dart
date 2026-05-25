@@ -60,6 +60,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Offset? _lastTapPosition;
   Offset? _rubberBandEnd;
 
+  // Canvas panning
+  bool _isPanningCanvas = false;
+
   int _nodeCounter = 0;
   int _lineCounter = 0;
 
@@ -308,6 +311,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
       _nodeCounter = 0;
       _lineCounter = 0;
+
+      _isPanningCanvas = false;
     });
     _simulator.tokens = [];
     _simulator.step = -1;
@@ -514,6 +519,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     _draggingNodeId = null;
     _draggingLineId = null;
+    _isPanningCanvas = false;
 
     if (_deleteMode) {
       final node = _nodeAt(pos);
@@ -565,11 +571,23 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
       if (line != null) {
         _draggingLineId = line.id;
+      } else if (!_lineMode) {
+        // Nothing hit — pan the canvas
+        _isPanningCanvas = true;
       }
     }
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
+    if (_isPanningCanvas) {
+      setState(() {
+        for (final node in _nodes.values) {
+          node.position = node.position + details.delta;
+        }
+      });
+      return;
+    }
+
     if (_draggingNodeId != null) {
       setState(() {
         final node = _nodes[_draggingNodeId!]!;
@@ -671,6 +689,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _draggingNodeId = null;
     _draggingLineId = null;
     _draggingStartArrow = false;
+    _isPanningCanvas = false;
 
     _lastPanPosition = null;
     _rubberBandEnd = null;
@@ -728,6 +747,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onExport: _showExportDialog,
         onImport: _showImportDialog,
         onExportHistory: _showExportHistory,
+        onReset: _reset,
         onSignOut: widget.onSignOut,
       ),
 
@@ -839,8 +859,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
           },
 
           onDoubleTapDown: _onDoubleTapDown,
-
-          onLongPress: _reset,
 
           onPanStart: _onPanStart,
           onPanUpdate: _onPanUpdateWithTracking,
@@ -971,4 +989,3 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     );
   }
 }
-

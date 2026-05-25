@@ -13,6 +13,7 @@ class AutomataDrawer extends StatelessWidget {
   final VoidCallback onExport;
   final VoidCallback onImport;
   final VoidCallback onExportHistory;
+  final VoidCallback onReset;
   final Future<void> Function()? onSignOut;
 
   const AutomataDrawer({
@@ -27,6 +28,7 @@ class AutomataDrawer extends StatelessWidget {
     required this.onExport,
     required this.onImport,
     required this.onExportHistory,
+    required this.onReset,
     this.onSignOut,
   });
 
@@ -94,6 +96,34 @@ class AutomataDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 onExportHistory();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_sweep, color: Colors.red),
+              title: const Text('Reset Canvas', style: TextStyle(color: Colors.red)),
+              subtitle: const Text('Clear all nodes and transitions'),
+              onTap: () {
+                Navigator.pop(context);
+                showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Reset canvas?'),
+                    content: const Text('This will clear all nodes, transitions, and the start arrow.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Reset'),
+                      ),
+                    ],
+                  ),
+                ).then((confirmed) {
+                  if (confirmed == true) onReset();
+                });
               },
             ),
             TextButton(
