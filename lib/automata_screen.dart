@@ -1,7 +1,10 @@
-﻿import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+﻿import 'dart:async';
 import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'models.dart';
+import 'preferences_store.dart';
 import 'node.dart';
 import 'line.dart';
 import 'start_arrow.dart';
@@ -22,7 +25,7 @@ class AutomataScreen extends StatefulWidget {
   State<AutomataScreen> createState() => _AutomataScreenState();
 }
 
-class _AutomataScreenState extends State<AutomataScreen> {
+class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObserver {
   final Map<String, NodeData> _nodes = {};
   final Map<String, LineData> _lines = {};
 
@@ -53,6 +56,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
   final List<SavedExport> _savedExports = [];
 
   late final AutomataSimulator _simulator;
+  PreferencesStore? _prefs;
+  Timer? _persistTimer;
+  bool _persistenceReady = false;
+  bool _loadingPrefs = true;
 
   Future<void> _openBatchSimulatorDialog() => showBatchSimulatorDialog(
         context,
@@ -81,6 +88,68 @@ class _AutomataScreenState extends State<AutomataScreen> {
       return;
     }
     _simRebuild();
+    _schedulePersist();
+  }
+
+  void _schedulePersist() {
+    if (!_persistenceReady || _prefs == null) return;
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 400), _persistNow);
+  }
+
+  Future<void> _persistNow() async {
+    final prefs = _prefs;
+    if (prefs == null || !_persistenceReady) return;
+
+    await prefs.saveGraphDsl(_exportToDsl());
+    await prefs.saveSavedExports(_savedExports);
+    await prefs.saveUi(
+      showSimulator: _showSimulator,
+      showHelpOverlay: _showHelpOverlay,
+    );
+    await prefs.saveSimulator(
+      input: _simController.text,
+      step: _simulator.step,
+    );
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await PreferencesStore.open();
+    final snapshot = prefs.load();
+
+    if (snapshot.graphDsl != null && snapshot.graphDsl!.trim().isNotEmpty) {
+      try {
+        final state = DslCodec.importFromDsl(snapshot.graphDsl!);
+        _nodes
+          ..clear()
+          ..addAll(state.nodes);
+        _lines
+          ..clear()
+          ..addAll(state.lines);
+        _startArrow = state.startArrow;
+        _nodeCounter = state.nodeCounter;
+        _lineCounter = state.lineCounter;
+      } catch (_) {
+        // Ignore corrupt saved graphs.
+      }
+    }
+
+    _savedExports.addAll(snapshot.savedExports);
+    _showSimulator = snapshot.showSimulator;
+    _showHelpOverlay = snapshot.showHelpOverlay;
+    _simController.text = snapshot.simInput;
+    _simulator.step = snapshot.simStep;
+
+    if (_simController.text.isNotEmpty || _startArrow != null) {
+      _simRebuild();
+    }
+
+    _prefs = prefs;
+    _persistenceReady = true;
+
+    if (mounted) {
+      setState(() => _loadingPrefs = false);
+    }
   }
 
   void _simRebuild() {
@@ -183,13 +252,33 @@ class _AutomataScreenState extends State<AutomataScreen> {
       nodes: _nodes,
       lines: _lines,
     );
+
+    _simController.addListener(_schedulePersist);
+    WidgetsBinding.instance.addObserver(this);
+    _loadPreferences();
   }
 
   @override
   void dispose() {
+    _persistTimer?.cancel();
+    if (_persistenceReady) {
+      unawaited(_persistNow());
+    }
+    WidgetsBinding.instance.removeObserver(this);
+    _simController.removeListener(_schedulePersist);
     _focusNode.dispose();
     _simController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _persistTimer?.cancel();
+      unawaited(_persistNow());
+    }
   }
 
   void _reset() {
@@ -206,6 +295,12 @@ class _AutomataScreenState extends State<AutomataScreen> {
       _nodeCounter = 0;
       _lineCounter = 0;
     });
+    _simulator.tokens = [];
+    _simulator.step = -1;
+    _simulator.states.clear();
+    _simulator.usedLines.clear();
+    _simController.clear();
+    _schedulePersist();
   }
 
   String _exportToDsl() => DslCodec.exportToDsl(_graphState);
@@ -255,9 +350,12 @@ class _AutomataScreenState extends State<AutomataScreen> {
       nodes: _nodes,
       lines: _lines,
       startArrow: _startArrow,
-      onSave: (name, dsl) => setState(() {
-        _savedExports.insert(0, SavedExport(name: name, dsl: dsl));
-      }),
+      onSave: (name, dsl) {
+        setState(() {
+          _savedExports.insert(0, SavedExport(name: name, dsl: dsl));
+        });
+        _schedulePersist();
+      },
     );
   }
 
@@ -280,7 +378,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
       context,
       savedExports: _savedExports,
       onImportDsl: _importFromDsl,
-      onListChanged: () => setState(() {}),
+      onListChanged: () {
+        setState(() {});
+        _schedulePersist();
+      },
     );
   }
 
@@ -376,6 +477,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
       _nodes[id] = NodeData(id: id, position: pos);
     });
+    _schedulePersist();
   }
 
   void _onPanStart(DragStartDetails details) {
@@ -407,6 +509,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
         setState(() {
           _startArrow = null;
         });
+        _refreshSimulation();
         return;
       }
 
@@ -556,14 +659,30 @@ class _AutomataScreenState extends State<AutomataScreen> {
     }
   }
 
+  void _setShowHelpOverlay(bool value) {
+    setState(() => _showHelpOverlay = value);
+    _prefs?.saveUi(showHelpOverlay: value);
+  }
+
+  void _setShowSimulator(bool value) {
+    setState(() => _showSimulator = value);
+    _prefs?.saveUi(showSimulator: value);
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_loadingPrefs) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
-        onShowHelpChanged: (v) => setState(() => _showHelpOverlay = v),
-        onShowSimulatorChanged: (v) => setState(() => _showSimulator = v),
+        onShowHelpChanged: _setShowHelpOverlay,
+        onShowSimulatorChanged: _setShowSimulator,
         onBatchSimulator: _openBatchSimulatorDialog,
         onExport: _showExportDialog,
         onImport: _showImportDialog,
@@ -622,11 +741,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
             heroTag: 'toggleSim',
             tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
             backgroundColor: _showSimulator ? Colors.purple.shade100 : null,
-            onPressed: () {
-              setState(() {
-                _showSimulator = !_showSimulator;
-              });
-            },
+            onPressed: () => _setShowSimulator(!_showSimulator),
             child: const Icon(Icons.science, size: 20),
           ),
         ],
@@ -736,14 +851,18 @@ class _AutomataScreenState extends State<AutomataScreen> {
                   simulator: _simulator,
                   controller: _simController,
                   nodes: _nodes,
-                  onClose: () => setState(() => _showSimulator = false),
+                  onClose: () => _setShowSimulator(false),
                   onTextChanged: () {
                     setState(() {
                       _simRebuild();
                       _simulator.step = -1;
                     });
+                    _schedulePersist();
                   },
-                  onStepChanged: () => setState(() {}),
+                  onStepChanged: () {
+                    setState(() {});
+                    _schedulePersist();
+                  },
                 ),
 
               ..._nodes.values.map(
