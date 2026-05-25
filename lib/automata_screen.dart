@@ -205,6 +205,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     return _nodes.values.any((n) => n.id != currentId && n.label.trim() == normalized);
   }
 
+  bool _canStartLineFrom(String? nodeId) {
+    if (nodeId == null) return false;
+    return _nodes[nodeId]?.canHaveOutgoingTransitions ?? false;
+  }
+
   String _nextId(String prefix) {
     if (prefix == 'n') {
       return '$prefix${_nodeCounter++}';
@@ -536,7 +541,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     if (node != null) {
       if (_lineMode) {
-        _lineSourceNodeId = node.id;
+        if (_canStartLineFrom(node.id)) {
+          _lineSourceNodeId = node.id;
+        }
       } else {
         _draggingNodeId = node.id;
       }
@@ -625,6 +632,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       if (destNode != null) {
         final srcId = _lineSourceNodeId!;
         final destId = destNode.id;
+
+        if (!_canStartLineFrom(srcId)) {
+          _cancelRubberBand();
+          _lineSourceNodeId = null;
+          return;
+        }
 
         final alreadyExists = _lines.values.any((line) => line.nodeAId == srcId && line.nodeBId == destId);
 
@@ -883,12 +896,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   },
 
                   onLineModeSelect: () {
-                    if (_lineMode) {
+                    if (_lineMode && _canStartLineFrom(node.id)) {
                       _lineSourceNodeId = node.id;
                     }
                   },
 
                   onDoubleTap: () {
+                    if (!node.canToggleNormalAccept) return;
                     setState(() {
                       node.isAccept = !node.isAccept;
                     });

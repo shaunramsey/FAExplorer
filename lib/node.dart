@@ -199,7 +199,7 @@ class _NodeState extends State<Node> {
                 ),
               ),
 
-              if (widget.data.isAccept)
+              if (widget.data.isAccept && widget.data.canToggleNormalAccept)
                 Center(
                   child: IgnorePointer(
                     child: Container(
@@ -267,8 +267,10 @@ class _NodeState extends State<Node> {
                           finalText = parsed.substring(2, parsed.length - 2);
                         }
 
-                        widget.data.isHaltAccept = haltAccept;
-                        widget.data.isHaltReject = haltReject;
+                        widget.data.applyHaltFromLabel(
+                          haltAccept: haltAccept,
+                          haltReject: haltReject,
+                        );
 
                         if (finalText != _controller.text) {
                           _controller.value = TextEditingValue(

@@ -187,8 +187,10 @@ class DslCodec {
       }
       final existing = idForLabel(lbl);
       if (existing != null) {
-        newNodes[existing]!.isHaltAccept = haltAccept;
-        newNodes[existing]!.isHaltReject = haltReject;
+        newNodes[existing]!.applyHaltFromLabel(
+          haltAccept: haltAccept,
+          haltReject: haltReject,
+        );
         return existing;
       }
       final id = 'n${nodeCounter++}';
@@ -199,6 +201,7 @@ class DslCodec {
         isHaltAccept: haltAccept,
         isHaltReject: haltReject,
       );
+      if (node.isHaltState) node.isAccept = false;
       newNodes[id] = node;
       labelToId[lbl] = id;
       return id;
@@ -265,7 +268,10 @@ class DslCodec {
       final acceptMatch = RegExp(r'^(.+?)\s+is\s+accepted$', caseSensitive: false).firstMatch(line);
       if (acceptMatch != null) {
         final lbl = _unescapeDsl(acceptMatch.group(1)!.trim());
-        newNodes[idForLabel(lbl) ?? ensureNode(lbl)]!.isAccept = true;
+        final acceptNode = newNodes[idForLabel(lbl) ?? ensureNode(lbl)]!;
+        if (acceptNode.canToggleNormalAccept) {
+          acceptNode.isAccept = true;
+        }
         continue;
       }
 
@@ -281,11 +287,13 @@ class DslCodec {
           lineLabel = _unescapeDsl(rightPart.substring(eq + 1).trim());
         }
         final idA = ensureNode(leftPart), idB = ensureNode(nodeBLabel);
-        final lid = 'l${lineCounter++}';
-        newLines[lid] = LineData(id: lid, nodeAId: idA, nodeBId: idB, label: lineLabel);
-        newNodes[idA]!.connectedLineIds.add(lid);
-        newNodes[idB]!.connectedLineIds.add(lid);
-        if (lineLabel.isNotEmpty) lineLabelToId[lineLabel] = lid;
+        if (newNodes[idA]!.canHaveOutgoingTransitions) {
+          final lid = 'l${lineCounter++}';
+          newLines[lid] = LineData(id: lid, nodeAId: idA, nodeBId: idB, label: lineLabel);
+          newNodes[idA]!.connectedLineIds.add(lid);
+          newNodes[idB]!.connectedLineIds.add(lid);
+          if (lineLabel.isNotEmpty) lineLabelToId[lineLabel] = lid;
+        }
         continue;
       }
 
@@ -350,13 +358,17 @@ class DslCodec {
         isHaltAccept: n['haltAccept'] == true,
         isHaltReject: n['haltReject'] == true,
       );
+      if (node.isHaltState) node.isAccept = false;
       newNodes[node.id] = node;
     }
 
     for (final l in data['lines'] as List) {
+      final nodeAId = l['a'] as String;
+      if (newNodes[nodeAId]?.canHaveOutgoingTransitions != true) continue;
+
       final line = LineData(
         id: l['id'] as String,
-        nodeAId: l['a'] as String,
+        nodeAId: nodeAId,
         nodeBId: l['b'] as String,
         label: (l['label'] as String?) ?? '',
       )

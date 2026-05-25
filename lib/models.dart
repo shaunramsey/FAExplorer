@@ -43,6 +43,20 @@ class NodeData {
     this.isHaltReject = false,
   });
 
+  bool get isHaltState => isHaltAccept || isHaltReject;
+
+  /// Halt states cannot start outgoing transitions.
+  bool get canHaveOutgoingTransitions => !isHaltState;
+
+  /// Halt states use their own accept/reject visuals, not the normal accept ring.
+  bool get canToggleNormalAccept => !isHaltState;
+
+  void applyHaltFromLabel({required bool haltAccept, required bool haltReject}) {
+    isHaltAccept = haltAccept;
+    isHaltReject = haltReject;
+    if (isHaltState) isAccept = false;
+  }
+
   Offset get center => Offset(position.dx + 50, position.dy + 50);
 
   bool containsPoint(Offset point) {
