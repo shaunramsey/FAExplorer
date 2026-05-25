@@ -1,83 +1,111 @@
-import 'dart:math';
-import 'package:flutter/material.dart';
+import 'dart:collection';
+
 import 'models.dart';
 import 'token_replacements.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  SimulationResult
+// Simulation Result
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The outcome of evaluating the final step.
-enum SimResult { accept, reject, mixed }
+enum SimResult {
+  accept,
+  reject,
+  mixed,
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  AutomataSimulator
+// Automata Simulator
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pure NFA simulation engine.  Holds no Flutter state — call [rebuild] to
-/// recompute after the graph or input string changes.
 class AutomataSimulator {
-  AutomataSimulator({required this.nodes, required this.lines});
+  AutomataSimulator({
+    required this.nodes,
+    required this.lines,
+  }) {
+    _buildAdjacency();
+  }
 
   final Map<String, NodeData> nodes;
   final Map<String, LineData> lines;
 
-  // ── Public state ──────────────────────────────────────────────────────────
+  late final Map<String, List<LineData>> outgoing;
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Simulation State
+  // ───────────────────────────────────────────────────────────────────────────
 
   List<String> tokens = [];
 
-  /// `_simStates[i]` = set of active node IDs after consuming `i` tokens.
-  /// Index 0 = initial (before any token).
   final List<Set<String>> states = [];
 
-  /// `lines[i]` = line IDs used going from step `i-1` to step `i`.
   final List<Set<String>> usedLines = [];
 
-  /// Current display step.  -1 = before input; 0..n = after n tokens consumed.
   int step = -1;
 
-  // ── Derived getters ───────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // Public Getters
+  // ───────────────────────────────────────────────────────────────────────────
 
   Set<String> get activeNodes {
     if (states.isEmpty) return {};
     final idx = step + 1;
     if (idx < 0 || idx >= states.length) return {};
-    return states[idx];
+    return UnmodifiableSetView(states[idx]);
   }
 
   Set<String> get activeLines {
     if (usedLines.isEmpty) return {};
     final idx = step + 1;
     if (idx < 0 || idx >= usedLines.length) return {};
-    return usedLines[idx];
+    return UnmodifiableSetView(usedLines[idx]);
   }
 
-  // ── Public API ────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // Public API
+  // ───────────────────────────────────────────────────────────────────────────
 
-  /// Re-tokenises [input] and rebuilds the full simulation.
-  void rebuild(String input, {StartArrowData? startArrow}) {
+  void rebuild(
+    String input, {
+    StartArrowData? startArrow,
+  }) {
     tokens = _tokenize(input);
     _build(startArrow: startArrow);
-    if (step > tokens.length) step = tokens.length;
+
+    if (step > tokens.length) {
+      step = tokens.length;
+    }
   }
 
-  /// Recomputes with the current [tokens] (used when the graph changes but
-  /// the input string has not).
-  void rebuildGraph({StartArrowData? startArrow}) {
+  void rebuildGraph({
+    StartArrowData? startArrow,
+  }) {
+    _buildAdjacency();
     _build(startArrow: startArrow);
-    if (step > tokens.length) step = tokens.length;
+
+    if (step > tokens.length) {
+      step = tokens.length;
+    }
   }
 
-  /// Returns 1 = accept, 0 = reject, -1 = mixed (NFA branches disagree).
-  int finalResult() {
-    if (states.isEmpty) return 0;
-    final finalStates = states.last;
-    if (finalStates.isEmpty) return 0;
+  SimResult finalResult() {
+    if (states.isEmpty) {
+      return SimResult.reject;
+    }
 
-    // If any historical state contains a halt-accept node → accept.
+    final finalStates = states.last;
+
+    if (finalStates.isEmpty) {
+      return SimResult.reject;
+    }
+
+    // Halt-accept anywhere immediately wins.
     for (final s in states) {
       for (final nid in s) {
-        if (nodes[nid]?.isHaltAccept == true) return 1;
+        final node = nodes[nid];
+
+        if (node?.isHaltAccept == true) {
+          return SimResult.accept;
+        }
       }
     }
 
@@ -86,9 +114,17 @@ class AutomataSimulator {
 
     for (final nid in finalStates) {
       final node = nodes[nid];
+
       if (node == null) continue;
-      if (node.isHaltAccept) return 1;
-      if (node.isHaltReject) return 0;
+
+      if (node.isHaltAccept) {
+        return SimResult.accept;
+      }
+
+      if (node.isHaltReject) {
+        return SimResult.reject;
+      }
+
       if (node.isAccept) {
         anyAccept = true;
       } else {
@@ -96,34 +132,72 @@ class AutomataSimulator {
       }
     }
 
-    if (anyAccept && anyReject) return -1;
-    return anyAccept ? 1 : 0;
+    if (anyAccept && anyReject) {
+      return SimResult.mixed;
+    }
+
+    return anyAccept
+        ? SimResult.accept
+        : SimResult.reject;
   }
 
-  // ── Tokenizer ─────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // Adjacency
+  // ───────────────────────────────────────────────────────────────────────────
+
+  void _buildAdjacency() {
+    outgoing = {};
+
+    for (final line in lines.values) {
+      outgoing.putIfAbsent(
+        line.nodeAId,
+        () => [],
+      ).add(line);
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Tokenization
+  // ───────────────────────────────────────────────────────────────────────────
 
   List<String> _tokenize(String input) {
     final result = <String>[];
+
     int i = 0;
 
     while (i < input.length) {
-      if (input[i].trim().isEmpty) { i++; continue; }
+      if (input[i].trim().isEmpty) {
+        i++;
+        continue;
+      }
 
-      // [[COMMAND]] token
-      if (i + 1 < input.length && input[i] == '[' && input[i + 1] == '[') {
+      // [[COMMAND]]
+      if (
+          i + 1 < input.length &&
+          input[i] == '[' &&
+          input[i + 1] == '['
+      ) {
         final close = input.indexOf(']]', i + 2);
+
         if (close >= 0) {
-          result.add(_resolveCommand(input.substring(i, close + 2)));
+          final raw = input.substring(i, close + 2);
+
+          result.add(_resolveCommand(raw));
+
           i = close + 2;
           continue;
         }
       }
 
-      // "multi character token"
+      // "quoted token"
       if (input[i] == '"') {
         final close = input.indexOf('"', i + 1);
+
         if (close >= 0) {
-          result.add(input.substring(i + 1, close));
+          result.add(
+            input.substring(i + 1, close),
+          );
+
           i = close + 1;
           continue;
         }
@@ -136,119 +210,229 @@ class AutomataSimulator {
     return result;
   }
 
-  // ── Token normalisation ───────────────────────────────────────────────────
-
   String _resolveCommand(String token) {
     final trimmed = token.trim();
-    if (!trimmed.startsWith('[[') || !trimmed.endsWith(']]')) return token;
-    final inner = trimmed.substring(2, trimmed.length - 2).trim().toUpperCase();
+
+    if (
+        !trimmed.startsWith('[[') ||
+        !trimmed.endsWith(']]')
+    ) {
+      return token;
+    }
+
+    final inner = trimmed
+        .substring(2, trimmed.length - 2)
+        .trim()
+        .toUpperCase();
+
     return kTokenReplacements[inner] ?? token;
   }
 
-  String _normalize(String token) => _resolveCommand(token.trim());
+  String _normalize(String token) {
+    return _resolveCommand(token.trim());
+  }
 
-  bool _isNullToken(String token) => _normalize(token) == '∅';
+  bool _isNullToken(String token) {
+    return _normalize(token) == '∅';
+  }
 
-  bool _isEpsilonLabel(String label, bool atEnd, bool nullExplicit) {
+  bool _isEpsilonLabel(
+    String label,
+    bool atEnd,
+    bool nullExplicit,
+  ) {
     final n = _normalize(label);
-    if (n.isEmpty || n == '~') return true;
-    if (n == '∅') return atEnd && !nullExplicit;
+
+    if (n.isEmpty || n == '~') {
+      return true;
+    }
+
+    if (n == '∅') {
+      return atEnd && !nullExplicit;
+    }
+
     return false;
   }
 
-  // ── Epsilon closure ───────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // Epsilon Closure
+  // ───────────────────────────────────────────────────────────────────────────
 
-  (Set<String>, Set<String>) _epsilonClosure(
+  (
+    Set<String>,
+    Set<String>,
+  ) _epsilonClosure(
     Set<String> start,
     bool atEnd,
     bool nullExplicit,
   ) {
     final visited = <String>{...start};
+
     final used = <String>{};
-    final queue = <({String nodeId, bool usedNull})>[
-      for (final n in start) (nodeId: n, usedNull: false),
+
+    final queue = <({
+      String nodeId,
+      bool usedNull,
+    })>[
+      for (final n in start)
+        (
+          nodeId: n,
+          usedNull: false,
+        ),
     ];
+
     final seen = <String>{};
 
     while (queue.isNotEmpty) {
       final cur = queue.removeLast();
+
       final key = '${cur.nodeId}:${cur.usedNull}';
-      if (!seen.add(key)) continue;
+
+      if (!seen.add(key)) {
+        continue;
+      }
 
       final node = nodes[cur.nodeId];
+
       if (node == null) continue;
-      if (node.isHaltAccept || node.isHaltReject) continue;
 
-      for (final line in lines.values) {
-        if (line.nodeAId != cur.nodeId) continue;
+      if (
+          node.isHaltAccept ||
+          node.isHaltReject
+      ) {
+        continue;
+      }
 
-        final alts = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
-
+      for (final line in outgoing[cur.nodeId] ?? const <LineData>[]) {
         bool normalEps = false;
         bool nullJump = false;
 
+        final alts = line.label
+            .split(RegExp(r'[,\n]'))
+            .map((s) => s.trim());
+
         for (final alt in alts) {
           final n = _normalize(alt);
-          if (n.isEmpty || n == '~') normalEps = true;
-          if (n == '∅' && atEnd && !nullExplicit) nullJump = true;
+
+          if (n.isEmpty || n == '~') {
+            normalEps = true;
+          }
+
+          if (
+              n == '∅' &&
+              atEnd &&
+              !nullExplicit
+          ) {
+            nullJump = true;
+          }
         }
 
-        if (cur.usedNull) continue;
-        if (!normalEps && !nullJump) continue;
+        if (cur.usedNull) {
+          continue;
+        }
+
+        if (!normalEps && !nullJump) {
+          continue;
+        }
 
         used.add(line.id);
+
         visited.add(line.nodeBId);
-        queue.add((nodeId: line.nodeBId, usedNull: nullJump));
+
+        queue.add((
+          nodeId: line.nodeBId,
+          usedNull: nullJump,
+        ));
       }
     }
 
     return (visited, used);
   }
 
-  // ── Core build ────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // Build Simulation
+  // ───────────────────────────────────────────────────────────────────────────
 
-  void _build({StartArrowData? startArrow}) {
+  void _build({
+    StartArrowData? startArrow,
+  }) {
     final nullExplicit = tokens.any(_isNullToken);
+
     states.clear();
     usedLines.clear();
 
-    if (startArrow == null || !nodes.containsKey(startArrow.nodeId)) {
+    if (
+        startArrow == null ||
+        !nodes.containsKey(startArrow.nodeId)
+    ) {
       states.add({});
       usedLines.add({});
       return;
     }
 
-    final init = startArrow.nodeId;
-    final (initClosure, initLines) = _epsilonClosure({init}, tokens.isEmpty, nullExplicit);
+    final startNode = startArrow.nodeId;
 
-    Set<String> current = initClosure;
-    states.add(Set.from(current));
-    usedLines.add(Set.from(initLines));
+    final (
+      initialClosure,
+      initialLines,
+    ) = _epsilonClosure(
+      {startNode},
+      tokens.isEmpty,
+      nullExplicit,
+    );
 
-    for (final token in tokens) {
+    Set<String> current = initialClosure;
+
+    states.add({...current});
+    usedLines.add({...initialLines});
+
+    for (int i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+
+      final isLast = i == tokens.length - 1;
+
       final nextNodes = <String>{};
+
       final nextLines = <String>{};
-      final isLast = token == tokens.last;
 
       for (final nodeId in current) {
         final node = nodes[nodeId];
-        if (node == null) continue;
-        if (node.isHaltReject) continue;
+
+        if (node == null) {
+          continue;
+        }
+
+        if (node.isHaltReject) {
+          continue;
+        }
 
         if (node.isHaltAccept) {
-          // Immediately terminate the entire simulation.
           states.add({nodeId});
-          usedLines.add(Set.from(nextLines));
+          usedLines.add({...nextLines});
           step = tokens.length;
           return;
         }
 
-        for (final line in lines.values) {
-          if (line.nodeAId != nodeId) continue;
-          final alts = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
+        for (final line in outgoing[nodeId] ?? const <LineData>[]) {
+          final alts = line.label
+              .split(RegExp(r'[,\n]'))
+              .map((s) => s.trim());
+
           for (final alt in alts) {
-            if (_isEpsilonLabel(alt, false, nullExplicit)) continue;
-            if (_normalize(alt) == _normalize(token)) {
+            if (
+                _isEpsilonLabel(
+                  alt,
+                  false,
+                  nullExplicit,
+                )
+            ) {
+              continue;
+            }
+
+            if (
+                _normalize(alt) ==
+                _normalize(token)
+            ) {
               nextNodes.add(line.nodeBId);
               nextLines.add(line.id);
               break;
@@ -257,12 +441,27 @@ class AutomataSimulator {
         }
       }
 
-      final (closure, closureLines) = _epsilonClosure(nextNodes, isLast, nullExplicit);
-      current = closure;
-      states.add(Set.from(current));
-      usedLines.add({...nextLines, ...closureLines});
+      final (
+        closure,
+        closureLines,
+      ) = _epsilonClosure(
+        nextNodes,
+        isLast,
+        nullExplicit,
+      );
 
-      if (current.isEmpty) break;
+      current = closure;
+
+      states.add({...current});
+
+      usedLines.add({
+        ...nextLines,
+        ...closureLines,
+      });
+
+      if (current.isEmpty) {
+        break;
+      }
     }
   }
 }

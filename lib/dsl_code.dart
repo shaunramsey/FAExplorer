@@ -90,8 +90,8 @@ class DslCodec {
       final num = int.tryParse(n.id.substring(1)) ?? 0;
       final rawLabel = n.label.trim().isEmpty ? _numberToAlphaLabel(num) : n.label;
       String label = _escapeDsl(rawLabel);
-      if (n.isHaltAccept) label = '<<$label>>';
-      else if (n.isHaltReject) label = '>>$label<<';
+      if (n.isHaltAccept) {label = '<<$label>>';}
+      else if (n.isHaltReject) {label = '>>$label<<';}
       out.add('${n.id} = $label');
     }
     if (g.nodes.isNotEmpty) out.add('');
@@ -219,9 +219,9 @@ class DslCodec {
           final nid = ensureNode(_unescapeDsl(lengthMatch.group(1)!.trim()));
           final len = double.parse(lengthMatch.group(2)!);
           newStartArrow ??= StartArrowData(nodeId: nid);
-          newStartArrow = (newStartArrow!.nodeId != nid)
-              ? StartArrowData(nodeId: nid, length: len, label: newStartArrow!.label)
-              : StartArrowData(nodeId: nid, offset: newStartArrow!.offset, length: len, label: newStartArrow!.label);
+          newStartArrow = (newStartArrow.nodeId != nid)
+              ? StartArrowData(nodeId: nid, length: len, label: newStartArrow.label)
+              : StartArrowData(nodeId: nid, offset: newStartArrow.offset, length: len, label: newStartArrow.label);
           continue;
         }
 
@@ -231,7 +231,7 @@ class DslCodec {
           final dx = double.parse(angleMatch.group(2)!);
           final dy = double.parse(angleMatch.group(3)!);
           newStartArrow ??= StartArrowData(nodeId: nid);
-          newStartArrow = StartArrowData(nodeId: nid, offset: Offset(dx, dy), length: newStartArrow!.length, label: newStartArrow!.label);
+          newStartArrow = StartArrowData(nodeId: nid, offset: Offset(dx, dy), length: newStartArrow.length, label: newStartArrow.label);
           continue;
         }
 
@@ -379,8 +379,8 @@ class DslCodec {
     }
 
     int highestNode = 0, highestLine = 0;
-    for (final id in newNodes.keys) highestNode = max(highestNode, (int.tryParse(id.substring(1)) ?? 0) + 1);
-    for (final id in newLines.keys) highestLine = max(highestLine, (int.tryParse(id.substring(1)) ?? 0) + 1);
+    for (final id in newNodes.keys) {highestNode = max(highestNode, (int.tryParse(id.substring(1)) ?? 0) + 1);}
+    for (final id in newLines.keys) {highestLine = max(highestLine, (int.tryParse(id.substring(1)) ?? 0) + 1);}
 
     return GraphState(
       nodes: newNodes,

@@ -1,9 +1,3 @@
-/// Shared symbol-substitution table and text parser used by nodes, lines,
-/// start arrows, and the simulator.  A single source of truth replaces the
-/// three identical copies that previously lived in node.dart, line.dart, and
-/// start_arrow.dart.
-library token_replacements;
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  REPLACEMENT TABLE
 // ─────────────────────────────────────────────────────────────────────────────

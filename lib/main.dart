@@ -7,8 +7,9 @@ import 'models.dart';
 import 'node.dart';
 import 'line.dart';
 import 'start_arrow.dart';
-import 'dart:async';
 import 'package:file_picker/file_picker.dart';
+import 'dsl_code.dart';
+import 'simulator.dart';
 
 void main() => runApp(const MyApp());
 
@@ -107,11 +108,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   final List<SavedExport> _savedExports = [];
 
-  bool _isNullToken(String token) {
-    final normalized = _normalizeSimToken(token);
-
-    return normalized == '∅';
-  }
+  late final AutomataSimulator _simulator;
 
   Future<void> _openBatchSimulatorDialog() async {
     final accepted = <int>{};
@@ -134,29 +131,27 @@ class _AutomataScreenState extends State<AutomataScreen> {
           continue;
         }
 
-        final oldTokens = List<String>.from(_simTokens);
-        final oldStates = List<Set<String>>.from(_simStates);
-        final oldLines = List<Set<String>>.from(_simLines);
+        final oldTokens = List<String>.from(_simulator.tokens);
+        final oldStates = _simulator.states.map(Set<String>.from).toList();
+        final oldLines = _simulator.usedLines.map(Set<String>.from).toList();
+        final oldStep = _simulator.step;
 
-        _simTokens = _tokenize(str);
+        _simulator.rebuild(str, startArrow: _startArrow);
 
-        _buildSimulation();
+        final result = _simulator.finalResult();
 
-        final result = _simFinalResult();
-
-        if (result == 1 || result == -1) {
+        if (result == SimResult.accept || result == SimResult.mixed) {
           accepted.add(i);
         } else {
           rejected.add(i);
         }
 
-        _simTokens = oldTokens;
-
-        _simStates
+        _simulator.tokens = oldTokens;
+        _simulator.step = oldStep;
+        _simulator.states
           ..clear()
           ..addAll(oldStates);
-
-        _simLines
+        _simulator.usedLines
           ..clear()
           ..addAll(oldLines);
       }
@@ -244,484 +239,23 @@ class _AutomataScreenState extends State<AutomataScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // STRING SIMULATION STATE
+  // STRING SIMULATION (delegates to AutomataSimulator)
   // ═══════════════════════════════════════════════════════════════
   final TextEditingController _simController = TextEditingController();
-  List<String> _simTokens = [];
-  // _simStep: -1 = before any input (only start arrow/node lit),
-  //           0..n = after consuming token[0..n-1]
-  int _simStep = -1;
 
-  // Each step maps to a SET of active node IDs (NFA support)
-  // _simStates[i] = set of node IDs active after consuming i tokens
-  // _simStates[-1+1=0] = initial states
-  final List<Set<String>> _simStates = [];
-  // Lines taken at each step: _simLines[i] = lines used going from step i-1 to step i
-  final List<Set<String>> _simLines = [];
+  Set<String> get _simActiveNodes => _simulator.activeNodes;
+  Set<String> get _simActiveLines => _simulator.activeLines;
 
-  Set<String> get _simActiveNodes {
-    if (_simStates.isEmpty) return {};
-    final idx = _simStep + 1; // index into _simStates
-    if (idx < 0 || idx >= _simStates.length) return {};
-    return _simStates[idx];
-  }
-
-  Set<String> get _simActiveLines {
-    if (_simLines.isEmpty) return {};
-
-    final idx = _simStep + 1;
-
-    if (idx < 0 || idx >= _simLines.length) {
-      return {};
-    }
-
-    return _simLines[idx];
-  }
-
-  // ─────────────────────────────────────────────
-  // TOKENIZER: splits input into chars or [[WORD]] tokens
-  // ─────────────────────────────────────────────
-
-  bool _isEpsilonLabel(String label, bool atEndOfInput, bool nullWasExplicitlyTyped) {
-    final normalized = _normalizeSimToken(label);
-
-    // ~ and empty labels are always epsilon
-    if (normalized.isEmpty || normalized == '~') {
-      return true;
-    }
-
-    // ∅ behaves like epsilon ONLY when:
-    // - we are at end of input
-    // - user did NOT explicitly type ∅
-    if (normalized == '∅') {
-      return atEndOfInput && !nullWasExplicitlyTyped;
-    }
-
-    return false;
-  }
-
-  (Set<String>, Set<String>) _epsilonClosure(Set<String> startNodes, bool atEndOfInput, bool nullWasExplicitlyTyped) {
-    final visitedNodes = <String>{...startNodes};
-    final usedLines = <String>{};
-
-    final queue = <({String nodeId, bool usedNull})>[for (final node in startNodes) (nodeId: node, usedNull: false)];
-
-    final visitedStates = <String>{};
-
-    while (queue.isNotEmpty) {
-      final current = queue.removeLast();
-
-      final stateKey = '${current.nodeId}:${current.usedNull}';
-
-      if (visitedStates.contains(stateKey)) {
-        continue;
-      }
-
-      visitedStates.add(stateKey);
-
-      final currentNode = _nodes[current.nodeId];
-
-      if (currentNode == null) {
-        continue;
-      }
-
-      // Halt states terminate immediately.
-      // No epsilon/free/null transitions allowed.
-      if (currentNode.isHaltAccept || currentNode.isHaltReject) {
-        continue;
-      }
-
-      for (final line in _lines.values) {
-        if (line.nodeAId != current.nodeId) {
-          continue;
-        }
-
-        final alternatives = line.label.split(RegExp(r'[,\n]')).map((s) => s.trim());
-
-        bool isNormalEpsilon = false;
-        bool isNullJump = false;
-
-        for (final alt in alternatives) {
-          final normalized = _normalizeSimToken(alt);
-
-          // ~ or empty
-          if (normalized.isEmpty || normalized == '~') {
-            isNormalEpsilon = true;
-          }
-
-          // ∅
-          if (normalized == '∅' && atEndOfInput && !nullWasExplicitlyTyped) {
-            isNullJump = true;
-          }
-        }
-
-        // Cannot continue after using a null jump
-        if (current.usedNull) {
-          continue;
-        }
-
-        if (!isNormalEpsilon && !isNullJump) {
-          continue;
-        }
-
-        usedLines.add(line.id);
-
-        visitedNodes.add(line.nodeBId);
-
-        // If this transition used ∅,
-        // mark branch as terminated
-        queue.add((nodeId: line.nodeBId, usedNull: isNullJump));
-      }
-    }
-
-    return (visitedNodes, usedLines);
-  }
-
-  static const Map<String, String> _simCommands = {
-    r'\0': '∅',
-
-    'ALPHA': 'α',
-    'BETA': 'β',
-    'GAMMA': 'γ',
-    'ZETA': 'ζ',
-    'ETA': 'η',
-    'THETA': 'θ',
-    'IOTA': 'ι',
-    'KAPPA': 'κ',
-    'LAMDA': 'λ',
-    'DELTA': 'δ',
-    'EPSILON': 'ε',
-    'MU': 'μ',
-    'PI': 'π',
-    'SIGMA': 'σ',
-    'OMEGA': 'ω',
-    'PHI': 'φ',
-
-    'GAMMA_CAP': 'Γ',
-    'DELTA_CAP': 'Δ',
-    'PI_CAP': 'Π',
-    'SIGMA_CAP': 'Σ',
-    'OMEGA_CAP': 'Ω',
-    'PHI_CAP': 'Φ',
-
-    'INFINITY': '∞',
-    'SQRT': '√',
-    'PLUSMINUS': '±',
-    'NOTEQUAL': '≠',
-    'LESSEQ': '≤',
-    'GREATEREQ': '≥',
-    'APPROX': '≈',
-    'MULTIPLY': '×',
-    'DIVIDE': '÷',
-
-    'LEFT': '←',
-    'RIGHT': '→',
-    'UP': '↑',
-    'DOWN': '↓',
-    'LEFTRIGHT': '↔',
-
-    'CHECK': '✓',
-    'X': '✗',
-    'STAR': '★',
-    'HEART': '♥',
-    'BULLET': '•',
-    'ELLIPSIS': '…',
-    'COPY': '©',
-    'REGISTERED': '®',
-    'TRADEMARK': '™',
-    'DEGREE': '°',
-    'PARAGRAPH': '¶',
-    'SECTION': '§',
-    'CURRENCY': '¤',
-    'PILCROW': '¶',
-
-    'PEACE': '☮',
-    'YIN YANG': '☯',
-    'SMILEY': '☺',
-    'BLACK SMILEY': '☻',
-    'SUN': '☀',
-    'CLOUD': '☁',
-    'UMBRELLA': '☂',
-    'SNOWFLAKE': '❄',
-    'SKULL': '☠',
-    'SPADE': '♠',
-    'CLUB': '♣',
-    'DIAMOND': '♦',
-    'MUSIC NOTE': '♪',
-    'BEAMED EIGHTH NOTES': '♫',
-    'RADIOACTIVE': '☢',
-    'BIOHAZARD': '☣',
-    'CLOVER': '☘',
-    'HANDS': '☝',
-    'MALE': '♂',
-    'FEMALE': '♀',
-    'STAR AND CRESCENT': '☪',
-    'FALLING STAR': '☫',
-    'HAMMER AND SICKLE': '☭',
-    'HOT SPRINGS': '♨',
-    'HOTEL': '🏨',
-    'HOSPITAL': '🏥',
-    'HOURGLASS': '⌛',
-  };
-
-  String _resolveSimCommand(String token) {
-    final trimmed = token.trim();
-
-    if (!trimmed.startsWith('[[') || !trimmed.endsWith(']]')) {
-      return token;
-    }
-
-    final inner = trimmed.substring(2, trimmed.length - 2).trim().toUpperCase();
-
-    return _simCommands[inner] ?? token;
-  }
-
-  String _normalizeSimToken(String token) {
-    token = token.trim();
-
-    // Convert [[COMMAND]]
-    token = _resolveSimCommand(token);
-
-    return token;
-  }
-
-  List<String> _tokenize(String input) {
-    final tokens = <String>[];
-
-    int i = 0;
-
-    while (i < input.length) {
-      // Skip spaces
-      if (input[i].trim().isEmpty) {
-        i++;
-        continue;
-      }
-
-      // [[COMMAND]]
-      if (i + 1 < input.length && input[i] == '[' && input[i + 1] == '[') {
-        final close = input.indexOf(']]', i + 2);
-
-        if (close >= 0) {
-          final raw = input.substring(i, close + 2);
-
-          tokens.add(_resolveSimCommand(raw));
-
-          i = close + 2;
-          continue;
-        }
-      }
-
-      // "multi character token"
-      if (input[i] == '"') {
-        final close = input.indexOf('"', i + 1);
-
-        if (close >= 0) {
-          tokens.add(input.substring(i + 1, close));
-
-          i = close + 1;
-          continue;
-        }
-      }
-
-      // Default single character token
-      tokens.add(input[i]);
-
-      i++;
-    }
-
-    return tokens;
-  }
-
-  // ─────────────────────────────────────────────
-  // SIMULATION BUILDER
-  // Runs NFA simulation, building _simStates and _simLines
-  // ─────────────────────────────────────────────
   void _refreshSimulation() {
-    if (_simController.text.isEmpty && _simStates.isEmpty) {
-      return;
-    }
-
-    _simRebuild();
-  }
-
-  void _buildSimulation() {
-    final nullWasExplicitlyTyped = _simTokens.any(_isNullToken);
-    _simStates.clear();
-    _simLines.clear();
-
-    if (_startArrow == null || !_nodes.containsKey(_startArrow!.nodeId)) {
-      _simStates.add({});
-      _simLines.add({});
-      return;
-    }
-
-    final initialNode = _startArrow!.nodeId;
-
-    // Initial epsilon closure
-    final (initialClosure, initialLines) = _epsilonClosure({initialNode}, _simTokens.isEmpty, nullWasExplicitlyTyped);
-
-    Set<String> current = initialClosure;
-
-    _simStates.add(Set.from(current));
-    _simLines.add(Set.from(initialLines));
-
-    for (final token in _simTokens) {
-      final nextNodes = <String>{};
-      final usedLines = <String>{};
-
-      final isLastToken = token == _simTokens.last;
-
-      // ─────────────────────────────
-      // Process every active branch
-      // ─────────────────────────────
-
-      for (final nodeId in current) {
-        final currentNode = _nodes[nodeId];
-
-        if (currentNode == null) {
-          continue;
-        }
-
-        // Halt reject:
-        // kill ONLY this branch
-        if (currentNode.isHaltReject) {
-          continue;
-        }
-
-        // Halt accept:
-        // instantly end ALL processing
-        if (currentNode.isHaltAccept) {
-          current = {nodeId};
-
-          // Clear any future partial states
-          while (_simStates.length > _simStep + 2) {
-            _simStates.removeLast();
-          }
-
-          while (_simLines.length > _simStep + 2) {
-            _simLines.removeLast();
-          }
-
-          _simStates.add({nodeId});
-          _simLines.add(Set.from(usedLines));
-
-          // Force simulation to final step
-          _simStep = _simTokens.length;
-
-          return;
-        }
-
-        // Halt reject kills only this branch
-        if (currentNode.isHaltReject) {
-          continue;
-        }
-
-        // Halt accept instantly ends ALL processing
-        if (currentNode.isHaltAccept) {
-          current = {nodeId};
-
-          _simStates.add(Set.from(current));
-          _simLines.add(Set.from(usedLines));
-
-          return;
-        }
-
-        // Normal transitions
-        for (final line in _lines.values) {
-          if (line.nodeAId != nodeId) continue;
-
-          final alternatives = line.label.split(RegExp(r'[,\\n]')).map((s) => s.trim());
-
-          for (final alt in alternatives) {
-            if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) {
-              continue;
-            }
-
-            if (_normalizeSimToken(alt) == _normalizeSimToken(token)) {
-              nextNodes.add(line.nodeBId);
-              usedLines.add(line.id);
-              break;
-            }
-          }
-        }
-      }
-
-      // Epsilon closure
-      final (closureNodes, closureLines) = _epsilonClosure(nextNodes, isLastToken, nullWasExplicitlyTyped);
-
-      current = closureNodes;
-
-      _simStates.add(Set.from(current));
-
-      _simLines.add({...usedLines, ...closureLines});
-
-      // No branches left → reject
-      if (current.isEmpty) {
-        break;
-      }
-    }
+    _simulator.rebuildGraph(startArrow: _startArrow);
+    setState(() {});
   }
 
   void _simRebuild() {
-    _simTokens = _tokenize(_simController.text);
-    _buildSimulation();
-    // Clamp step
-    if (_simStep > _simTokens.length) {
-      _simStep = _simTokens.length;
+    _simulator.rebuild(_simController.text, startArrow: _startArrow);
+    if (_simulator.step > _simulator.tokens.length) {
+      _simulator.step = _simulator.tokens.length;
     }
-  }
-
-  // Result at final step: ✓ / ✗ / ?
-  // Returns 1 = accept, 0 = reject, -1 = mixed
-  int _simFinalResult() {
-    if (_simStates.isEmpty) return 0;
-
-    final finalStates = _simStates.last;
-
-    if (finalStates.isEmpty) return 0;
-
-    bool anyAccept = false;
-    bool anyReject = false;
-
-    // If any state ever reached halt accept,
-    // simulation is accepted forever.
-    for (final states in _simStates) {
-      for (final nid in states) {
-        final node = _nodes[nid];
-
-        if (node?.isHaltAccept == true) {
-          return 1;
-        }
-      }
-    }
-
-    for (final nid in finalStates) {
-      final node = _nodes[nid];
-
-      if (node == null) continue;
-
-      // Halt accept instantly accepts
-      if (node.isHaltAccept) {
-        return 1;
-      }
-
-      // Halt reject instantly rejects
-      if (node.isHaltReject) {
-        return 0;
-      }
-
-      if (node.isAccept) {
-        anyAccept = true;
-      } else {
-        anyReject = true;
-      }
-    }
-
-    if (anyAccept && anyReject) return -1;
-
-    if (anyAccept) return 1;
-
-    return 0;
   }
 
   void _cancelRubberBand() {
@@ -810,23 +344,13 @@ class _AutomataScreenState extends State<AutomataScreen> {
   @override
   void initState() {
     super.initState();
+
     _focusNode.requestFocus();
-  }
 
-  String _numberToAlphabetLabel(int index) {
-    index += 1;
-
-    String result = '';
-
-    while (index > 0) {
-      index--;
-
-      result = String.fromCharCode(65 + (index % 26)) + result;
-
-      index ~/= 26;
-    }
-
-    return result;
+    _simulator = AutomataSimulator(
+      nodes: _nodes,
+      lines: _lines,
+    );
   }
 
   @override
@@ -875,166 +399,15 @@ class _AutomataScreenState extends State<AutomataScreen> {
   // ═══════════════════════════════════════════════════════════════
 
   String _exportToDsl() {
-    final lines = <String>[];
-
-    String escapeDsl(String text) {
-      return text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
-    }
-
-    // ─────────────────────────────────────────────
-    // NODE DEFINITIONS
-    // ─────────────────────────────────────────────
-
-    for (final n in _nodes.values) {
-      final displayLabel = n.label.trim().isEmpty ? _numberToAlphabetLabel(int.parse(n.id.substring(1))) : n.label;
-
-      String finalLabel = escapeDsl(displayLabel);
-
-      if (n.isHaltAccept) {
-        finalLabel = '<<$finalLabel>>';
-      } else if (n.isHaltReject) {
-        finalLabel = '>>$finalLabel<<';
-      }
-
-      lines.add('${n.id} = $finalLabel');
-    }
-
-    if (_nodes.isNotEmpty) {
-      lines.add('');
-    }
-
-    // ─────────────────────────────────────────────
-    // POSITIONS
-    // ─────────────────────────────────────────────
-
-    bool wrotePos = false;
-
-    for (final n in _nodes.values) {
-      final x = n.position.dx.toStringAsFixed(1);
-      final y = n.position.dy.toStringAsFixed(1);
-
-      lines.add('${_nodeRef(n)} = ($x, $y)');
-
-      wrotePos = true;
-    }
-
-    if (wrotePos) {
-      lines.add('');
-    }
-
-    // ─────────────────────────────────────────────
-    // ACCEPT STATES
-    // ─────────────────────────────────────────────
-
-    bool wroteAccept = false;
-
-    for (final n in _nodes.values) {
-      if (!n.isAccept) continue;
-
-      lines.add('${_nodeRef(n)} is accepted');
-
-      wroteAccept = true;
-    }
-
-    if (wroteAccept) {
-      lines.add('');
-    }
-
-    // ─────────────────────────────────────────────
-    // TRANSITIONS
-    // ─────────────────────────────────────────────
-
-    bool wroteLines = false;
-
-    for (final l in _lines.values) {
-      final nodeA = _nodes[l.nodeAId];
-      final nodeB = _nodes[l.nodeBId];
-
-      if (nodeA == null || nodeB == null) continue;
-
-      final refA = _nodeRef(nodeA);
-      final refB = _nodeRef(nodeB);
-
-      if (l.label.trim().isEmpty) {
-        lines.add('$refA to $refB');
-      } else {
-        lines.add('$refA to $refB = ${escapeDsl(l.label)}');
-      }
-
-      wroteLines = true;
-    }
-
-    if (wroteLines) {
-      lines.add('');
-    }
-
-    // ─────────────────────────────────────────────
-    // CURVES
-    // ─────────────────────────────────────────────
-
-    bool wroteCurves = false;
-
-    for (final l in _lines.values) {
-      if (l.perpendicularPart.abs() <= 0.5) continue;
-
-      final curveRef = _lineRef(l);
-
-      lines.add('$curveRef curve = ${l.perpendicularPart.toStringAsFixed(1)}');
-
-      wroteCurves = true;
-    }
-
-    if (wroteCurves) {
-      lines.add('');
-    }
-
-    // ─────────────────────────────────────────────
-    // SELF LOOP ANGLES
-    // ─────────────────────────────────────────────
-
-    bool wroteLoopAngles = false;
-
-    for (final l in _lines.values) {
-      if (l.nodeAId != l.nodeBId) continue;
-
-      final loopRef = _lineRef(l);
-
-      lines.add('$loopRef loop angle = ${l.selfLoopAngle.toStringAsFixed(4)}');
-
-      wroteLoopAngles = true;
-    }
-
-    if (wroteLoopAngles) {
-      lines.add('');
-    }
-
-    // ─────────────────────────────────────────────
-    // START ARROW
-    // ─────────────────────────────────────────────
-
-    if (_startArrow != null) {
-      final node = _nodes[_startArrow!.nodeId];
-
-      if (node != null) {
-        final ref = _nodeRef(node);
-
-        if (_startArrow!.label.trim().isEmpty) {
-          lines.add('to $ref');
-        } else {
-          lines.add('to $ref = ${escapeDsl(_startArrow!.label)}');
-        }
-
-        if ((_startArrow!.length - 100).abs() > 0.5) {
-          lines.add('to $ref length = ${_startArrow!.length.toStringAsFixed(1)}');
-        }
-
-        final dir = _startArrow!.direction();
-
-        lines.add('to $ref angle = ${dir.dx.toStringAsFixed(4)}, ${dir.dy.toStringAsFixed(4)}');
-      }
-    }
-
-    return lines.join('\n').trimRight();
+    return DslCodec.exportToDsl(
+      GraphState(
+        nodes: _nodes,
+        lines: _lines,
+        startArrow: _startArrow,
+        nodeCounter: _nodeCounter,
+        lineCounter: _lineCounter,
+      ),
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1330,20 +703,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
     for (final node in _nodes.values) {
       final center = node.center;
       final hasLabel = node.label.trim().isNotEmpty;
-      // Hint text: alphabetic ID (same logic as getDisplayId in node.dart)
-      String getDisplayId(String rawId) {
-        final number = int.tryParse(rawId.replaceFirst('n', ''));
-        if (number == null || number < 0) return rawId;
-        int n = number;
-        String result = '';
-        do {
-          result = String.fromCharCode(65 + (n % 26)) + result;
-          n = (n ~/ 26) - 1;
-        } while (n >= 0);
-        return result;
-      }
-
-      final displayText = hasLabel ? node.label : getDisplayId(node.id);
+      final displayText = hasLabel ? node.label : nodeIdToAlpha(node.id);
       final textColor = hasLabel ? 'var(--label-fill)' : 'var(--hint-fill)';
 
       buffer.writeln('<g class="node" data-id="${node.id}">');
@@ -1452,419 +812,27 @@ class _AutomataScreenState extends State<AutomataScreen> {
     return buffer.toString();
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // NODE REFERENCES
-  // ═══════════════════════════════════════════════════════════════
-
-  String _nodeRef(NodeData node) {
-    String escapeDsl(String text) {
-      return text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
-    }
-
-    final label = node.label.trim();
-
-    if (label.isEmpty) {
-      return node.id;
-    }
-
-    final duplicateCount = _nodes.values.where((n) => n.label.trim() == label).length;
-
-    // Unique label → just use label
-    if (duplicateCount <= 1) {
-      return escapeDsl(label);
-    }
-
-    // Duplicate label → use id(label)
-    return '${node.id}(${escapeDsl(label)})';
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LINE REFERENCES
-  // ═══════════════════════════════════════════════════════════════
-
-  String _lineRef(LineData line) {
-    String escapeDsl(String text) {
-      return text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
-    }
-
-    final label = line.label.trim();
-
-    if (label.isEmpty) {
-      return line.id;
-    }
-
-    final duplicateCount = _lines.values.where((l) => l.label.trim() == label).length;
-
-    if (duplicateCount <= 1) {
-      return escapeDsl(label);
-    }
-
-    return '${line.id}(${escapeDsl(label)})';
-  }
-
-  Offset _defaultPosition(int index) {
-    if (index == 0) return const Offset(300, 300);
-    // Spiral outward: rings of 6, 12, 18 …
-    int ring = 0;
-    int capacity = 0;
-    int ringSize = 7;
-    while (capacity + ringSize <= index) {
-      capacity += ringSize;
-      ring++;
-      ringSize += 6;
-    }
-    final posInRing = index - capacity;
-    final total = ringSize;
-    final angle = (2 * pi * posInRing) / total - pi / 2;
-    final radius = 180.0 * (ring + 1);
-    return Offset(300 + cos(angle) * radius, 300 + sin(angle) * radius);
+  void _applyGraphState(GraphState state) {
+    setState(() {
+      _nodes
+        ..clear()
+        ..addAll(state.nodes);
+      _lines
+        ..clear()
+        ..addAll(state.lines);
+      _startArrow = state.startArrow;
+      _nodeCounter = state.nodeCounter;
+      _lineCounter = state.lineCounter;
+      _draggingNodeId = null;
+      _draggingLineId = null;
+      _lineSourceNodeId = null;
+    });
+    _refreshSimulation();
   }
 
   String? _importFromDsl(String src) {
     try {
-      final newNodes = <String, NodeData>{};
-      final labelToId = <String, String>{};
-      final newLines = <String, LineData>{};
-      final lineLabelToId = <String, String>{};
-
-      StartArrowData? newStartArrow;
-
-      int nodeCounter = 0;
-      int lineCounter = 0;
-
-      // Unescapes exported multiline text.
-      String unescapeDsl(String text) {
-        return text.replaceAll(r'\n', '\n').replaceAll(r'\\', r'\');
-      }
-
-      String? idForLabel(String lbl) {
-        lbl = unescapeDsl(lbl.trim());
-
-        // n0(Label)
-        final explicitRef = RegExp(r'^(n\d+)\((.*)\)$').firstMatch(lbl);
-
-        if (explicitRef != null) {
-          return explicitRef.group(1);
-        }
-
-        // direct ID
-        if (newNodes.containsKey(lbl)) {
-          return lbl;
-        }
-
-        // normal label
-        return labelToId[lbl];
-      }
-
-      String ensureNode(String lbl) {
-        lbl = unescapeDsl(lbl);
-
-        bool haltAccept = false;
-        bool haltReject = false;
-
-        if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
-          haltAccept = true;
-          lbl = lbl.substring(2, lbl.length - 2);
-        } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
-          haltReject = true;
-          lbl = lbl.substring(2, lbl.length - 2);
-        }
-
-        final existing = idForLabel(lbl);
-
-        if (existing != null) {
-          final node = newNodes[existing]!;
-
-          node.isHaltAccept = haltAccept;
-          node.isHaltReject = haltReject;
-
-          return existing;
-        }
-
-        final id = 'n${nodeCounter++}';
-
-        final pos = _defaultPosition(newNodes.length);
-
-        final node = NodeData(id: id, position: pos, label: lbl, isHaltAccept: haltAccept, isHaltReject: haltReject);
-
-        newNodes[id] = node;
-
-        labelToId[lbl] = id;
-
-        return id;
-      }
-
-      final rawLines = src.split('\n');
-
-      for (var rawLine in rawLines) {
-        final commentIdx = rawLine.indexOf('#');
-
-        if (commentIdx >= 0) {
-          rawLine = rawLine.substring(0, commentIdx);
-        }
-
-        final line = rawLine.trim();
-
-        if (line.isEmpty) continue;
-
-        // ── start arrow: "to label …" ─────────────────────────
-        if (line.toLowerCase().startsWith('to ')) {
-          final rest = line.substring(3).trim();
-
-          final lengthRe = RegExp(r'^(.+?)\s+length\s*=\s*(-?[\d.]+)$', caseSensitive: false);
-
-          final lengthMatch = lengthRe.firstMatch(rest);
-
-          if (lengthMatch != null) {
-            final nodeLabel = unescapeDsl(lengthMatch.group(1)!.trim());
-
-            final length = double.parse(lengthMatch.group(2)!);
-
-            final nodeId = ensureNode(nodeLabel);
-
-            newStartArrow ??= StartArrowData(nodeId: nodeId);
-
-            if (newStartArrow.nodeId != nodeId) {
-              newStartArrow = StartArrowData(nodeId: nodeId, length: length, label: newStartArrow.label);
-            } else {
-              newStartArrow = StartArrowData(
-                nodeId: nodeId,
-                offset: newStartArrow.offset,
-                length: length,
-                label: newStartArrow.label,
-              );
-            }
-
-            continue;
-          }
-
-          final angleRe = RegExp(r'^(.+?)\s+angle\s*=\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$', caseSensitive: false);
-
-          final angleMatch = angleRe.firstMatch(rest);
-
-          if (angleMatch != null) {
-            final nodeLabel = unescapeDsl(angleMatch.group(1)!.trim());
-
-            final dx = double.parse(angleMatch.group(2)!);
-            final dy = double.parse(angleMatch.group(3)!);
-
-            final nodeId = ensureNode(nodeLabel);
-
-            newStartArrow ??= StartArrowData(nodeId: nodeId);
-
-            newStartArrow = StartArrowData(
-              nodeId: nodeId,
-              offset: Offset(dx, dy),
-              length: newStartArrow.length,
-              label: newStartArrow.label,
-            );
-
-            continue;
-          }
-
-          final eqIdx = rest.indexOf('=');
-
-          if (eqIdx >= 0) {
-            final nodeLabel = unescapeDsl(rest.substring(0, eqIdx).trim());
-
-            final saLabel = unescapeDsl(rest.substring(eqIdx + 1).trim());
-
-            final nodeId = ensureNode(nodeLabel);
-
-            newStartArrow = StartArrowData(nodeId: nodeId, label: saLabel);
-          } else {
-            final nodeId = ensureNode(unescapeDsl(rest));
-
-            newStartArrow = StartArrowData(nodeId: nodeId);
-          }
-
-          continue;
-        }
-
-        // ── "lineLabel curve = N" ─────────────────────────────
-        final curveRe = RegExp(r'^(.+?)\s+curve\s*=\s*(-?[\d.]+)$', caseSensitive: false);
-        final curveMatch = curveRe.firstMatch(line);
-
-        if (curveMatch != null) {
-          final lbl = unescapeDsl(curveMatch.group(1)!.trim());
-
-          final val = double.parse(curveMatch.group(2)!);
-
-          String? lid;
-
-          final explicitRef = RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
-
-          if (explicitRef != null) {
-            lid = explicitRef.group(1);
-          } else if (newLines.containsKey(lbl)) {
-            lid = lbl;
-          } else {
-            lid = lineLabelToId[lbl];
-          }
-
-          if (lid != null && newLines.containsKey(lid)) {
-            newLines[lid]!.perpendicularPart = val;
-          }
-
-          continue;
-        }
-
-        // ── "lineLabel loop angle = N" ─────────────────────────────
-        final loopAngleRe = RegExp(r'^(.+?)\s+loop\s+angle\s*=\s*(-?[\d.]+)$', caseSensitive: false);
-
-        final loopAngleMatch = loopAngleRe.firstMatch(line);
-
-        if (loopAngleMatch != null) {
-          final lbl = unescapeDsl(loopAngleMatch.group(1)!.trim());
-
-          final val = double.parse(loopAngleMatch.group(2)!);
-
-          String? lid;
-
-          final explicitRef = RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
-
-          if (explicitRef != null) {
-            lid = explicitRef.group(1);
-          } else if (newLines.containsKey(lbl)) {
-            lid = lbl;
-          } else {
-            lid = lineLabelToId[lbl];
-          }
-
-          if (lid != null && newLines.containsKey(lid)) {
-            newLines[lid]!.selfLoopAngle = val;
-          }
-
-          continue;
-        }
-
-        // ── "label is accepted" ───────────────────────────────
-        final acceptRe = RegExp(r'^(.+?)\s+is\s+accepted$', caseSensitive: false);
-
-        final acceptMatch = acceptRe.firstMatch(line);
-
-        if (acceptMatch != null) {
-          final lbl = unescapeDsl(acceptMatch.group(1)!.trim());
-
-          final nid = idForLabel(lbl) ?? ensureNode(lbl);
-
-          newNodes[nid]!.isAccept = true;
-
-          continue;
-        }
-
-        // ── "labelA to labelB [= lineLabel]" ─────────────────
-        final toIdx = _findToSeparator(line);
-
-        if (toIdx >= 0) {
-          final leftPart = unescapeDsl(line.substring(0, toIdx).trim());
-
-          final rightPart = line.substring(toIdx + 4).trim();
-
-          String lineLabel = '';
-          String nodeBLabel = rightPart;
-
-          final eqIdx = rightPart.indexOf('=');
-
-          if (eqIdx >= 0) {
-            nodeBLabel = unescapeDsl(rightPart.substring(0, eqIdx).trim());
-
-            lineLabel = unescapeDsl(rightPart.substring(eqIdx + 1).trim());
-          }
-
-          final idA = ensureNode(leftPart);
-          final idB = ensureNode(nodeBLabel);
-
-          final lid = 'l${lineCounter++}';
-
-          final lineData = LineData(id: lid, nodeAId: idA, nodeBId: idB, label: lineLabel);
-
-          newLines[lid] = lineData;
-
-          newNodes[idA]!.connectedLineIds.add(lid);
-          newNodes[idB]!.connectedLineIds.add(lid);
-
-          if (lineLabel.isNotEmpty) {
-            lineLabelToId[lineLabel] = lid;
-          }
-
-          continue;
-        }
-
-        // ── "label = (x, y)" ───────────────────────────────
-        final posRe = RegExp(r'^(.+?)\s*=\s*\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)$');
-
-        final posMatch = posRe.firstMatch(line);
-
-        if (posMatch != null) {
-          final lbl = unescapeDsl(posMatch.group(1)!.trim());
-
-          final x = double.parse(posMatch.group(2)!);
-          final y = double.parse(posMatch.group(3)!);
-
-          final nid = idForLabel(lbl) ?? ensureNode(lbl);
-
-          newNodes[nid]!.position = Offset(x, y);
-
-          continue;
-        }
-
-        // ── "nN = label" ────────────────────────────────────
-        final nodeDefRe = RegExp(r'^(n\d+)\s*=\s*(.*)$');
-
-        final nodeDefMatch = nodeDefRe.firstMatch(line);
-
-        if (nodeDefMatch != null) {
-          final id = nodeDefMatch.group(1)!;
-
-          final lbl = unescapeDsl(nodeDefMatch.group(2)!.trim());
-
-          final num = int.tryParse(id.substring(1)) ?? -1;
-
-          if (num >= nodeCounter) {
-            nodeCounter = num + 1;
-          }
-
-          if (!newNodes.containsKey(id)) {
-            final pos = _defaultPosition(newNodes.length);
-
-            final node = NodeData(id: id, position: pos, label: lbl);
-
-            newNodes[id] = node;
-          } else {
-            newNodes[id]!.label = lbl;
-          }
-
-          if (lbl.isNotEmpty) {
-            labelToId[lbl] = id;
-          }
-
-          continue;
-        }
-
-        // ── bare "label" → create node ─────────────────────
-        ensureNode(unescapeDsl(line));
-      }
-
-      setState(() {
-        _nodes
-          ..clear()
-          ..addAll(newNodes);
-
-        _lines
-          ..clear()
-          ..addAll(newLines);
-
-        _startArrow = newStartArrow;
-
-        _nodeCounter = nodeCounter;
-        _lineCounter = lineCounter;
-
-        _draggingNodeId = null;
-        _draggingLineId = null;
-        _lineSourceNodeId = null;
-      });
-
+      _applyGraphState(DslCodec.importFromDsl(src));
       return null;
     } catch (e) {
       return 'Parse error: $e';
@@ -1873,110 +841,11 @@ class _AutomataScreenState extends State<AutomataScreen> {
 
   String? _importFromSvg(String svg) {
     try {
-      final scriptMatch = RegExp(r'<script[^>]*id="automata-data"[^>]*>(.*?)</script>', dotAll: true).firstMatch(svg);
-
-      if (scriptMatch == null) {
-        return 'No embedded automata data found.';
-      }
-
-      final jsonText = scriptMatch.group(1)!.trim();
-
-      final data = jsonDecode(jsonText);
-
-      final newNodes = <String, NodeData>{};
-      final newLines = <String, LineData>{};
-
-      for (final n in data['nodes']) {
-        final node = NodeData(
-          id: n['id'],
-
-          position: Offset((n['x'] as num).toDouble(), (n['y'] as num).toDouble()),
-
-          label: n['label'] ?? '',
-        );
-
-        node.isAccept = n['accept'] == true;
-
-        newNodes[node.id] = node;
-      }
-
-      for (final l in data['lines']) {
-        final line = LineData(id: l['id'], nodeAId: l['a'], nodeBId: l['b'], label: l['label'] ?? '');
-
-        line.perpendicularPart = (l['curve'] as num?)?.toDouble() ?? 0;
-
-        line.selfLoopAngle = (l['loopAngle'] as num?)?.toDouble() ?? 0;
-
-        newLines[line.id] = line;
-
-        newNodes[line.nodeAId]?.connectedLineIds.add(line.id);
-
-        newNodes[line.nodeBId]?.connectedLineIds.add(line.id);
-      }
-
-      StartArrowData? startArrow;
-
-      if (data['startArrow'] != null) {
-        final sa = data['startArrow'];
-
-        startArrow = StartArrowData(
-          nodeId: sa['nodeId'],
-
-          offset: Offset((sa['dx'] as num).toDouble(), (sa['dy'] as num).toDouble()),
-
-          length: (sa['length'] as num).toDouble(),
-
-          label: sa['label'] ?? '',
-        );
-      }
-
-      int highestNode = 0;
-      int highestLine = 0;
-
-      for (final id in newNodes.keys) {
-        final num = int.tryParse(id.substring(1)) ?? 0;
-
-        highestNode = max(highestNode, num + 1);
-      }
-
-      for (final id in newLines.keys) {
-        final num = int.tryParse(id.substring(1)) ?? 0;
-
-        highestLine = max(highestLine, num + 1);
-      }
-
-      setState(() {
-        _nodes
-          ..clear()
-          ..addAll(newNodes);
-
-        _lines
-          ..clear()
-          ..addAll(newLines);
-
-        _startArrow = startArrow;
-
-        _nodeCounter = highestNode;
-        _lineCounter = highestLine;
-      });
-
+      _applyGraphState(DslCodec.importFromSvg(svg));
       return null;
     } catch (e) {
       return 'SVG import failed: $e';
     }
-  }
-
-  /// Find the index of the first " to " that is NOT inside a word.
-  /// Returns the index of the space before "to", or -1 if not found.
-  int _findToSeparator(String s) {
-    int i = 0;
-    while (i < s.length - 3) {
-      if (s[i] == ' ' && s.substring(i + 1, i + 3).toLowerCase() == 'to' && s[i + 3] == ' ') {
-        return i;
-      }
-      i++;
-    }
-    return -1;
   }
 
   // ─────────────────────────────────────────────
@@ -2796,7 +1665,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                     nodeCenter: _nodes[_startArrow!.nodeId]!.center,
 
                     deleteMode: _deleteMode,
-                    highlighted: _simStep == -1 && _simTokens.isNotEmpty,
+                    highlighted: _simulator.step == -1 && _simulator.tokens.isNotEmpty,
 
                     onDelete: () {
                       setState(() {
@@ -2924,24 +1793,24 @@ class _AutomataScreenState extends State<AutomataScreen> {
                           }
 
                           String stepLabel() {
-                            if (_simTokens.isEmpty) return '—';
-                            if (_simStep < 0) return 'start';
-                            return '${_simStep} / ${_simTokens.length}';
+                            if (_simulator.tokens.isEmpty) return '—';
+                            if (_simulator.step < 0) return 'start';
+                            return '${_simulator.step} / ${_simulator.tokens.length}';
                           }
 
                           Widget statusBox() {
                             IconData icon;
                             Color color;
-                            final atEnd = _simStep == _simTokens.length && _simTokens.isNotEmpty;
-                            if (!atEnd || _simStates.isEmpty) {
+                            final atEnd = _simulator.step == _simulator.tokens.length && _simulator.tokens.isNotEmpty;
+                            if (!atEnd || _simulator.states.isEmpty) {
                               icon = Icons.question_mark;
                               color = Colors.grey.shade400;
                             } else {
-                              final r = _simFinalResult();
-                              if (r == 1) {
+                              final r = _simulator.finalResult();
+                              if (r == SimResult.accept) {
                                 icon = Icons.check;
                                 color = Colors.green;
-                              } else if (r == 0) {
+                              } else if (r == SimResult.reject) {
                                 icon = Icons.close;
                                 color = Colors.red;
                               } else {
@@ -2994,10 +1863,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                           onPressed: () {
                                             _simController.clear();
                                             setState(() {
-                                              _simTokens = [];
-                                              _simStep = -1;
-                                              _simStates.clear();
-                                              _simLines.clear();
+                                              _simulator.tokens = [];
+                                              _simulator.step = -1;
+                                              _simulator.states.clear();
+                                              _simulator.usedLines.clear();
                                             });
                                             setPanel(() {});
                                           },
@@ -3006,7 +1875,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                 ),
                                 onChanged: (v) {
                                   rebuild();
-                                  setState(() => _simStep = -1);
+                                  setState(() => _simulator.step = -1);
                                   setPanel(() {});
                                 },
                               ),
@@ -3020,10 +1889,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                     tooltip: 'Go to start',
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                    onPressed: _simTokens.isEmpty
+                                    onPressed: _simulator.tokens.isEmpty
                                         ? null
                                         : () {
-                                            setState(() => _simStep = -1);
+                                            setState(() => _simulator.step = -1);
                                             setPanel(() {});
                                           },
                                   ),
@@ -3032,10 +1901,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                     tooltip: 'Step back',
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                    onPressed: (_simStep <= -1 || _simTokens.isEmpty)
+                                    onPressed: (_simulator.step <= -1 || _simulator.tokens.isEmpty)
                                         ? null
                                         : () {
-                                            setState(() => _simStep--);
+                                            setState(() => _simulator.step--);
                                             setPanel(() {});
                                           },
                                   ),
@@ -3047,16 +1916,16 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                     tooltip: 'Step forward',
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                    onPressed: (_simTokens.isEmpty || _simStep >= _simTokens.length)
+                                    onPressed: (_simulator.tokens.isEmpty || _simulator.step >= _simulator.tokens.length)
                                         ? null
                                         : () {
                                             setState(() {
-                                              _simStep++;
+                                              _simulator.step++;
 
                                               // If the newly displayed state contains
                                               // a halt accept node, next frame becomes final.
-                                              if (_simStep < _simStates.length) {
-                                                final states = _simStates[_simStep];
+                                              if (_simulator.step < _simulator.states.length) {
+                                                final states = _simulator.states[_simulator.step];
 
                                                 bool hasHaltAccept = false;
 
@@ -3070,7 +1939,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                                 }
 
                                                 if (hasHaltAccept) {
-                                                  _simStep = _simTokens.length;
+                                                  _simulator.step = _simulator.tokens.length;
                                                 }
                                               }
                                             });
@@ -3083,10 +1952,10 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                     tooltip: 'Go to end',
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                    onPressed: (_simTokens.isEmpty || _simStep == _simTokens.length)
+                                    onPressed: (_simulator.tokens.isEmpty || _simulator.step == _simulator.tokens.length)
                                         ? null
                                         : () {
-                                            setState(() => _simStep = _simTokens.length);
+                                            setState(() => _simulator.step = _simulator.tokens.length);
                                             setPanel(() {});
                                           },
                                   ),
@@ -3100,14 +1969,14 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                 ),
                               ),
 
-                              if (_simTokens.isNotEmpty) ...[
+                              if (_simulator.tokens.isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
                                   child: Row(
-                                    children: List.generate(_simTokens.length, (i) {
-                                      final consumed = _simStep > i;
-                                      final current = _simStep == i;
+                                    children: List.generate(_simulator.tokens.length, (i) {
+                                      final consumed = _simulator.step > i;
+                                      final current = _simulator.step == i;
                                       return Container(
                                         margin: const EdgeInsets.symmetric(horizontal: 2),
                                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
@@ -3124,7 +1993,7 @@ class _AutomataScreenState extends State<AutomataScreen> {
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
-                                          _simTokens[i],
+                                          _simulator.tokens[i],
                                           style: GoogleFonts.courierPrime(
                                             fontSize: 12,
                                             color: consumed ? Colors.black38 : Colors.black,
