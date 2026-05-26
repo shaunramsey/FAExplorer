@@ -95,6 +95,86 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         pdaMode: _pdaMode,
       );
 
+  List<SavedExport> get _guestDefaultExports => [
+        SavedExport(
+          name: 'Even 0 count',
+          dsl: '''
+n0 = A
+n1 = B
+
+n0 = (556.7, 321.3)
+n1 = (1062.0, 328.7)
+
+n0 is accepted
+
+n0 to n1 = 0
+n1 to n0 = 0
+n0 to n0 = 1
+n1 to n1 = 1
+
+l0(0) curve = -159.5
+l1(0) curve = -83.0
+
+l2(1) loop angle = -1.5708
+l3(1) loop angle = -0.3442
+
+to n0
+to n0 angle = -1.0000, 0.0000
+''',
+        ),
+        SavedExport(
+          name: 'Equal 0s and 1s',
+          dsl: '''
+pda mode
+
+n0 = A
+n1 = B
+n2 = C
+n3 = <<ha>>
+n4 = E
+n5 = F
+
+n0 = (723.3, 204.7)
+n1 = (1139.3, 259.3)
+n2 = (1196.0, 527.3)
+n3 = (739.3, 705.3)
+n4 = (345.3, 504.7)
+n5 = (345.3, 277.3)
+
+n0 to n5 = 0,~|X
+n0 to n1 = 1,~|Y
+n1 to n1 = 1,~|Y
+n1 to n2 = 0,Y|~
+n2 to n1 = 1,∅|Y
+n2 to n5 = 0,∅|X
+n4 to n1 = 1,∅|Y
+n4 to n5 = 0,∅|X
+n5 to n4 = 1,X|~
+n5 to n5 = 0,~|X
+n4 to n4 = 1,X|~
+n4 to n3 = ∅,∅|~
+n2 to n3 = ∅,∅|~
+n2 to n2 = 0,Y|~
+
+l0(0,~|X) curve = -2.9
+l3(0,Y|~) curve = 62.2
+l4(1,∅|Y) curve = 55.1
+l5(0,∅|X) curve = 39.9
+l6(1,∅|Y) curve = 16.9
+l7(0,∅|X) curve = -8.2
+l8(1,X|~) curve = -105.4
+
+l2(1,~|Y) loop angle = -0.7988
+l9(0,~|X) loop angle = -1.5708
+l10(1,X|~) loop angle = 1.7686
+l13(0,Y|~) loop angle = -0.0754
+
+to n0
+to n0 angle = -1.0000, 0.0000
+''',
+        ),
+      ];
+
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // STRING SIMULATION (delegates to AutomataSimulator)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -179,7 +259,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       }
     }
 
+    var seededGuestDefaults = false;
     _savedExports.addAll(snapshot.savedExports);
+
+    if (widget.isGuest && _savedExports.isEmpty) {
+      _savedExports.addAll(_guestDefaultExports);
+      seededGuestDefaults = true;
+    }
     _showSimulator = snapshot.showSimulator;
     _showHelpOverlay = snapshot.showHelpOverlay;
     _simController.text = snapshot.simInput;
@@ -190,6 +276,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     }
 
     _persistenceReady = true;
+    if (seededGuestDefaults) {
+      _schedulePersist();
+    }
 
     if (mounted) {
       setState(() => _loadingPrefs = false);
@@ -1021,6 +1110,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
                 simulator: _simulator,
+                pdaSimulator: _pdaMode ? _pdaSimulator : null,
                 controller: _simController,
                 nodes: _nodes,
                 onClose: () => _setShowSimulator(false),

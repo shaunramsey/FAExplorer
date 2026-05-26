@@ -1021,6 +1021,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
                 simulator: _simulator,
+                pdaSimulator: _pdaMode ? _pdaSimulator : null,
                 controller: _simController,
                 nodes: _nodes,
                 onClose: () => _setShowSimulator(false),

@@ -418,6 +418,11 @@ class PdaSimulator {
     final linesUsed = <String>{};
     final queue = Queue<PdaConfig>.from(start);
 
+    // Mirror the string simulator's "null jump" rule:
+    // treat input-read symbol `∅` as epsilon *only* when at end-of-input,
+    // and only if the input did not explicitly contain `∅`.
+    final nullWasExplicitlyTyped = tokens.any((t) => _normalizeSym(t) == kStackBottom);
+
     const int kMaxStackHeightDuringEpsilonClosure = 200;
 
     while (queue.isNotEmpty) {
@@ -435,7 +440,9 @@ class PdaSimulator {
         for (final altRaw in line.label.split('\n')) {
           final t = parsePdaLabel(altRaw);
           final readSym = _normalizeSym(t.read);
-          if (readSym.isNotEmpty) continue;
+          final atEndOfInput = config.inputPos == tokens.length;
+          final isNullJumpRead = readSym == kStackBottom && atEndOfInput && !nullWasExplicitlyTyped;
+          if (readSym.isNotEmpty && !isNullJumpRead) continue;
 
           final popSym = _normalizeSym(t.pop);
           final pushSyms = t.push.map(_normalizeSym).toList();

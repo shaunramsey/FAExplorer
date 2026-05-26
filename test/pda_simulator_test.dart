@@ -144,6 +144,23 @@ void main() {
       expect(sim.finalResult(), PdaSimResult.accept);
     });
 
+    test('treats read=∅ as ε at end-of-input (null jump)', () {
+      final nodes = <String, NodeData>{
+        'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0'),
+        'n1': NodeData(id: 'n1', position: const Offset(100, 0), label: 'q1', isAccept: true),
+      };
+      final lines = <String, LineData>{
+        // read=∅, pop=∅, push=~  should be taken as ε when input is fully consumed.
+        'l0': LineData(id: 'l0', nodeAId: 'n0', nodeBId: 'n1', label: '∅,∅|~'),
+      };
+
+      final sim = PdaSimulator(nodes: nodes, lines: lines);
+      sim.rebuild('', startArrow: StartArrowData(nodeId: 'n0'));
+
+      expect(sim.activeConfigs.isNotEmpty, isTrue);
+      expect(sim.finalResult(), PdaSimResult.accept);
+    });
+
     test('remaining input tracks position', () {
       final nodes = <String, NodeData>{
         'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0'),

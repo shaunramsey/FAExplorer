@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models.dart';
+import '../pda_simulator.dart';
 import '../simulator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,6 +27,7 @@ class StringSimulatorPanel extends StatefulWidget {
     super.key,
     required this.boundaryKey,
     required this.simulator,
+    this.pdaSimulator,
     required this.controller,
     required this.nodes,
     required this.onClose,
@@ -35,6 +37,7 @@ class StringSimulatorPanel extends StatefulWidget {
 
   final GlobalKey boundaryKey;
   final AutomataSimulator simulator;
+  final PdaSimulator? pdaSimulator;
   final TextEditingController controller;
   final Map<String, NodeData> nodes;
   final VoidCallback onClose;
@@ -186,6 +189,14 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   SimResult? get _currentResult {
     final sim = widget.simulator;
+    final pda = widget.pdaSimulator;
+
+    if (pda != null) {
+      if (pda.tokens.isEmpty && pda.steps.isEmpty) return null;
+      final r = pda.finalResult();
+      return r == PdaSimResult.accept ? SimResult.accept : SimResult.reject;
+    }
+
     if (sim.tokens.isEmpty && sim.states.isEmpty) return null;
     return sim.finalResult();
   }
