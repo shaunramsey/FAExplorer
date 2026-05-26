@@ -84,7 +84,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         context,
         simulator: _simulator,
         startArrow: _startArrow,
-        pdaSimulator: _pdaMode ? _pdaSimulator : null,
       );
 
   GraphState get _graphState => GraphState(
@@ -320,6 +319,9 @@ to n0 angle = -1.0000, 0.0000
 
     final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
 
+    // Large tap target around the tail tip
+    if ((point - start).distance < 44) return true;
+
     final line = end - start;
     final lenSq = line.dx * line.dx + line.dy * line.dy;
 
@@ -331,7 +333,7 @@ to n0 angle = -1.0000, 0.0000
 
     final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
 
-    return (point - projection).distance < 30;
+    return (point - projection).distance < 44;
   }
 
   bool _isLabelTaken(String label, String currentId) {
@@ -597,6 +599,9 @@ to n0 angle = -1.0000, 0.0000
 
     final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
 
+    // Large tap target around the tail tip
+    if ((point - start).distance < 44) return true;
+
     final line = end - start;
 
     final lenSq = line.dx * line.dx + line.dy * line.dy;
@@ -611,7 +616,7 @@ to n0 angle = -1.0000, 0.0000
 
     final distance = (point - projection).distance;
 
-    return distance < 30;
+    return distance < 44;
   }
 
   bool _isPointerOverSimulatorPanel(Offset globalPosition) {
