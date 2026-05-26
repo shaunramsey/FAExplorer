@@ -10,7 +10,6 @@ import 'token_replacements.dart';
 enum SimResult {
   accept,
   reject,
-  mixed,
 }
 
 // Matches original_main.dart transition-label splitting (comma, backslash, or "n").
@@ -86,23 +85,17 @@ class AutomataSimulator {
     }
 
     bool anyAccept = false;
-    bool anyReject = false;
 
     for (final nid in finalStates) {
       final node = nodes[nid];
       if (node == null) continue;
 
       if (node.isHaltAccept) return SimResult.accept;
-      if (node.isHaltReject) return SimResult.reject;
+      if (node.isHaltReject) continue;
 
-      if (node.isAccept) {
-        anyAccept = true;
-      } else {
-        anyReject = true;
-      }
+      if (node.isAccept) anyAccept = true;
     }
 
-    if (anyAccept && anyReject) return SimResult.mixed;
     return anyAccept ? SimResult.accept : SimResult.reject;
   }
 

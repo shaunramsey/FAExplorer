@@ -33,7 +33,6 @@ class PdaStackPanel extends StatelessWidget {
       headerColor = switch (result) {
         PdaSimResult.accept => Colors.green.shade700,
         PdaSimResult.reject => Colors.red.shade700,
-        PdaSimResult.mixed => Colors.orange.shade700,
       };
     }
 
@@ -70,7 +69,6 @@ class PdaStackPanel extends StatelessWidget {
                           switch (result) {
                             PdaSimResult.accept => 'ACCEPT',
                             PdaSimResult.reject => 'REJECT',
-                            PdaSimResult.mixed => 'MIXED',
                           },
                           style: GoogleFonts.courierPrime(
                             fontSize: 12,

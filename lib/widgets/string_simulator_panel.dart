@@ -192,17 +192,19 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   Color _resultColor(SimResult r) {
     switch (r) {
-      case SimResult.accept: return Colors.green.shade700;
-      case SimResult.reject: return Colors.red.shade700;
-      case SimResult.mixed:  return Colors.orange.shade700;
+      case SimResult.accept:
+        return Colors.green.shade700;
+      case SimResult.reject:
+        return Colors.red.shade700;
     }
   }
 
   String _resultLabel(SimResult r) {
     switch (r) {
-      case SimResult.accept: return 'ACCEPT';
-      case SimResult.reject: return 'REJECT';
-      case SimResult.mixed:  return 'MIXED';
+      case SimResult.accept:
+        return 'ACCEPT';
+      case SimResult.reject:
+        return 'REJECT';
     }
   }
 

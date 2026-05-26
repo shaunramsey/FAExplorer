@@ -32,7 +32,7 @@ Future<void> showBatchSimulatorDialog(
       simulator.rebuild(str, startArrow: startArrow);
       final result = simulator.finalResult();
 
-      if (result == SimResult.accept || result == SimResult.mixed) {
+      if (result == SimResult.accept) {
         accepted.add(i);
       } else {
         rejected.add(i);

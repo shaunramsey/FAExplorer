@@ -148,7 +148,7 @@ class PdaActiveConfig {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum PdaSimResult { accept, reject, mixed }
+enum PdaSimResult { accept, reject }
 
 class PdaStepSnapshot {
   final List<PdaActiveConfig> configs;
@@ -225,29 +225,17 @@ class PdaSimulator {
     if (last.configs.isEmpty) return PdaSimResult.reject;
 
     bool anyAccept = false;
-    bool anyReject = false;
 
     for (final c in last.configs) {
       final node = nodes[c.nodeId];
-      if (node == null) {
-        anyReject = true;
-        continue;
-      }
+      if (node == null) continue;
 
       if (node.isHaltAccept) return PdaSimResult.accept;
-      if (node.isHaltReject) {
-        anyReject = true;
-        continue;
-      }
+      if (node.isHaltReject) continue;
 
-      if (node.isAccept) {
-        anyAccept = true;
-      } else {
-        anyReject = true;
-      }
+      if (node.isAccept) anyAccept = true;
     }
 
-    if (anyAccept && anyReject) return PdaSimResult.mixed;
     return anyAccept ? PdaSimResult.accept : PdaSimResult.reject;
   }
 
