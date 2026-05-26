@@ -70,6 +70,54 @@ void main() {
       expect(sim.finalResult(), PdaSimResult.accept);
     });
 
+    test('detects static ε push cycle ~,~|X', () {
+      final nodes = <String, NodeData>{
+        'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0'),
+      };
+      final lines = <String, LineData>{
+        'l0': LineData(id: 'l0', nodeAId: 'n0', nodeBId: 'n0', label: '~,~|X'),
+      };
+
+      final sim = PdaSimulator(nodes: nodes, lines: lines);
+      sim.rebuild('', startArrow: StartArrowData(nodeId: 'n0'));
+
+      expect(sim.stackGrowthLoopDetected, isTrue);
+      expect(sim.activeConfigs, isEmpty);
+    });
+
+    test('detects longer ε push cycle across states', () {
+      final nodes = <String, NodeData>{
+        'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0'),
+        'n1': NodeData(id: 'n1', position: const Offset(80, 0), label: 'q1'),
+      };
+      final lines = <String, LineData>{
+        'l0': LineData(id: 'l0', nodeAId: 'n0', nodeBId: 'n1', label: '~,~|A'),
+        'l1': LineData(id: 'l1', nodeAId: 'n1', nodeBId: 'n0', label: '~,~|B'),
+      };
+
+      final sim = PdaSimulator(nodes: nodes, lines: lines);
+      sim.rebuild('', startArrow: StartArrowData(nodeId: 'n0'));
+
+      expect(sim.stackGrowthLoopDetected, isTrue);
+    });
+
+    test('allows ε drain loop ~,X|~', () {
+      final nodes = <String, NodeData>{
+        'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0'),
+        'n1': NodeData(id: 'n1', position: const Offset(80, 0), label: 'q1', isAccept: true),
+      };
+      final lines = <String, LineData>{
+        'l0': LineData(id: 'l0', nodeAId: 'n0', nodeBId: 'n1', label: '~,∅|X'),
+        'l1': LineData(id: 'l1', nodeAId: 'n1', nodeBId: 'n1', label: '~,X|~'),
+      };
+
+      final sim = PdaSimulator(nodes: nodes, lines: lines);
+      sim.rebuild('', startArrow: StartArrowData(nodeId: 'n0'));
+
+      expect(sim.stackGrowthLoopDetected, isFalse);
+      expect(sim.finalResult(), PdaSimResult.accept);
+    });
+
     test('remaining input tracks position', () {
       final nodes = <String, NodeData>{
         'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0'),

@@ -88,9 +88,24 @@ class PdaStackPanel extends StatelessWidget {
                     style: GoogleFonts.courierPrime(fontSize: 11, color: Colors.black54),
                   ),
                   const Divider(height: 16),
+                  if (simulator.stackGrowthLoopDetected)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Stopped: ε-loop would grow the stack forever '
+                        '(e.g. ~,~|X). Use ~,symbol|~ to pop instead.',
+                        style: GoogleFonts.courierPrime(
+                          fontSize: 12,
+                          color: Colors.deepOrange.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   if (configs.isEmpty)
                     Text(
-                      'No active configuration',
+                      simulator.stackGrowthLoopDetected
+                          ? 'Simulation aborted'
+                          : 'No active configuration',
                       style: GoogleFonts.courierPrime(fontSize: 13, color: Colors.red),
                     )
                   else

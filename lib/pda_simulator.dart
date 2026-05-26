@@ -170,6 +170,9 @@ class PdaSimulator {
 
   int step = -1;
 
+  /// Set when ε-transitions can grow the stack without bound (e.g. `~,~|A` in a cycle).
+  bool stackGrowthLoopDetected = false;
+
   Set<String> get activeNodes {
     final idx = step + 1;
     if (idx < 0 || idx >= steps.length) return {};
@@ -290,6 +293,11 @@ class PdaSimulator {
 
   void _build({StartArrowData? startArrow}) {
     steps.clear();
+    stackGrowthLoopDetected = false;
+
+    if (_hasPositiveEpsilonStackCycle()) {
+      stackGrowthLoopDetected = true;
+    }
 
     if (startArrow == null || !nodes.containsKey(startArrow.nodeId)) {
       steps.add(const PdaStepSnapshot(configs: [], usedLineIds: {}));
@@ -302,6 +310,10 @@ class PdaSimulator {
       stack: const [],
     );
     final (initConfigs, initLines) = _epsilonClosure({initial});
+    if (stackGrowthLoopDetected) {
+      _finishWithStackLoopAbort();
+      return;
+    }
 
     steps.add(PdaStepSnapshot(
       configs: initConfigs.map(_toActive).toList(),
@@ -357,6 +369,10 @@ class PdaSimulator {
       }
 
       final (closedConfigs, closedLines) = _epsilonClosure(nextConfigs);
+      if (stackGrowthLoopDetected) {
+        _finishWithStackLoopAbort();
+        return;
+      }
       current = closedConfigs;
       steps.add(PdaStepSnapshot(
         configs: current.map(_toActive).toList(),
@@ -371,17 +387,119 @@ class PdaSimulator {
     }
   }
 
+  void _finishWithStackLoopAbort() {
+    while (steps.length <= tokens.length) {
+      steps.add(const PdaStepSnapshot(configs: [], usedLineIds: {}));
+    }
+  }
+
+  String _controlKey(PdaConfig c) => '${c.nodeId}:${c.inputPos}';
+
+  /// Maximum stack-height change if this ε-move fires (pessimistic for cycle analysis).
+  int _maxEpsilonStackDelta(String popSym, List<String> pushSyms) {
+    final pushCount = pushSyms.where((s) => s.isNotEmpty).length;
+    if (popSym.isEmpty) return pushCount;
+    return pushCount - 1;
+  }
+
+  /// True when some directed cycle of ε-moves has positive net stack growth.
+  bool _hasPositiveEpsilonStackCycle() {
+    final adj = <String, List<({String to, int delta})>>{};
+    final nodeIds = <String>{...nodes.keys};
+
+    for (final line in lines.values) {
+      nodeIds.add(line.nodeAId);
+      nodeIds.add(line.nodeBId);
+
+      for (final altRaw in line.label.split('\n')) {
+        final t = parsePdaLabel(altRaw);
+        if (_normalizeSym(t.read).isNotEmpty) continue;
+
+        final popSym = _normalizeSym(t.pop);
+        final pushSyms = t.push.map(_normalizeSym).toList();
+        final delta = _maxEpsilonStackDelta(popSym, pushSyms);
+        if (delta <= 0) continue;
+
+        adj.putIfAbsent(line.nodeAId, () => []).add((to: line.nodeBId, delta: delta));
+      }
+    }
+
+    if (adj.isEmpty) return false;
+
+    const int negInf = -0x3fffffff;
+    for (final source in nodeIds) {
+      final dist = {for (final id in nodeIds) id: negInf};
+      dist[source] = 0;
+
+      for (int i = 0; i < nodeIds.length; i++) {
+        var updated = false;
+        for (final u in nodeIds) {
+          final du = dist[u]!;
+          if (du == negInf) continue;
+          for (final edge in adj[u] ?? const []) {
+            final nd = du + edge.delta;
+            if (nd > dist[edge.to]!) {
+              dist[edge.to] = nd as int;
+              updated = true;
+            }
+          }
+        }
+        if (!updated) break;
+      }
+
+      for (final u in nodeIds) {
+        final du = dist[u]!;
+        if (du == negInf) continue;
+        for (final edge in adj[u] ?? const []) {
+          if (du + edge.delta > dist[edge.to]!) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /// Rejects ε-enqueue when the same (state, input index) is reached with a taller stack.
+  bool _wouldGrowStackAtControl(PdaConfig next, Map<String, int> minHeightAtControl) {
+    final ck = _controlKey(next);
+    final h = next.stack.length;
+    final prev = minHeightAtControl[ck];
+    if (prev != null && h > prev) return true;
+    minHeightAtControl[ck] = prev == null ? h : (h < prev ? h : prev);
+    return false;
+  }
+
   (Set<PdaConfig>, Set<String>) _epsilonClosure(Set<PdaConfig> start) {
+    if (stackGrowthLoopDetected) return (<PdaConfig>{}, <String>{});
+
     final visited = <String>{};
     final result = <PdaConfig>{...start};
     final linesUsed = <String>{};
     final queue = Queue<PdaConfig>.from(start);
+    final minHeightAtControl = <String, int>{};
+
+    for (final c in start) {
+      minHeightAtControl[_controlKey(c)] = c.stack.length;
+    }
 
     while (queue.isNotEmpty) {
       final config = queue.removeFirst();
       final key = config.key;
       if (visited.contains(key)) continue;
       visited.add(key);
+
+      final ck = _controlKey(config);
+      final h = config.stack.length;
+      final prevMin = minHeightAtControl[ck];
+      if (prevMin != null && h > prevMin) {
+        stackGrowthLoopDetected = true;
+        return (result, linesUsed);
+      }
+      if (prevMin == null || h < prevMin) {
+        minHeightAtControl[ck] = h;
+      }
 
       final node = nodes[config.nodeId];
       if (node == null || node.isHaltAccept || node.isHaltReject) continue;
@@ -405,6 +523,11 @@ class PdaSimulator {
             inputPos: config.inputPos,
             stack: newStack,
           );
+
+          if (_wouldGrowStackAtControl(next, minHeightAtControl)) {
+            stackGrowthLoopDetected = true;
+            return (result, linesUsed);
+          }
 
           if (result.add(next)) {
             linesUsed.add(line.id);
