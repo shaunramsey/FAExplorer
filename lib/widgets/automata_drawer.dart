@@ -3,10 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import '../markdown_file_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  _HoverTile — list tile that reveals its subtitle only on mouse hover
+//  _HoverTile — list tile with tooltip description on hover, no extra height
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _HoverTile extends StatefulWidget {
+class _HoverTile extends StatelessWidget {
   final Widget title;
   final String subtitle;
   final Widget? leading;
@@ -20,45 +20,24 @@ class _HoverTile extends StatefulWidget {
   });
 
   @override
-  State<_HoverTile> createState() => _HoverTileState();
-}
-
-class _HoverTileState extends State<_HoverTile> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeInOut,
-        alignment: Alignment.topCenter,
-        child: ListTile(
-          leading: widget.leading,
-          title: widget.title,
-          subtitle: _hovered
-              ? Text(
-                  widget.subtitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.black54),
-                )
-              : null,
-          onTap: widget.onTap,
-        ),
+    return Tooltip(
+      message: subtitle,
+      waitDuration: const Duration(milliseconds: 400),
+      child: ListTile(
+        leading: leading,
+        title: title,
+        onTap: onTap,
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  _HoverSwitch — switch tile that reveals its subtitle only on mouse hover
+//  _HoverSwitch — switch tile with tooltip description on hover, no extra height
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _HoverSwitch extends StatefulWidget {
+class _HoverSwitch extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool value;
@@ -72,35 +51,14 @@ class _HoverSwitch extends StatefulWidget {
   });
 
   @override
-  State<_HoverSwitch> createState() => _HoverSwitchState();
-}
-
-class _HoverSwitchState extends State<_HoverSwitch> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeInOut,
-        alignment: Alignment.topCenter,
-        child: SwitchListTile(
-          title: Text(widget.title),
-          subtitle: _hovered
-              ? Text(
-                  widget.subtitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.black54),
-                )
-              : null,
-          value: widget.value,
-          onChanged: widget.onChanged,
-        ),
+    return Tooltip(
+      message: subtitle,
+      waitDuration: const Duration(milliseconds: 400),
+      child: SwitchListTile(
+        title: Text(title),
+        value: value,
+        onChanged: onChanged,
       ),
     );
   }
