@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 /// Set to true after running `flutterfire configure` and updating the values below.
-const bool kFirebaseConfigured = false;
+const bool kFirebaseConfigured = true;
 
 /// Firebase configuration for each platform.
 ///
@@ -40,12 +40,13 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_WEB_API_KEY',
-    appId: 'YOUR_WEB_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyCqTaOQbIk2Jf6MKnClw7RAfNAsmtWMH_Y',
+    appId: '1:583188706903:web:a8c8dff725913ce3019512',
+    messagingSenderId: '583188706903',
+    projectId: 'toc-fa-ramsey',
+    authDomain: 'toc-fa-ramsey.firebaseapp.com',
+    storageBucket: 'toc-fa-ramsey.firebasestorage.app',
+    measurementId: 'G-P1H2HB3M85',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
