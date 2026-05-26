@@ -87,8 +87,9 @@ class PdaStackPanel extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        'Stopped: ε-loop would grow the stack forever '
-                        '(e.g. ~,~|X). Use ~,symbol|~ to pop instead.',
+                        'Stopped: ε-closure stack became too large '
+                        '(typical unbounded free-push like ~,~|X). '
+                        'If you want to drain a loop, use ~,symbol|~.',
                         style: GoogleFonts.courierPrime(
                           fontSize: 12,
                           color: Colors.deepOrange.shade800,

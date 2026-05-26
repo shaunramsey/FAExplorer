@@ -45,33 +45,56 @@ const String kStackBottom = '∅';
 /// Parses a single alternative like "a,x|y" into a [PdaTransition].
 PdaTransition parsePdaLabel(String raw) {
   final s = raw.trim();
-  final comma = s.indexOf(',');
+  if (s.isEmpty) return const PdaTransition(read: '', pop: '', push: []);
 
-  String read = '';
-  String pop = '';
-  List<String> push = [];
+  final hasComma = s.contains(',');
+  final hasPipeOrSlash = s.contains('|') || s.contains('/');
 
-  if (comma < 0) {
-    final sep = _findPopPushSeparator(s);
-    if (sep >= 0) {
-      read = _normalize(s.substring(0, sep));
-      push = _parsePushString(s.substring(sep + 1));
-    } else {
-      read = _normalize(s);
-    }
-  } else {
-    read = _normalize(s.substring(0, comma));
-    final rest = s.substring(comma + 1);
-    final sep = _findPopPushSeparator(rest);
-    if (sep >= 0) {
-      pop = _normalize(rest.substring(0, sep));
-      push = _parsePushString(rest.substring(sep + 1));
-    } else {
-      pop = _normalize(rest);
+  // Format 1: read,pop,push (3-part comma) e.g. `a,X,y`
+  if (hasComma && !hasPipeOrSlash) {
+    final parts = s.split(',');
+    if (parts.length == 3) {
+      final read = _normalize(parts[0]);
+      final pop = _normalize(parts[1]);
+      final push = _parsePushString(parts[2]);
+      return PdaTransition(read: read, pop: pop, push: push);
     }
   }
 
-  return PdaTransition(read: read, pop: pop, push: push);
+  // Format 2: read,pop|push or read,pop/push (legacy)
+  final firstComma = s.indexOf(',');
+  if (firstComma >= 0) {
+    final read = _normalize(s.substring(0, firstComma));
+    final rest = s.substring(firstComma + 1);
+    final sep = _findPopPushSeparator(rest);
+    if (sep >= 0) {
+      final pop = _normalize(rest.substring(0, sep));
+      final push = _parsePushString(rest.substring(sep + 1));
+      return PdaTransition(read: read, pop: pop, push: push);
+    }
+
+    // Format 3: read,pop (no push)
+    final pop = _normalize(rest);
+    return PdaTransition(read: read, pop: pop, push: const []);
+  }
+
+  // Format 4: 3-character shorthand e.g. `aXy` => read=a pop=X push=y
+  if (!hasPipeOrSlash) {
+    final runes = s.runes.toList();
+    if (runes.length == 3) {
+      final read = _normalize(String.fromCharCode(runes[0]));
+      final pop = _normalize(String.fromCharCode(runes[1]));
+      final pushTok = _normalize(String.fromCharCode(runes[2]));
+      return PdaTransition(
+        read: read,
+        pop: pop,
+        push: pushTok.isEmpty ? const [] : [pushTok],
+      );
+    }
+  }
+
+  // Fallback: plain FA-style label — treat as read only.
+  return PdaTransition(read: _normalize(s), pop: '', push: const []);
 }
 
 /// Prefer `|` (standard); fall back to `/` (legacy).
@@ -295,10 +318,6 @@ class PdaSimulator {
     steps.clear();
     stackGrowthLoopDetected = false;
 
-    if (_hasPositiveEpsilonStackCycle()) {
-      stackGrowthLoopDetected = true;
-    }
-
     if (startArrow == null || !nodes.containsKey(startArrow.nodeId)) {
       steps.add(const PdaStepSnapshot(configs: [], usedLineIds: {}));
       return;
@@ -393,113 +412,19 @@ class PdaSimulator {
     }
   }
 
-  String _controlKey(PdaConfig c) => '${c.nodeId}:${c.inputPos}';
-
-  /// Maximum stack-height change if this ε-move fires (pessimistic for cycle analysis).
-  int _maxEpsilonStackDelta(String popSym, List<String> pushSyms) {
-    final pushCount = pushSyms.where((s) => s.isNotEmpty).length;
-    if (popSym.isEmpty) return pushCount;
-    return pushCount - 1;
-  }
-
-  /// True when some directed cycle of ε-moves has positive net stack growth.
-  bool _hasPositiveEpsilonStackCycle() {
-    final adj = <String, List<({String to, int delta})>>{};
-    final nodeIds = <String>{...nodes.keys};
-
-    for (final line in lines.values) {
-      nodeIds.add(line.nodeAId);
-      nodeIds.add(line.nodeBId);
-
-      for (final altRaw in line.label.split('\n')) {
-        final t = parsePdaLabel(altRaw);
-        if (_normalizeSym(t.read).isNotEmpty) continue;
-
-        final popSym = _normalizeSym(t.pop);
-        final pushSyms = t.push.map(_normalizeSym).toList();
-        final delta = _maxEpsilonStackDelta(popSym, pushSyms);
-        if (delta <= 0) continue;
-
-        adj.putIfAbsent(line.nodeAId, () => []).add((to: line.nodeBId, delta: delta));
-      }
-    }
-
-    if (adj.isEmpty) return false;
-
-    const int negInf = -0x3fffffff;
-    for (final source in nodeIds) {
-      final dist = {for (final id in nodeIds) id: negInf};
-      dist[source] = 0;
-
-      for (int i = 0; i < nodeIds.length; i++) {
-        var updated = false;
-        for (final u in nodeIds) {
-          final du = dist[u]!;
-          if (du == negInf) continue;
-          for (final edge in adj[u] ?? const []) {
-            final nd = du + edge.delta;
-            if (nd > dist[edge.to]!) {
-              dist[edge.to] = nd as int;
-              updated = true;
-            }
-          }
-        }
-        if (!updated) break;
-      }
-
-      for (final u in nodeIds) {
-        final du = dist[u]!;
-        if (du == negInf) continue;
-        for (final edge in adj[u] ?? const []) {
-          if (du + edge.delta > dist[edge.to]!) {
-            return true;
-          }
-        }
-      }
-    }
-
-    return false;
-  }
-
-  /// Rejects ε-enqueue when the same (state, input index) is reached with a taller stack.
-  bool _wouldGrowStackAtControl(PdaConfig next, Map<String, int> minHeightAtControl) {
-    final ck = _controlKey(next);
-    final h = next.stack.length;
-    final prev = minHeightAtControl[ck];
-    if (prev != null && h > prev) return true;
-    minHeightAtControl[ck] = prev == null ? h : (h < prev ? h : prev);
-    return false;
-  }
-
   (Set<PdaConfig>, Set<String>) _epsilonClosure(Set<PdaConfig> start) {
-    if (stackGrowthLoopDetected) return (<PdaConfig>{}, <String>{});
-
     final visited = <String>{};
     final result = <PdaConfig>{...start};
     final linesUsed = <String>{};
     final queue = Queue<PdaConfig>.from(start);
-    final minHeightAtControl = <String, int>{};
 
-    for (final c in start) {
-      minHeightAtControl[_controlKey(c)] = c.stack.length;
-    }
+    const int kMaxStackHeightDuringEpsilonClosure = 200;
 
     while (queue.isNotEmpty) {
       final config = queue.removeFirst();
       final key = config.key;
       if (visited.contains(key)) continue;
       visited.add(key);
-
-      final ck = _controlKey(config);
-      final h = config.stack.length;
-      final prevMin = minHeightAtControl[ck];
-      if (prevMin != null && h > prevMin) {
-        stackGrowthLoopDetected = true;
-        return (result, linesUsed);
-      }
-      if (prevMin == null || h < prevMin) {
-        minHeightAtControl[ck] = h;
-      }
 
       final node = nodes[config.nodeId];
       if (node == null || node.isHaltAccept || node.isHaltReject) continue;
@@ -518,16 +443,19 @@ class PdaSimulator {
           final newStack = _applyStackOp(config.stack, popSym, pushSyms);
           if (newStack == null) continue;
 
+          final nonEmptyPushCount = pushSyms.where((s) => s.isNotEmpty).length;
+          final isFreePushEpsilonMove = popSym.isEmpty && nonEmptyPushCount > 0;
+          if (isFreePushEpsilonMove &&
+              newStack.length > kMaxStackHeightDuringEpsilonClosure) {
+            stackGrowthLoopDetected = true;
+            return (result, linesUsed);
+          }
+
           final next = PdaConfig(
             nodeId: line.nodeBId,
             inputPos: config.inputPos,
             stack: newStack,
           );
-
-          if (_wouldGrowStackAtControl(next, minHeightAtControl)) {
-            stackGrowthLoopDetected = true;
-            return (result, linesUsed);
-          }
 
           if (result.add(next)) {
             linesUsed.add(line.id);

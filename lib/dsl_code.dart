@@ -177,6 +177,14 @@ class DslCodec {
     int nodeCounter = 0, lineCounter = 0;
     bool pdaMode = false;
 
+    bool looksLikePdaTransitionLabel(String lbl) {
+      final s = lbl.trim();
+      if (s.isEmpty) return false;
+      // We expect PDA edge labels like `a,x|y` or legacy `a,x/y`.
+      // These always contain a comma (read,pop,...) and then either `|` or `/`.
+      return s.contains(',') && (s.contains('|') || s.contains('/'));
+    }
+
     String? idForLabel(String lbl) {
       lbl = _unescapeDsl(lbl.trim());
       final explicit = RegExp(r'^(n\d+)\((.*)\)$').firstMatch(lbl);
@@ -309,6 +317,9 @@ class DslCodec {
           newLines[lid] = LineData(id: lid, nodeAId: idA, nodeBId: idB, label: lineLabel);
           newNodes[idA]!.connectedLineIds.add(lid);
           newNodes[idB]!.connectedLineIds.add(lid);
+          if (lineLabel.isNotEmpty && looksLikePdaTransitionLabel(lineLabel)) {
+            pdaMode = true;
+          }
           if (lineLabel.isNotEmpty) lineLabelToId[lineLabel] = lid;
         }
         continue;
@@ -366,6 +377,13 @@ class DslCodec {
     final data = jsonDecode(scriptMatch.group(1)!.trim()) as Map<String, dynamic>;
     final newNodes = <String, NodeData>{};
     final newLines = <String, LineData>{};
+    bool pdaMode = false;
+
+    bool looksLikePdaTransitionLabel(String lbl) {
+      final s = lbl.trim();
+      if (s.isEmpty) return false;
+      return s.contains(',') && (s.contains('|') || s.contains('/'));
+    }
 
     for (final n in data['nodes'] as List) {
       final node = NodeData(
@@ -395,6 +413,10 @@ class DslCodec {
       newLines[line.id] = line;
       newNodes[line.nodeAId]?.connectedLineIds.add(line.id);
       newNodes[line.nodeBId]?.connectedLineIds.add(line.id);
+
+      if (line.label.isNotEmpty && looksLikePdaTransitionLabel(line.label)) {
+        pdaMode = true;
+      }
     }
 
     StartArrowData? startArrow;
@@ -418,6 +440,7 @@ class DslCodec {
       startArrow: startArrow,
       nodeCounter: highestNode,
       lineCounter: highestLine,
+      pdaMode: pdaMode,
     );
   }
 

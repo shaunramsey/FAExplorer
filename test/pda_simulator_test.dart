@@ -33,6 +33,20 @@ void main() {
       expect(t.pop, '∅');
       expect(t.push, ['A', '∅']);
     });
+
+    test('3-part comma read,pop,push', () {
+      final t = parsePdaLabel('a,X,y');
+      expect(t.read, 'a');
+      expect(t.pop, 'X');
+      expect(t.push, ['y']);
+    });
+
+    test('3-character shorthand aXy', () {
+      final t = parsePdaLabel('aXy');
+      expect(t.read, 'a');
+      expect(t.pop, 'X');
+      expect(t.push, ['y']);
+    });
   });
 
   group('PdaSimulator', () {
