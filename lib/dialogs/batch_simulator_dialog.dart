@@ -4,11 +4,13 @@ import 'package:google_fonts/google_fonts.dart';
 import '../batch_highlight_controller.dart';
 import '../models.dart';
 import '../simulator.dart';
+import '../pda_simulator.dart';
 
 Future<void> showBatchSimulatorDialog(
   BuildContext context, {
   required AutomataSimulator simulator,
   required StartArrowData? startArrow,
+  PdaSimulator? pdaSimulator,
 }) async {
   final accepted = <int>{};
   final rejected = <int>{};
@@ -24,28 +26,45 @@ Future<void> showBatchSimulatorDialog(
       final isComplete = i < lines.length - 1 || controller.text.endsWith('\n');
       if (!isComplete || str.isEmpty) continue;
 
-      final oldTokens = List<String>.from(simulator.tokens);
-      final oldStates = simulator.states.map(Set<String>.from).toList();
-      final oldLines = simulator.usedLines.map(Set<String>.from).toList();
-      final oldStep = simulator.step;
+      final bool isAccepted;
 
-      simulator.rebuild(str, startArrow: startArrow);
-      final result = simulator.finalResult();
+      if (pdaSimulator != null) {
+        final oldTokens = List<String>.from(pdaSimulator.tokens);
+        final oldStep = pdaSimulator.step;
+        final oldSteps = List<PdaStepSnapshot>.from(pdaSimulator.steps);
 
-      if (result == SimResult.accept) {
+        pdaSimulator.rebuild(str, startArrow: startArrow);
+        isAccepted = pdaSimulator.finalResult() == PdaSimResult.accept;
+
+        pdaSimulator.tokens = oldTokens;
+        pdaSimulator.step = oldStep;
+        pdaSimulator.steps
+          ..clear()
+          ..addAll(oldSteps);
+      } else {
+        final oldTokens = List<String>.from(simulator.tokens);
+        final oldStates = simulator.states.map(Set<String>.from).toList();
+        final oldLines = simulator.usedLines.map(Set<String>.from).toList();
+        final oldStep = simulator.step;
+
+        simulator.rebuild(str, startArrow: startArrow);
+        isAccepted = simulator.finalResult() == SimResult.accept;
+
+        simulator.tokens = oldTokens;
+        simulator.step = oldStep;
+        simulator.states
+          ..clear()
+          ..addAll(oldStates);
+        simulator.usedLines
+          ..clear()
+          ..addAll(oldLines);
+      }
+
+      if (isAccepted) {
         accepted.add(i);
       } else {
         rejected.add(i);
       }
-
-      simulator.tokens = oldTokens;
-      simulator.step = oldStep;
-      simulator.states
-        ..clear()
-        ..addAll(oldStates);
-      simulator.usedLines
-        ..clear()
-        ..addAll(oldLines);
     }
   }
 

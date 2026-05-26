@@ -84,6 +84,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         context,
         simulator: _simulator,
         startArrow: _startArrow,
+        pdaSimulator: _pdaMode ? _pdaSimulator : null,
       );
 
   GraphState get _graphState => GraphState(
