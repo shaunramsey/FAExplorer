@@ -196,17 +196,20 @@ class DslCodec {
     String ensureNode(String lbl) {
       lbl = _unescapeDsl(lbl);
       bool haltAccept = false, haltReject = false;
+      bool hasHaltMarker = false;
       if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
-        haltAccept = true; lbl = lbl.substring(2, lbl.length - 2);
+        haltAccept = true; hasHaltMarker = true; lbl = lbl.substring(2, lbl.length - 2);
       } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
-        haltReject = true; lbl = lbl.substring(2, lbl.length - 2);
+        haltReject = true; hasHaltMarker = true; lbl = lbl.substring(2, lbl.length - 2);
       }
       final existing = idForLabel(lbl);
       if (existing != null) {
-        newNodes[existing]!.applyHaltFromLabel(
-          haltAccept: haltAccept,
-          haltReject: haltReject,
-        );
+        if (hasHaltMarker) {
+          newNodes[existing]!.applyHaltFromLabel(
+            haltAccept: haltAccept,
+            haltReject: haltReject,
+          );
+        }
         return existing;
       }
       final id = 'n${nodeCounter++}';
@@ -338,13 +341,35 @@ class DslCodec {
       final nodeDefMatch = RegExp(r'^(n\d+)\s*=\s*(.*)$').firstMatch(line);
       if (nodeDefMatch != null) {
         final id = nodeDefMatch.group(1)!;
-        final lbl = _unescapeDsl(nodeDefMatch.group(2)!.trim());
+        var lbl = _unescapeDsl(nodeDefMatch.group(2)!.trim());
         final num = int.tryParse(id.substring(1)) ?? -1;
         if (num >= nodeCounter) nodeCounter = num + 1;
+
+        bool haltAccept = false, haltReject = false;
+        if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
+          haltAccept = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
+          haltReject = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        }
+
         if (!newNodes.containsKey(id)) {
-          newNodes[id] = NodeData(id: id, position: _defaultPosition(newNodes.length), label: lbl);
+          final node = NodeData(
+            id: id,
+            position: _defaultPosition(newNodes.length),
+            label: lbl,
+            isHaltAccept: haltAccept,
+            isHaltReject: haltReject,
+          );
+          if (node.isHaltState) node.isAccept = false;
+          newNodes[id] = node;
         } else {
           newNodes[id]!.label = lbl;
+          newNodes[id]!.applyHaltFromLabel(
+            haltAccept: haltAccept,
+            haltReject: haltReject,
+          );
         }
         if (lbl.isNotEmpty) labelToId[lbl] = id;
         continue;
