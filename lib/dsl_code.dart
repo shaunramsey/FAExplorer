@@ -13,6 +13,7 @@ class GraphState {
   final StartArrowData? startArrow;
   final int nodeCounter;
   final int lineCounter;
+  final bool pdaMode;
 
   const GraphState({
     required this.nodes,
@@ -20,6 +21,7 @@ class GraphState {
     required this.startArrow,
     required this.nodeCounter,
     required this.lineCounter,
+    this.pdaMode = false,
   });
 }
 
@@ -84,6 +86,11 @@ class DslCodec {
 
   static String exportToDsl(GraphState g) {
     final out = <String>[];
+
+    if (g.pdaMode) {
+      out.add('pda mode');
+      out.add('');
+    }
 
     // Node definitions
     for (final n in g.nodes.values) {
@@ -168,6 +175,7 @@ class DslCodec {
     final lineLabelToId = <String, String>{};
     StartArrowData? newStartArrow;
     int nodeCounter = 0, lineCounter = 0;
+    bool pdaMode = false;
 
     String? idForLabel(String lbl) {
       lbl = _unescapeDsl(lbl.trim());
@@ -212,6 +220,15 @@ class DslCodec {
       if (ci >= 0) rawLine = rawLine.substring(0, ci);
       final line = rawLine.trim();
       if (line.isEmpty) continue;
+
+      // ── pda mode [on|off] ─────────────────────────────────────────────────
+      final pdaModeMatch =
+          RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
+      if (pdaModeMatch != null) {
+        final flag = pdaModeMatch.group(1)?.toLowerCase();
+        pdaMode = flag != 'off';
+        continue;
+      }
 
       // ── to <node> [length/angle/=label] ──────────────────────────────────
       if (line.toLowerCase().startsWith('to ')) {
@@ -332,6 +349,7 @@ class DslCodec {
       startArrow: newStartArrow,
       nodeCounter: nodeCounter,
       lineCounter: lineCounter,
+      pdaMode: pdaMode,
     );
   }
 

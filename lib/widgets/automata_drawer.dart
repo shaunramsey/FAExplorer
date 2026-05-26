@@ -5,10 +5,12 @@ import '../markdown_file_screen.dart';
 class AutomataDrawer extends StatelessWidget {
   final bool showHelpOverlay;
   final bool showSimulator;
+  final bool showPdaMode;       // ← NEW
   final bool isGuest;
   final String? accountLabel;
   final ValueChanged<bool> onShowHelpChanged;
   final ValueChanged<bool> onShowSimulatorChanged;
+  final ValueChanged<bool> onShowPdaModeChanged; // ← NEW
   final VoidCallback onBatchSimulator;
   final VoidCallback onExport;
   final VoidCallback onImport;
@@ -20,10 +22,12 @@ class AutomataDrawer extends StatelessWidget {
     super.key,
     required this.showHelpOverlay,
     required this.showSimulator,
+    required this.showPdaMode,           // ← NEW
     this.isGuest = false,
     this.accountLabel,
     required this.onShowHelpChanged,
     required this.onShowSimulatorChanged,
+    required this.onShowPdaModeChanged,  // ← NEW
     required this.onBatchSimulator,
     required this.onExport,
     required this.onImport,
@@ -68,6 +72,18 @@ class AutomataDrawer extends StatelessWidget {
               value: showSimulator,
               onChanged: onShowSimulatorChanged,
             ),
+
+            // ── PDA mode toggle ───────────────────────────────────────────
+            SwitchListTile(
+              title: const Text('PDA Mode'),
+              subtitle: const Text(
+                'NPDA simulator: labels read,pop|push (~ = ε, ∅ = bottom).',
+              ),
+              value: showPdaMode,
+              onChanged: onShowPdaModeChanged,
+            ),
+            // ─────────────────────────────────────────────────────────────
+
             const Divider(),
             ListTile(
               leading: const Icon(Icons.upload_file),
@@ -108,7 +124,8 @@ class AutomataDrawer extends StatelessWidget {
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text('Reset canvas?'),
-                    content: const Text('This will clear all nodes, transitions, and the start arrow.'),
+                    content: const Text(
+                        'This will clear all nodes, transitions, and the start arrow.'),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
@@ -130,7 +147,8 @@ class AutomataDrawer extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const MarkdownFileScreen(title: 'About', assetPath: 'assets/About.md'),
+                    builder: (_) =>
+                        const MarkdownFileScreen(title: 'About', assetPath: 'assets/About.md'),
                   ),
                 );
               },
@@ -140,7 +158,8 @@ class AutomataDrawer extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const MarkdownFileScreen(title: 'Changelog', assetPath: 'assets/Changelog.md'),
+                    builder: (_) => const MarkdownFileScreen(
+                        title: 'Changelog', assetPath: 'assets/Changelog.md'),
                   ),
                 );
               },
@@ -150,7 +169,8 @@ class AutomataDrawer extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const MarkdownFileScreen(title: 'Version', assetPath: 'assets/Version.md'),
+                    builder: (_) => const MarkdownFileScreen(
+                        title: 'Version', assetPath: 'assets/Version.md'),
                   ),
                 );
               },

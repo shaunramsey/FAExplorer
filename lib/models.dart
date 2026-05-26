@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 //  Shared utility: base-26 node ID → letter label
-//  Previously duplicated in main.dart (_numberToAlphabetLabel),
-//  node.dart (getDisplayId), dsl_code.dart (_numberToAlphaLabel),
-//  and _exportToSvg's local getDisplayId closure.
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 String nodeIdToAlpha(String rawId) {
   final number = int.tryParse(rawId.replaceFirst('n', ''));
   if (number == null || number < 0) return rawId;
@@ -19,9 +16,9 @@ String nodeIdToAlpha(String rawId) {
   return result;
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 //  NodeData
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 class NodeData {
   final String id;
 
@@ -66,9 +63,9 @@ class NodeData {
   }
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 //  LineData
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Compiled once at module level — avoids re-allocating on every simulation step.
 final _labelSplitter = RegExp(r'[,\n]');
@@ -93,7 +90,7 @@ class LineData {
   });
 
   /// Split this line's label into its individual alternatives (comma- or
-  /// newline-separated), trimmed.  Used by the simulator hot-path.
+  /// newline-separated), trimmed.  Used by the FA simulator hot-path.
   List<String> get labelAlternatives =>
       label.split(_labelSplitter).map((s) => s.trim()).toList();
 
@@ -282,9 +279,9 @@ class LineData {
   }
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 //  StartArrowData
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 class StartArrowData {
   String nodeId;
   Offset offset;
@@ -300,9 +297,9 @@ class StartArrowData {
   }
 }
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 //  LineGeometry
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 class LineGeometry {
   final bool hasCircle;
 

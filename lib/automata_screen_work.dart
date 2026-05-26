@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -49,7 +49,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   bool _showHelpOverlay = false;
   bool _showSimulator = true;
-  bool _pdaMode = false;
+  bool _pdaMode = false;          // ← NEW
 
   StartArrowData? _startArrow;
 
@@ -74,7 +74,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   final List<SavedExport> _savedExports = [];
 
   late final AutomataSimulator _simulator;
-  late final PdaSimulator _pdaSimulator;
+  late final PdaSimulator _pdaSimulator;     // ← NEW
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
   Timer? _persistTimer;
   bool _persistenceReady = false;
@@ -306,7 +306,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       lines: _lines,
     );
 
-    _pdaSimulator = PdaSimulator(
+    _pdaSimulator = PdaSimulator(         // ← NEW
       nodes: _nodes,
       lines: _lines,
     );
@@ -779,13 +779,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
+        showPdaMode: _pdaMode,                              // ← NEW
         isGuest: widget.isGuest,
         accountLabel: widget.isGuest
             ? 'Guest (local only)'
             : widget.userEmail,
         onShowHelpChanged: _setShowHelpOverlay,
         onShowSimulatorChanged: _setShowSimulator,
-        showPdaMode: _pdaMode, 
         onShowPdaModeChanged: (v) {
           setState(() {
             _pdaMode = v;
@@ -1028,21 +1028,20 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   setState(() {
                     _simRebuild();
                     _simulator.step = -1;
-                    _pdaSimulator.step = -1;
+                    _pdaSimulator.step = -1;          // ← NEW
                   });
                   _schedulePersist();
                 },
                 onStepChanged: () {
-                  _pdaSimulator.step = _simulator.step;
+                  _pdaSimulator.step = _simulator.step; // keep in sync
                   setState(() {});
                   _schedulePersist();
                 },
               ),
+
+            // ── PDA Stack Panel ────────────────────────────────────────
             if (_showSimulator && _pdaMode)
-              PdaStackPanel(
-                simulator: _pdaSimulator,
-                nodes: _nodes,
-              ),
+              PdaStackPanel(simulator: _pdaSimulator, nodes: _nodes),
           ],
         ),
       ),
