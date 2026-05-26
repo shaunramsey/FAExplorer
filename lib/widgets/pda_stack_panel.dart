@@ -15,12 +15,7 @@ class PdaStackPanel extends StatelessWidget {
     required this.nodes,
   });
 
-  String _stateLabel(String nodeId) {
-    final node = nodes[nodeId];
-    if (node == null) return nodeId;
-    final lbl = node.label.trim();
-    return lbl.isEmpty ? nodeId : lbl;
-  }
+  String _stateLabel(String nodeId) => displayNodeLabel(nodeId, nodes);
 
   @override
   Widget build(BuildContext context) {

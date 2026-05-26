@@ -55,6 +55,18 @@ void main() {
       expect(sim.allCurrentStacks.map((s) => s.join()), containsAll(['A', 'B']));
     });
 
+    test('state labels use hint text and disambiguate duplicates', () {
+      final nodes = <String, NodeData>{
+        'n0': NodeData(id: 'n0', position: Offset.zero, label: ''),
+        'n1': NodeData(id: 'n1', position: const Offset(100, 0), label: 'same'),
+        'n2': NodeData(id: 'n2', position: const Offset(200, 0), label: 'same'),
+      };
+
+      expect(displayNodeLabel('n0', nodes), 'A');
+      expect(displayNodeLabel('n1', nodes), 'same:N1');
+      expect(displayNodeLabel('n2', nodes), 'same:N2');
+    });
+
     test('pop bottom marker on empty stack', () {
       final nodes = <String, NodeData>{
         'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0', isAccept: true),

@@ -16,6 +16,24 @@ String nodeIdToAlpha(String rawId) {
   return result;
 }
 
+String displayNodeLabel(String nodeId, Map<String, NodeData> nodes) {
+  final node = nodes[nodeId];
+  if (node == null) return nodeId;
+
+  final trimmedLabel = node.label.trim();
+  if (trimmedLabel.isEmpty) {
+    return nodeIdToAlpha(node.id);
+  }
+
+  final hasDuplicate = nodes.values.any(
+    (other) => other.id != node.id && other.label.trim() == trimmedLabel,
+  );
+
+  if (!hasDuplicate) return trimmedLabel;
+
+  return '$trimmedLabel:${node.id.toUpperCase()}';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  NodeData
 // ─────────────────────────────────────────────────────────────────────────────
