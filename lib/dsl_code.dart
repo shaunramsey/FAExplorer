@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'models.dart';
+import 'widgets/automata_drawer.dart' show AutomataMode;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GraphState  (plain data bag passed in / returned)
@@ -13,7 +14,10 @@ class GraphState {
   final StartArrowData? startArrow;
   final int nodeCounter;
   final int lineCounter;
-  final bool pdaMode;
+  final AutomataMode automataMode;
+
+  /// Convenience getter for code that still checks the PDA flag.
+  bool get pdaMode => automataMode == AutomataMode.pda;
 
   const GraphState({
     required this.nodes,
@@ -21,7 +25,7 @@ class GraphState {
     required this.startArrow,
     required this.nodeCounter,
     required this.lineCounter,
-    this.pdaMode = false,
+    this.automataMode = AutomataMode.ndfa,
   });
 }
 
@@ -87,8 +91,11 @@ class DslCodec {
   static String exportToDsl(GraphState g) {
     final out = <String>[];
 
-    if (g.pdaMode) {
+    if (g.automataMode == AutomataMode.pda) {
       out.add('pda mode');
+      out.add('');
+    } else if (g.automataMode == AutomataMode.tm) {
+      out.add('tm mode');
       out.add('');
     }
 
@@ -175,7 +182,7 @@ class DslCodec {
     final lineLabelToId = <String, String>{};
     StartArrowData? newStartArrow;
     int nodeCounter = 0, lineCounter = 0;
-    bool pdaMode = false;
+    AutomataMode automataMode = AutomataMode.ndfa;
 
     bool looksLikePdaTransitionLabel(String lbl) {
       final s = lbl.trim();
@@ -232,12 +239,19 @@ class DslCodec {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
 
-      // ── pda mode [on|off] ─────────────────────────────────────────────────
+      // ── pda mode [on|off] / tm mode [on|off] ─────────────────────────────
       final pdaModeMatch =
           RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
       if (pdaModeMatch != null) {
         final flag = pdaModeMatch.group(1)?.toLowerCase();
-        pdaMode = flag != 'off';
+        if (flag != 'off') automataMode = AutomataMode.pda;
+        continue;
+      }
+      final tmModeMatch =
+          RegExp(r'^tm\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
+      if (tmModeMatch != null) {
+        final flag = tmModeMatch.group(1)?.toLowerCase();
+        if (flag != 'off') automataMode = AutomataMode.tm;
         continue;
       }
 
@@ -321,7 +335,7 @@ class DslCodec {
           newNodes[idA]!.connectedLineIds.add(lid);
           newNodes[idB]!.connectedLineIds.add(lid);
           if (lineLabel.isNotEmpty && looksLikePdaTransitionLabel(lineLabel)) {
-            pdaMode = true;
+            if (automataMode == AutomataMode.ndfa) automataMode = AutomataMode.pda;
           }
           if (lineLabel.isNotEmpty) lineLabelToId[lineLabel] = lid;
         }
@@ -385,7 +399,7 @@ class DslCodec {
       startArrow: newStartArrow,
       nodeCounter: nodeCounter,
       lineCounter: lineCounter,
-      pdaMode: pdaMode,
+      automataMode: automataMode,
     );
   }
 
@@ -402,7 +416,7 @@ class DslCodec {
     final data = jsonDecode(scriptMatch.group(1)!.trim()) as Map<String, dynamic>;
     final newNodes = <String, NodeData>{};
     final newLines = <String, LineData>{};
-    bool pdaMode = false;
+    AutomataMode automataMode = AutomataMode.ndfa;
 
     bool looksLikePdaTransitionLabel(String lbl) {
       final s = lbl.trim();
@@ -440,7 +454,7 @@ class DslCodec {
       newNodes[line.nodeBId]?.connectedLineIds.add(line.id);
 
       if (line.label.isNotEmpty && looksLikePdaTransitionLabel(line.label)) {
-        pdaMode = true;
+        if (automataMode == AutomataMode.ndfa) automataMode = AutomataMode.pda;
       }
     }
 
@@ -465,7 +479,7 @@ class DslCodec {
       startArrow: startArrow,
       nodeCounter: highestNode,
       lineCounter: highestLine,
-      pdaMode: pdaMode,
+      automataMode: automataMode,
     );
   }
 

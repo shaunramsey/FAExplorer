@@ -92,12 +92,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         startArrow: _startArrow,
         nodeCounter: _nodeCounter,
         lineCounter: _lineCounter,
-        pdaMode: _pdaMode,
       );
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ────────────────────────────────────────────────────────────────────────
   // STRING SIMULATION (delegates to AutomataSimulator)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ────────────────────────────────────────────────────────────────────────
   final TextEditingController _simController = TextEditingController();
 
   /// Whether we are at the final step and the result is accepted.
@@ -785,16 +784,16 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
-        showPdaMode: _pdaMode,                              // ← NEW
+        automataMode: _pdaMode ? AutomataMode.pda : AutomataMode.ndfa,
         isGuest: widget.isGuest,
         accountLabel: widget.isGuest
             ? 'Guest (local only)'
             : widget.userEmail,
         onShowHelpChanged: _setShowHelpOverlay,
         onShowSimulatorChanged: _setShowSimulator,
-        onShowPdaModeChanged: (v) {
+        onModeChanged: (mode) {
           setState(() {
-            _pdaMode = v;
+            _pdaMode = mode == AutomataMode.pda;
             _simRebuild();
             if (_pdaMode) {
               _pdaSimulator.step = _simulator.step;

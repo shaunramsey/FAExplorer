@@ -3,6 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../markdown_file_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  AutomataMode  — the three simulation modes
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AutomataMode { ndfa, pda, tm }
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  _HoverTile — list tile with tooltip description on hover, no extra height
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,18 +71,103 @@ class _HoverSwitch extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  _ModeRadioGroup  — compact 3-way radio row for NDFA / PDA / TM
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ModeRadioGroup extends StatelessWidget {
+  final AutomataMode value;
+  final ValueChanged<AutomataMode> onChanged;
+
+  const _ModeRadioGroup({required this.value, required this.onChanged});
+
+  static const _modes = [
+    (mode: AutomataMode.ndfa, label: 'NDFA', tooltip: 'Non-deterministic Finite Automaton'),
+    (mode: AutomataMode.pda,  label: 'PDA',  tooltip: 'Pushdown Automaton — labels use read,pop|push format'),
+    (mode: AutomataMode.tm,   label: 'TM',   tooltip: 'Turing Machine — labels use read,write,direction format'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Simulation Mode',
+            style: GoogleFonts.courierPrime(
+              fontSize: 12,
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: _modes.map((entry) {
+              final selected = value == entry.mode;
+              return Expanded(
+                child: Tooltip(
+                  message: entry.tooltip,
+                  waitDuration: const Duration(milliseconds: 400),
+                  child: GestureDetector(
+                    onTap: () => onChanged(entry.mode),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.outline.withOpacity(0.4),
+                        ),
+                      ),
+                      child: Text(
+                        entry.label,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.courierPrime(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: selected
+                              ? theme.colorScheme.onPrimary
+                              : theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  AutomataDrawer
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AutomataDrawer extends StatelessWidget {
   final bool showHelpOverlay;
   final bool showSimulator;
-  final bool showPdaMode;
+
+  /// Current simulation mode (NDFA / PDA / TM).
+  final AutomataMode automataMode;
+
   final bool isGuest;
   final String? accountLabel;
   final ValueChanged<bool> onShowHelpChanged;
   final ValueChanged<bool> onShowSimulatorChanged;
-  final ValueChanged<bool> onShowPdaModeChanged;
+
+  /// Called when the user picks a new simulation mode.
+  final ValueChanged<AutomataMode> onModeChanged;
+
   final VoidCallback onBatchSimulator;
   final VoidCallback onExport;
   final VoidCallback onImport;
@@ -88,18 +179,23 @@ class AutomataDrawer extends StatelessWidget {
     super.key,
     required this.showHelpOverlay,
     required this.showSimulator,
-    required this.showPdaMode,
+    required this.automataMode,
     this.isGuest = false,
     this.accountLabel,
     required this.onShowHelpChanged,
     required this.onShowSimulatorChanged,
-    required this.onShowPdaModeChanged,
+    required this.onModeChanged,
     required this.onBatchSimulator,
     required this.onExport,
     required this.onImport,
     required this.onExportHistory,
     required this.onReset,
     this.onSignOut,
+
+    // ── Legacy compat: old callers may still pass showPdaMode / onShowPdaModeChanged.
+    //    We accept and silently ignore them so existing call-sites compile.
+    @Deprecated('Use automataMode / onModeChanged instead') bool showPdaMode = false,
+    @Deprecated('Use automataMode / onModeChanged instead') ValueChanged<bool>? onShowPdaModeChanged,
   });
 
   @override
@@ -137,11 +233,16 @@ class AutomataDrawer extends StatelessWidget {
               value: showSimulator,
               onChanged: onShowSimulatorChanged,
             ),
-            _HoverSwitch(
-              title: 'PDA Mode',
-              subtitle: 'PDA simulator: labels use read,pop|push format.',
-              value: showPdaMode,
-              onChanged: onShowPdaModeChanged,
+
+            const Divider(),
+
+            // ── Simulation mode radio ─────────────────────────────────────
+            _ModeRadioGroup(
+              value: automataMode,
+              onChanged: (mode) {
+                Navigator.pop(context);
+                onModeChanged(mode);
+              },
             ),
 
             const Divider(),
