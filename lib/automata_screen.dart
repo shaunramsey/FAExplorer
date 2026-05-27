@@ -21,6 +21,7 @@ import 'widgets/help_overlay.dart';
 import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
+import 'widgets/tm_config_panel.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -85,6 +86,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Future<void> _openBatchSimulatorDialog() => showBatchSimulatorDialog(
         context,
         simulator: _simulator,
+        tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
         startArrow: _startArrow,
       );
 
@@ -1073,6 +1075,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             // ── PDA Stack Panel ────────────────────────────────────────
             if (_showSimulator && _automataMode == AutomataMode.pda)
               PdaStackPanel(simulator: _pdaSimulator, nodes: _nodes),
+
+            // ── TM Config Panel ────────────────────────────────────────
+            if (_showSimulator && _automataMode == AutomataMode.tm)
+              TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
           ],
         ),
       ),

@@ -127,7 +127,7 @@ class TmConfigPanel extends StatelessWidget {
                                 ),
                               _TmConfigCard(
                                 stateLabel: _stateLabel(configs[i].nodeId),
-                                headPos: configs[i].headPos,
+                                headPos: configs[i].readHeadPos,
                                 tape: configs[i].tape,
                                 isAccepted: () {
                                   final node = nodes[configs[i].nodeId];
