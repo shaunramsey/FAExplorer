@@ -222,6 +222,14 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   SimResult? get _currentResult {
     final sim = widget.simulator;
     final pda = widget.pdaSimulator;
+    final tm  = widget.tmSimulator as TmSimulator?;
+
+    if (tm != null) {
+      if (tm.steps.isEmpty) return null;
+      final r = tm.result;
+      if (r == TmResult.running) return null;
+      return r == TmResult.accept ? SimResult.accept : SimResult.reject;
+    }
 
     if (pda != null) {
       if (pda.tokens.isEmpty && pda.steps.isEmpty) return null;
@@ -277,7 +285,9 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final atEnd      = step >= maxStep;
     final hasTokens  = isTmMode ? tm.steps.isNotEmpty : tokens.isNotEmpty;
     final result     = _currentResult;
-    final showResult = atEnd && result != null;
+    // In TM mode the machine may halt before the user reaches atEnd, so
+    // show the result banner as soon as a definitive result is available.
+    final showResult = result != null && (atEnd || isTmMode);
 
     // Chip k is highlighted when step == k (transition for tokens[k] just fired).
     // step == -1 or step == tokens.length → no chip highlighted.

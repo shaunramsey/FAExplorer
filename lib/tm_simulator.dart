@@ -90,17 +90,41 @@ TmDirection _parseDir(String s) {
 
 class TmTape {
   final List<String> cells;
-  final int headOffset; // index of logical-position-0 within [cells]
+  final int headOffset; // absolute index of logical input position 0
 
-  const TmTape({required this.cells, required this.headOffset});
+  /// Absolute index of the left sentinel blank.  The head may sit on this
+  /// cell (reading ∅) but moving further left kills the branch.
+  final int leftEdgeAbs;
 
+  /// Absolute index of the right sentinel blank.  The head may sit on this
+  /// cell (reading ∅) but moving further right kills the branch.
+  final int rightEdgeAbs;
+
+  const TmTape({
+    required this.cells,
+    required this.headOffset,
+    required this.leftEdgeAbs,
+    required this.rightEdgeAbs,
+  });
+
+  /// Builds the initial tape from input tokens.
+  ///
+  /// Layout:  [∅, tok0, tok1, …, tokN, ∅]
+  ///           ^                        ^
+  ///       leftEdge                rightEdge
+  ///
+  /// headOffset = 1  (input position 0 is at absolute index 1)
+  /// Head starts at absolutePos(0) = 1.
   factory TmTape.fromTokens(List<String> tokens) {
-    if (tokens.isEmpty) {
-      return TmTape(cells: [kBlank], headOffset: 0);
-    }
+    final cells = <String>[kBlank, ...tokens, kBlank];
+    // headOffset=1: absolute index of the first input symbol.
+    // leftEdge =0: the leading blank sentinel.
+    // rightEdge=cells.length-1: the trailing blank sentinel.
     return TmTape(
-      cells: List<String>.from(tokens),
-      headOffset: 0,
+      cells: cells,
+      headOffset: 1,
+      leftEdgeAbs: 0,
+      rightEdgeAbs: cells.length - 1,
     );
   }
 
@@ -111,23 +135,37 @@ class TmTape {
     return v.isEmpty ? kBlank : v;
   }
 
+  /// True when [headPos] has moved left of the left sentinel (fell off).
+  bool isOffLeft(int headPos) => headPos < leftEdgeAbs;
+
+  /// True when [headPos] has moved right of the right sentinel (fell off).
+  bool isOffRight(int headPos) => headPos > rightEdgeAbs;
+
   /// Returns a new tape with [symbol] written at [pos], extending if needed.
+  /// Writing at a position left of index 0 shifts all indices; [leftEdgeAbs]
+  /// and [rightEdgeAbs] are updated accordingly.
   TmTape write(int pos, String symbol) {
-    final newCells = List<String>.from(cells);
-    int newOffset = headOffset;
+    final newCells    = List<String>.from(cells);
+    int newOffset     = headOffset;
+    int newLeftEdge   = leftEdgeAbs;
+    int newRightEdge  = rightEdgeAbs;
 
     if (pos < 0) {
       final extension = -pos;
       final blanks = List<String>.filled(extension, kBlank);
       newCells.insertAll(0, blanks);
-      newOffset += extension;
+      newOffset    += extension;
+      newLeftEdge  += extension;
+      newRightEdge += extension;
       newCells[0] = symbol.isEmpty ? kBlank : symbol;
-      return TmTape(cells: newCells, headOffset: newOffset);
+      return TmTape(cells: newCells, headOffset: newOffset,
+                    leftEdgeAbs: newLeftEdge, rightEdgeAbs: newRightEdge);
     }
 
     while (pos >= newCells.length) newCells.add(kBlank);
     newCells[pos] = symbol.isEmpty ? kBlank : symbol;
-    return TmTape(cells: newCells, headOffset: newOffset);
+    return TmTape(cells: newCells, headOffset: newOffset,
+                  leftEdgeAbs: newLeftEdge, rightEdgeAbs: newRightEdge);
   }
 
   /// Convert a logical input index (0 = first input char) to absolute index.
@@ -136,6 +174,7 @@ class TmTape {
   /// A key that uniquely describes the tape content (for loop detection).
   String get key => cells.join('|');
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  NTM Configuration  (state × head position × tape)
@@ -386,7 +425,8 @@ class TmSimulator {
             final writeSym = t.write.isEmpty ? kBlank : t.write;
             final newTape = config.tape.write(config.headPos, writeSym);
 
-            // Apply head move (adjust for any tape-left-extension).
+            // Apply head move.  Adjust for any left-extension the write may
+            // have introduced (writes at pos>=0 never change headOffset).
             final headShift = newTape.headOffset - config.tape.headOffset;
             int newHeadPos = config.headPos + headShift;
             switch (t.direction) {
@@ -395,18 +435,15 @@ class TmSimulator {
               case TmDirection.stay:  break;
             }
 
-            // Extend tape if head moved off the end.
-            final extendedTape = newTape.write(newHeadPos, newTape.read(newHeadPos));
-            final extendShift = extendedTape.headOffset - newTape.headOffset;
-            newHeadPos += extendShift;
+            // Kill branch if head moved beyond either sentinel blank.
+            if (newTape.isOffLeft(newHeadPos) || newTape.isOffRight(newHeadPos)) continue;
 
             final next = TmConfig(
               nodeId: line.nodeBId,
               headPos: newHeadPos,
-              tape: extendedTape,
+              tape: newTape,
               usedLineId: line.id,
             );
-
             final k = next.key;
             if (seenKeys.add(k)) {
               nextConfigs.add(next);
