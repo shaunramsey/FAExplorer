@@ -1,3 +1,18 @@
+# May 27th, 2026
+* Implemented turing machines with their own mode
+* Changed the UI for batch simulator
+
+# May 26th, 2026
+* Implemented a new mode for pushdown automata so you can add and remove from a stack
+* Got rid of mixed results as it was incorrect
+* Made it so you cannot have an infinite loop for PDA 
+* Made it so PDAs take into account hint text and duplicates
+* Edited drawer UI for a better user experience
+* Added in connection to firebase to let a user have saved data
+* Fixed import and export for halt and accept, halt and reject, and PDA
+* Fixed an issue with null jumps
+* Fixed start state to make it more mobile friendly
+
 # May 25th, 2026
 * Refactored all of the code to improve its readability
 * Added in shared preferences

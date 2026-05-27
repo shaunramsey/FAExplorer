@@ -92,12 +92,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         startArrow: _startArrow,
         nodeCounter: _nodeCounter,
         lineCounter: _lineCounter,
-        pdaMode: _pdaMode,
       );
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ────────────────────────────────────────────────────────────────────────
   // STRING SIMULATION (delegates to AutomataSimulator)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ────────────────────────────────────────────────────────────────────────
   final TextEditingController _simController = TextEditingController();
 
   /// Whether we are at the final step and the result is accepted.
@@ -230,6 +229,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
 
+    // Large tap target around the tail tip
+    if ((point - start).distance < 44) return true;
+
     final line = end - start;
     final lenSq = line.dx * line.dx + line.dy * line.dy;
 
@@ -241,7 +243,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
 
-    return (point - projection).distance < 30;
+    return (point - projection).distance < 44;
   }
 
   bool _isLabelTaken(String label, String currentId) {
@@ -507,6 +509,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
 
+    // Large tap target around the tail tip
+    if ((point - start).distance < 44) return true;
+
     final line = end - start;
 
     final lenSq = line.dx * line.dx + line.dy * line.dy;
@@ -521,7 +526,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     final distance = (point - projection).distance;
 
-    return distance < 30;
+    return distance < 44;
   }
 
   bool _isPointerOverSimulatorPanel(Offset globalPosition) {
@@ -779,16 +784,16 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
-        showPdaMode: _pdaMode,                              // ← NEW
+        automataMode: _pdaMode ? AutomataMode.pda : AutomataMode.ndfa,
         isGuest: widget.isGuest,
         accountLabel: widget.isGuest
             ? 'Guest (local only)'
             : widget.userEmail,
         onShowHelpChanged: _setShowHelpOverlay,
         onShowSimulatorChanged: _setShowSimulator,
-        onShowPdaModeChanged: (v) {
+        onModeChanged: (mode) {
           setState(() {
-            _pdaMode = v;
+            _pdaMode = mode == AutomataMode.pda;
             _simRebuild();
             if (_pdaMode) {
               _pdaSimulator.step = _simulator.step;
@@ -1021,6 +1026,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
                 simulator: _simulator,
+                pdaSimulator: _pdaMode ? _pdaSimulator : null,
                 controller: _simController,
                 nodes: _nodes,
                 onClose: () => _setShowSimulator(false),

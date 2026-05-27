@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'models.dart';
+import 'widgets/automata_drawer.dart' show AutomataMode;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GraphState  (plain data bag passed in / returned)
@@ -13,7 +14,10 @@ class GraphState {
   final StartArrowData? startArrow;
   final int nodeCounter;
   final int lineCounter;
-  final bool pdaMode;
+  final AutomataMode automataMode;
+
+  /// Convenience getter for code that still checks the PDA flag.
+  bool get pdaMode => automataMode == AutomataMode.pda;
 
   const GraphState({
     required this.nodes,
@@ -21,7 +25,7 @@ class GraphState {
     required this.startArrow,
     required this.nodeCounter,
     required this.lineCounter,
-    this.pdaMode = false,
+    this.automataMode = AutomataMode.ndfa,
   });
 }
 
@@ -87,8 +91,11 @@ class DslCodec {
   static String exportToDsl(GraphState g) {
     final out = <String>[];
 
-    if (g.pdaMode) {
+    if (g.automataMode == AutomataMode.pda) {
       out.add('pda mode');
+      out.add('');
+    } else if (g.automataMode == AutomataMode.tm) {
+      out.add('tm mode');
       out.add('');
     }
 
@@ -175,7 +182,15 @@ class DslCodec {
     final lineLabelToId = <String, String>{};
     StartArrowData? newStartArrow;
     int nodeCounter = 0, lineCounter = 0;
-    bool pdaMode = false;
+    AutomataMode automataMode = AutomataMode.ndfa;
+
+    bool looksLikePdaTransitionLabel(String lbl) {
+      final s = lbl.trim();
+      if (s.isEmpty) return false;
+      // We expect PDA edge labels like `a,x|y` or legacy `a,x/y`.
+      // These always contain a comma (read,pop,...) and then either `|` or `/`.
+      return s.contains(',') && (s.contains('|') || s.contains('/'));
+    }
 
     String? idForLabel(String lbl) {
       lbl = _unescapeDsl(lbl.trim());
@@ -188,17 +203,20 @@ class DslCodec {
     String ensureNode(String lbl) {
       lbl = _unescapeDsl(lbl);
       bool haltAccept = false, haltReject = false;
+      bool hasHaltMarker = false;
       if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
-        haltAccept = true; lbl = lbl.substring(2, lbl.length - 2);
+        haltAccept = true; hasHaltMarker = true; lbl = lbl.substring(2, lbl.length - 2);
       } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
-        haltReject = true; lbl = lbl.substring(2, lbl.length - 2);
+        haltReject = true; hasHaltMarker = true; lbl = lbl.substring(2, lbl.length - 2);
       }
       final existing = idForLabel(lbl);
       if (existing != null) {
-        newNodes[existing]!.applyHaltFromLabel(
-          haltAccept: haltAccept,
-          haltReject: haltReject,
-        );
+        if (hasHaltMarker) {
+          newNodes[existing]!.applyHaltFromLabel(
+            haltAccept: haltAccept,
+            haltReject: haltReject,
+          );
+        }
         return existing;
       }
       final id = 'n${nodeCounter++}';
@@ -221,12 +239,19 @@ class DslCodec {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
 
-      // ── pda mode [on|off] ─────────────────────────────────────────────────
+      // ── pda mode [on|off] / tm mode [on|off] ─────────────────────────────
       final pdaModeMatch =
           RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
       if (pdaModeMatch != null) {
         final flag = pdaModeMatch.group(1)?.toLowerCase();
-        pdaMode = flag != 'off';
+        if (flag != 'off') automataMode = AutomataMode.pda;
+        continue;
+      }
+      final tmModeMatch =
+          RegExp(r'^tm\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
+      if (tmModeMatch != null) {
+        final flag = tmModeMatch.group(1)?.toLowerCase();
+        if (flag != 'off') automataMode = AutomataMode.tm;
         continue;
       }
 
@@ -309,6 +334,9 @@ class DslCodec {
           newLines[lid] = LineData(id: lid, nodeAId: idA, nodeBId: idB, label: lineLabel);
           newNodes[idA]!.connectedLineIds.add(lid);
           newNodes[idB]!.connectedLineIds.add(lid);
+          if (lineLabel.isNotEmpty && looksLikePdaTransitionLabel(lineLabel)) {
+            if (automataMode == AutomataMode.ndfa) automataMode = AutomataMode.pda;
+          }
           if (lineLabel.isNotEmpty) lineLabelToId[lineLabel] = lid;
         }
         continue;
@@ -327,13 +355,35 @@ class DslCodec {
       final nodeDefMatch = RegExp(r'^(n\d+)\s*=\s*(.*)$').firstMatch(line);
       if (nodeDefMatch != null) {
         final id = nodeDefMatch.group(1)!;
-        final lbl = _unescapeDsl(nodeDefMatch.group(2)!.trim());
+        var lbl = _unescapeDsl(nodeDefMatch.group(2)!.trim());
         final num = int.tryParse(id.substring(1)) ?? -1;
         if (num >= nodeCounter) nodeCounter = num + 1;
+
+        bool haltAccept = false, haltReject = false;
+        if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
+          haltAccept = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
+          haltReject = true;
+          lbl = lbl.substring(2, lbl.length - 2);
+        }
+
         if (!newNodes.containsKey(id)) {
-          newNodes[id] = NodeData(id: id, position: _defaultPosition(newNodes.length), label: lbl);
+          final node = NodeData(
+            id: id,
+            position: _defaultPosition(newNodes.length),
+            label: lbl,
+            isHaltAccept: haltAccept,
+            isHaltReject: haltReject,
+          );
+          if (node.isHaltState) node.isAccept = false;
+          newNodes[id] = node;
         } else {
           newNodes[id]!.label = lbl;
+          newNodes[id]!.applyHaltFromLabel(
+            haltAccept: haltAccept,
+            haltReject: haltReject,
+          );
         }
         if (lbl.isNotEmpty) labelToId[lbl] = id;
         continue;
@@ -349,7 +399,7 @@ class DslCodec {
       startArrow: newStartArrow,
       nodeCounter: nodeCounter,
       lineCounter: lineCounter,
-      pdaMode: pdaMode,
+      automataMode: automataMode,
     );
   }
 
@@ -366,6 +416,13 @@ class DslCodec {
     final data = jsonDecode(scriptMatch.group(1)!.trim()) as Map<String, dynamic>;
     final newNodes = <String, NodeData>{};
     final newLines = <String, LineData>{};
+    AutomataMode automataMode = AutomataMode.ndfa;
+
+    bool looksLikePdaTransitionLabel(String lbl) {
+      final s = lbl.trim();
+      if (s.isEmpty) return false;
+      return s.contains(',') && (s.contains('|') || s.contains('/'));
+    }
 
     for (final n in data['nodes'] as List) {
       final node = NodeData(
@@ -395,6 +452,10 @@ class DslCodec {
       newLines[line.id] = line;
       newNodes[line.nodeAId]?.connectedLineIds.add(line.id);
       newNodes[line.nodeBId]?.connectedLineIds.add(line.id);
+
+      if (line.label.isNotEmpty && looksLikePdaTransitionLabel(line.label)) {
+        if (automataMode == AutomataMode.ndfa) automataMode = AutomataMode.pda;
+      }
     }
 
     StartArrowData? startArrow;
@@ -418,6 +479,7 @@ class DslCodec {
       startArrow: startArrow,
       nodeCounter: highestNode,
       lineCounter: highestLine,
+      automataMode: automataMode,
     );
   }
 

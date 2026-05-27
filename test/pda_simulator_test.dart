@@ -33,6 +33,20 @@ void main() {
       expect(t.pop, '∅');
       expect(t.push, ['A', '∅']);
     });
+
+    test('3-part comma read,pop,push', () {
+      final t = parsePdaLabel('a,X,y');
+      expect(t.read, 'a');
+      expect(t.pop, 'X');
+      expect(t.push, ['y']);
+    });
+
+    test('3-character shorthand aXy', () {
+      final t = parsePdaLabel('aXy');
+      expect(t.read, 'a');
+      expect(t.pop, 'X');
+      expect(t.push, ['y']);
+    });
   });
 
   group('PdaSimulator', () {
@@ -127,6 +141,23 @@ void main() {
       sim.rebuild('', startArrow: StartArrowData(nodeId: 'n0'));
 
       expect(sim.stackGrowthLoopDetected, isFalse);
+      expect(sim.finalResult(), PdaSimResult.accept);
+    });
+
+    test('treats read=∅ as ε at end-of-input (null jump)', () {
+      final nodes = <String, NodeData>{
+        'n0': NodeData(id: 'n0', position: Offset.zero, label: 'q0'),
+        'n1': NodeData(id: 'n1', position: const Offset(100, 0), label: 'q1', isAccept: true),
+      };
+      final lines = <String, LineData>{
+        // read=∅, pop=∅, push=~  should be taken as ε when input is fully consumed.
+        'l0': LineData(id: 'l0', nodeAId: 'n0', nodeBId: 'n1', label: '∅,∅|~'),
+      };
+
+      final sim = PdaSimulator(nodes: nodes, lines: lines);
+      sim.rebuild('', startArrow: StartArrowData(nodeId: 'n0'));
+
+      expect(sim.activeConfigs.isNotEmpty, isTrue);
       expect(sim.finalResult(), PdaSimResult.accept);
     });
 
