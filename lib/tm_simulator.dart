@@ -311,7 +311,7 @@ class TmSimulator {
     for (final c in last.configs) {
       final node = nodes[c.nodeId];
       if (node == null) continue;
-      if (node.isHaltAccept) return TmResult.accept;
+      if (node.isHaltAccept || node.isAccept) return TmResult.accept;
     }
     return TmResult.reject;
   }
@@ -375,19 +375,19 @@ class TmSimulator {
       bool allHalted = true;
       for (final c in current.configs) {
         final node = nodes[c.nodeId];
-        if (node == null || node.isHaltAccept || node.isHaltReject) continue;
+        if (node == null || node.isHaltAccept || node.isHaltReject || node.isAccept) continue;
         allHalted = false;
         break;
       }
       if (allHalted) break;
 
-      // If any config is in a halt-accept, stop expanding — we accept.
-      bool anyHaltAccept = false;
+      // If any config is in an accept state (halt-accept or normal accept), stop — we accept.
+      bool anyAccept = false;
       for (final c in current.configs) {
         final node = nodes[c.nodeId];
-        if (node != null && node.isHaltAccept) { anyHaltAccept = true; break; }
+        if (node != null && (node.isHaltAccept || node.isAccept)) { anyAccept = true; break; }
       }
-      if (anyHaltAccept) break;
+      if (anyAccept) break;
 
       // Expand every non-halted config by one step.
       final nextConfigs = <TmConfig>[];
@@ -398,8 +398,8 @@ class TmSimulator {
         final node = nodes[config.nodeId];
         if (node == null) continue;
 
-        // Halted configs carry forward unchanged (so they remain visible).
-        if (node.isHaltAccept || node.isHaltReject) {
+        // Halted/accept configs carry forward unchanged (so they remain visible).
+        if (node.isHaltAccept || node.isHaltReject || node.isAccept) {
           final k = config.key;
           if (seenKeys.add(k)) nextConfigs.add(config);
           continue;
