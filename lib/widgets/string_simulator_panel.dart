@@ -289,9 +289,9 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     // show the result banner as soon as a definitive result is available.
     final showResult = result != null && (atEnd || isTmMode);
 
-    // Chip k is highlighted when step == k (transition for tokens[k] just fired).
-    // step == -1 or step == tokens.length → no chip highlighted.
-    final currentChipIndex = (step >= 0 && step < tokens.length) ? step : -1;
+    // Chip k is highlighted when step == k+1 (the transition that consumed tokens[k]
+    // has just fired, landing in states[k+2]).  At step -1 or 0 no chip is highlighted.
+    final currentChipIndex = (step > 0 && step <= tokens.length) ? step - 1 : -1;
 
     // Get TM tape view if available
     final tapeView = isTmMode ? tm.tapeView : null;
@@ -412,7 +412,9 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           separatorBuilder: (_, __) => const SizedBox(width: 3),
                           itemBuilder: (context, i) {
                             final isCurrent  = i == currentChipIndex;
-                            final isConsumed = i < currentChipIndex;
+                            final isConsumed = currentChipIndex >= 0
+                                ? i < currentChipIndex
+                                : i < step; // step==0 means token 0 consumed but not yet highlighted
                             return _TokenChip(
                               key: _chipKeys[i],
                               token: tokens[i],

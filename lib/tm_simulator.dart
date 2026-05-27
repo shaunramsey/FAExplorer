@@ -311,7 +311,18 @@ class TmSimulator {
     for (final c in last.configs) {
       final node = nodes[c.nodeId];
       if (node == null) continue;
-      if (node.isHaltAccept || node.isAccept) return TmResult.accept;
+      // Explicit halt-accept always wins.
+      if (node.isHaltAccept) return TmResult.accept;
+    }
+    // If the simulation stopped because no transitions fired (dead configs),
+    // a normal accept state at that point counts as accepting.
+    // This only applies when the loop ended because nextConfigs was empty (reject path)
+    // or allHalted (only halt states remain). Check last snapshot for accept states.
+    for (final c in last.configs) {
+      final node = nodes[c.nodeId];
+      if (node == null) continue;
+      if (node.isHaltReject) continue;
+      if (node.isAccept) return TmResult.accept;
     }
     return TmResult.reject;
   }
@@ -372,22 +383,23 @@ class TmSimulator {
       if (current.configs.isEmpty) break;
 
       // Check if every config is in a halting state (halt-accept or halt-reject only).
+      // Normal accept states are NOT halt states for a TM — the machine keeps running.
       bool allHalted = true;
       for (final c in current.configs) {
         final node = nodes[c.nodeId];
-        if (node == null || node.isHaltAccept || node.isHaltReject || node.isAccept) continue;
+        if (node == null || node.isHaltAccept || node.isHaltReject) continue;
         allHalted = false;
         break;
       }
       if (allHalted) break;
 
-      // If any config is in an accept state (halt-accept or normal accept), stop — we accept.
-      bool anyAccept = false;
+      // Only explicit halt-accept stops simulation early; normal accept states keep running.
+      bool anyHaltAccept = false;
       for (final c in current.configs) {
         final node = nodes[c.nodeId];
-        if (node != null && (node.isHaltAccept || node.isAccept)) { anyAccept = true; break; }
+        if (node != null && node.isHaltAccept) { anyHaltAccept = true; break; }
       }
-      if (anyAccept) break;
+      if (anyHaltAccept) break;
 
       // Expand every non-halted config by one step.
       final nextConfigs = <TmConfig>[];
@@ -398,15 +410,13 @@ class TmSimulator {
         final node = nodes[config.nodeId];
         if (node == null) continue;
 
-        // Halted/accept configs carry forward unchanged (so they remain visible).
-        if (node.isHaltAccept || node.isHaltReject || node.isAccept) {
+        // Halt states carry forward unchanged (so they remain visible).
+        // Normal accept states are NOT halted — they continue to fire transitions.
+        if (node.isHaltAccept || node.isHaltReject) {
           final k = config.key;
           if (seenKeys.add(k)) nextConfigs.add(config);
           continue;
         }
-
-        // Also accept-state nodes without halting — carry forward and keep alive.
-        // (The TM may loop on them, but we still need to display them.)
 
         final headSym = config.tape.read(config.headPos);
         final cellSym = headSym.isEmpty ? kBlank : headSym;
