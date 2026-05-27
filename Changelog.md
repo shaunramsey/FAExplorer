@@ -1,3 +1,7 @@
+# May 27th, 2026
+* Implemented turing machines with their own mode
+* Changed the UI for batch simulator
+
 # May 26th, 2026
 * Implemented a new mode for pushdown automata so you can add and remove from a stack
 * Got rid of mixed results as it was incorrect
