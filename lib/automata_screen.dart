@@ -214,8 +214,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _pdaSimulator.step = _pdaSimulator.tokens.length;
     }
     _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
-    if (_tmSimulator.step >= _tmSimulator.snapshots.length) {
-      _tmSimulator.step = _tmSimulator.snapshots.length - 1;
+    if (_tmSimulator.step >= _tmSimulator.steps.length) {
+      _tmSimulator.step = _tmSimulator.steps.length - 1;
     }
   }
 
@@ -817,7 +817,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               _pdaSimulator.step = _simulator.step;
             } else if (_automataMode == AutomataMode.tm) {
               _tmSimulator.step = _simulator.step.clamp(
-                  -1, _tmSimulator.snapshots.length - 1);
+                  -1, _tmSimulator.steps.length - 1);
             }
           });
           _schedulePersist();
@@ -1048,6 +1048,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                 boundaryKey: _simulatorPanelBoundaryKey,
                 simulator: _simulator,
                 pdaSimulator: _automataMode == AutomataMode.pda ? _pdaSimulator : null,
+                tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
                 controller: _simController,
                 nodes: _nodes,
                 onClose: () => _setShowSimulator(false),
@@ -1063,7 +1064,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                 onStepChanged: () {
                   _pdaSimulator.step = _simulator.step;
                   _tmSimulator.step = _simulator.step.clamp(
-                      -1, _tmSimulator.snapshots.length - 1);
+                      -1, _tmSimulator.steps.length - 1);
                   setState(() {});
                   _schedulePersist();
                 },

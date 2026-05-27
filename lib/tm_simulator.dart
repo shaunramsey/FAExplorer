@@ -5,8 +5,8 @@ import 'token_replacements.dart';
 //  TM Transition label parsing
 //
 //  Format:  read , write , direction
-//    read      — the tape symbol currently under the head; ∅ matches blank cell
-//    write     — the symbol to write in place; ∅ writes a blank
+//    read      — the tape symbol currently under the head; ∅ (or ~) matches blank
+//    write     — the symbol to write; ∅ (or ~) writes a blank
 //    direction — R (move right), L (move left), S (stay)
 //
 //  Multiple alternatives on one transition are separated by newlines.
@@ -15,10 +15,10 @@ import 'token_replacements.dart';
 //    aXR   →  read=a  write=X  direction=R
 //    ∅∅S   →  blank-read, blank-write, stay
 //
-//  The blank symbol used on the tape is `∅` (same as kBlank).
+//  The blank symbol used on the tape is `∅` (kBlank).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Blank tape symbol — produced by \0 in labels and used for empty cells.
+/// Blank tape symbol.
 const String kBlank = '∅';
 
 /// Direction the TM head moves after executing a transition.
@@ -38,7 +38,8 @@ class TmTransition {
 
 /// Parse a single transition alternative string into a [TmTransition].
 TmTransition parseTmLabel(String raw) {
-  final s = parseTokenText(raw.trim());
+  String preprocessed = raw.replaceAll('\\0', kBlank);
+  final s = parseTokenText(preprocessed.trim());
   if (s.isEmpty) {
     return TmTransition(read: kBlank, write: kBlank, direction: TmDirection.stay);
   }
@@ -63,13 +64,15 @@ TmTransition parseTmLabel(String raw) {
     return TmTransition(read: read, write: write, direction: dir);
   }
 
-  // Fallback: treat whole string as a read symbol, write same, stay.
+  // Fallback
   return TmTransition(read: _normSym(s), write: _normSym(s), direction: TmDirection.stay);
 }
 
+/// Normalize a tape symbol.
+/// `~`, `ε`, `∅`, or empty → blank (represented as empty string internally).
 String _normSym(String s) {
   final t = parseTokenText(s.trim());
-  if (t == '~' || t == 'ε') return '';   // empty = blank for TM
+  if (t == '~' || t == 'ε' || t == kBlank || t.isEmpty) return '';
   return t;
 }
 
@@ -82,20 +85,15 @@ TmDirection _parseDir(String s) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  TM tape
-//
-//  Modelled as a list of cells that grows on both ends.
-//  [tapeOffset] tracks how far left the tape has been extended so that index 0
-//  of the original input maps to position [tapeOffset] in the list.
+//  TM tape (immutable snapshot)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class TmTape {
   final List<String> cells;
-  final int headOffset; // index of cell-0 within [cells]
+  final int headOffset; // index of logical-position-0 within [cells]
 
   const TmTape({required this.cells, required this.headOffset});
 
-  /// Build an initial tape from tokens. Cell at [headOffset + i] = tokens[i].
   factory TmTape.fromTokens(List<String> tokens) {
     if (tokens.isEmpty) {
       return TmTape(cells: [kBlank], headOffset: 0);
@@ -106,10 +104,11 @@ class TmTape {
     );
   }
 
-  /// Read the symbol at absolute tape position [pos] (blank if out of range).
+  /// Read the symbol at absolute tape position [pos].
   String read(int pos) {
     if (pos < 0 || pos >= cells.length) return kBlank;
-    return cells[pos];
+    final v = cells[pos];
+    return v.isEmpty ? kBlank : v;
   }
 
   /// Returns a new tape with [symbol] written at [pos], extending if needed.
@@ -131,37 +130,45 @@ class TmTape {
     return TmTape(cells: newCells, headOffset: newOffset);
   }
 
-  /// Convert an input-token index (0 = first input char) to an absolute
-  /// tape-list index.
+  /// Convert a logical input index (0 = first input char) to absolute index.
   int absolutePos(int inputIndex) => headOffset + inputIndex;
+
+  /// A key that uniquely describes the tape content (for loop detection).
+  String get key => cells.join('|');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  One snapshot of the TM at a single computation step
+//  NTM Configuration  (state × head position × tape)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class TmSnapshot {
-  /// Current state (node id).
+class TmConfig {
   final String nodeId;
-
-  /// Absolute head position within [tape.cells].
-  final int headPos;
-
-  /// Tape contents at this step.
+  final int headPos;   // absolute index into tape.cells
   final TmTape tape;
-
-  /// Which transition edge was fired to reach this step (empty = initial).
   final String usedLineId;
 
-  const TmSnapshot({
+  const TmConfig({
     required this.nodeId,
     required this.headPos,
     required this.tape,
     required this.usedLineId,
   });
 
-  /// Index relative to original input start (may be negative).
-  int get inputRelativeHead => headPos - tape.headOffset;
+  /// Key used for loop / duplicate detection.
+  String get key => '$nodeId:$headPos:${tape.key}';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  One UI-visible step snapshot (set of active configs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class TmStepSnapshot {
+  final List<TmConfig> configs;
+  final Set<String> usedLineIds;
+
+  const TmStepSnapshot({required this.configs, required this.usedLineIds});
+
+  Set<String> get activeNodeIds => {for (final c in configs) c.nodeId};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,10 +178,10 @@ class TmSnapshot {
 enum TmResult { accept, reject, running }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  TmSimulator
+//  NTM Simulator
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Maximum steps before we declare the TM is looping.
+/// Maximum total steps across all branches before we declare a loop.
 const int kTmMaxSteps = 10000;
 
 class TmSimulator {
@@ -186,59 +193,70 @@ class TmSimulator {
   // ── Precomputed simulation ──────────────────────────────────────────────
   List<String> tokens = [];
 
-  /// Snapshots[0] = initial configuration; snapshots[i+1] = after step i.
-  final List<TmSnapshot> snapshots = [];
+  /// steps[0] = initial config set; steps[i+1] = after one NTM step from steps[i].
+  final List<TmStepSnapshot> steps = [];
 
   /// Whether the simulation hit the step limit (likely infinite loop).
   bool loopDetected = false;
 
-  /// The user-visible step cursor. -1 = before first snapshot (start arrow lit).
+  /// The user-visible step cursor. -1 = before first snapshot.
   int step = -1;
 
   // ── Active highlights ──────────────────────────────────────────────────
+
   Set<String> get activeNodes {
-    final s = _snapshotAt(step);
-    return s == null ? {} : {s.nodeId};
+    final snap = _snapshotAt(step);
+    return snap?.activeNodeIds ?? {};
   }
 
   Set<String> get activeLines {
-    final s = _snapshotAt(step);
-    return (s == null || s.usedLineId.isEmpty) ? {} : {s.usedLineId};
+    final snap = _snapshotAt(step);
+    return snap?.usedLineIds ?? {};
   }
 
-  TmSnapshot? _snapshotAt(int s) {
+  TmStepSnapshot? _snapshotAt(int s) {
     final idx = s + 1;
-    if (idx < 0 || idx >= snapshots.length) return null;
-    return snapshots[idx];
+    if (idx < 0 || idx >= steps.length) return null;
+    return steps[idx];
   }
 
-  /// Current tape state for display. Null if no simulation has been built.
-  TmSnapshot? get currentSnapshot => _snapshotAt(step);
+  /// Current snapshot for UI display.
+  TmStepSnapshot? get currentSnapshot => _snapshotAt(step);
 
-  /// The tape as it currently looks (for the UI).
-  TmTape? get currentTape => currentSnapshot?.tape;
+  /// All active configs at the current step (for the config panel).
+  List<TmConfig> get activeConfigs => currentSnapshot?.configs ?? const [];
 
-  /// Absolute head position on the current tape.
-  int get currentHeadPos => currentSnapshot?.headPos ?? 0;
+  // ── Tape view helpers (uses first config for the tape strip display) ───
 
-  /// Tape cell contents as a display list, with the head index.
-  /// Returns a view wide enough to show content plus some blank padding.
-  ({List<String> cells, int headIndex, int originOffset})? get tapeView {
+  TmConfig? get _primaryConfig {
     final snap = currentSnapshot;
-    if (snap == null) return null;
-    final tape = snap.tape;
-    // Ensure at least some blank cells on either side for display.
+    if (snap == null || snap.configs.isEmpty) return null;
+    // Prefer a halting-accept config if one exists.
+    for (final c in snap.configs) {
+      final node = nodes[c.nodeId];
+      if (node != null && node.isHaltAccept) return c;
+    }
+    return snap.configs.first;
+  }
+
+  TmTape? get currentTape => _primaryConfig?.tape;
+  int get currentHeadPos => _primaryConfig?.headPos ?? 0;
+
+  ({List<String> cells, int headIndex, int originOffset})? get tapeView {
+    final config = _primaryConfig;
+    if (config == null) return null;
+    final tape = config.tape;
     const pad = 3;
     final cells = <String>[];
-    final startPos = -pad; // relative to origin
-    final endPos   = tape.cells.length - tape.headOffset + pad;
+    final startPos = -pad;
+    final endPos = tape.cells.length - tape.headOffset + pad;
     for (int rel = startPos; rel < endPos; rel++) {
       final abs = tape.absolutePos(rel);
       cells.add((abs >= 0 && abs < tape.cells.length) ? tape.cells[abs] : kBlank);
     }
     return (
       cells: cells,
-      headIndex: snap.headPos - tape.absolutePos(startPos),
+      headIndex: config.headPos - tape.absolutePos(startPos),
       originOffset: startPos,
     );
   }
@@ -246,33 +264,28 @@ class TmSimulator {
   // ── Simulation result ──────────────────────────────────────────────────
 
   TmResult get result {
-    if (snapshots.isEmpty) return TmResult.running;
-    // Walk forward through snapshots to see if any halt state was reached.
-    for (final snap in snapshots) {
-      final node = nodes[snap.nodeId];
+    if (steps.isEmpty) return TmResult.running;
+    if (loopDetected) return TmResult.running;
+    // Check final snapshot only.
+    final last = steps.last;
+    if (last.configs.isEmpty) return TmResult.reject;
+    for (final c in last.configs) {
+      final node = nodes[c.nodeId];
       if (node == null) continue;
       if (node.isHaltAccept) return TmResult.accept;
-      if (node.isHaltReject) return TmResult.reject;
     }
-    if (loopDetected) return TmResult.running;
-    // Check final snapshot
-    final last = snapshots.last;
-    final lastNode = nodes[last.nodeId];
-    if (lastNode == null) return TmResult.reject;
-    if (lastNode.isAccept) return TmResult.accept;
-    if (lastNode.isHaltAccept) return TmResult.accept;
-    if (lastNode.isHaltReject) return TmResult.reject;
     return TmResult.reject;
   }
 
   TmResult get currentStepResult {
     final snap = currentSnapshot;
     if (snap == null) return TmResult.running;
-    final node = nodes[snap.nodeId];
-    if (node == null) return TmResult.running;
-    if (node.isHaltAccept) return TmResult.accept;
-    if (node.isHaltReject) return TmResult.reject;
-    if (node.isAccept) return TmResult.accept;
+    for (final c in snap.configs) {
+      final node = nodes[c.nodeId];
+      if (node == null) continue;
+      if (node.isHaltAccept) return TmResult.accept;
+      if (node.isHaltReject) return TmResult.reject;
+    }
     return TmResult.running;
   }
 
@@ -281,16 +294,16 @@ class TmSimulator {
   void rebuild(String input, {StartArrowData? startArrow}) {
     tokens = _tokenize(input);
     _build(startArrow: startArrow);
-    if (step >= snapshots.length) step = snapshots.length - 1;
+    if (step >= steps.length) step = steps.length - 1;
   }
 
   void rebuildGraph({StartArrowData? startArrow}) {
     _build(startArrow: startArrow);
-    if (step >= snapshots.length) step = snapshots.length - 1;
+    if (step >= steps.length) step = steps.length - 1;
   }
 
   void _build({StartArrowData? startArrow}) {
-    snapshots.clear();
+    steps.clear();
     loopDetected = false;
 
     if (startArrow == null || !nodes.containsKey(startArrow.nodeId)) {
@@ -298,89 +311,130 @@ class TmSimulator {
     }
 
     final initialTape = TmTape.fromTokens(tokens);
-
-    // Step 0: initial snapshot — head at position 0 (start of input).
-    var snap = TmSnapshot(
+    final initialConfig = TmConfig(
       nodeId: startArrow.nodeId,
       headPos: initialTape.absolutePos(0),
       tape: initialTape,
       usedLineId: '',
     );
-    snapshots.add(snap);
 
-    for (int i = 0; i < kTmMaxSteps; i++) {
-      final node = nodes[snap.nodeId];
-      if (node == null) break;
+    // Step 0: initial snapshot.
+    steps.add(TmStepSnapshot(
+      configs: [initialConfig],
+      usedLineIds: const {},
+    ));
 
-      // Halt states: stop here.
-      if (node.isHaltAccept || node.isHaltReject) break;
-      if (node.isAccept) break; // accept (non-halt) — treat as final
+    // BFS across NTM branches.  Each iteration of this loop advances ALL
+    // live configs by one transition, producing the next snapshot.
+    int totalStepCount = 0;
 
-      // Find a matching transition.
-      final headSymbol = snap.tape.read(snap.headPos);
-      TmTransition? fired;
-      String? firedLineId;
+    while (true) {
+      final current = steps.last;
+      if (current.configs.isEmpty) break;
 
-      outer:
-      for (final line in lines.values) {
-        if (line.nodeAId != snap.nodeId) continue;
-        for (final altRaw in line.label.split('\n')) {
-          final t = parseTmLabel(altRaw);
-          final readSym = t.read.isEmpty ? kBlank : t.read;
-          final cellSym = headSymbol.isEmpty ? kBlank : headSymbol;
-          if (readSym == cellSym) {
-            fired = t;
-            firedLineId = line.id;
-            break outer;
+      // Check if every config is in a halting state (halt-accept or halt-reject only).
+      bool allHalted = true;
+      for (final c in current.configs) {
+        final node = nodes[c.nodeId];
+        if (node == null || node.isHaltAccept || node.isHaltReject) continue;
+        allHalted = false;
+        break;
+      }
+      if (allHalted) break;
+
+      // If any config is in a halt-accept, stop expanding — we accept.
+      bool anyHaltAccept = false;
+      for (final c in current.configs) {
+        final node = nodes[c.nodeId];
+        if (node != null && node.isHaltAccept) { anyHaltAccept = true; break; }
+      }
+      if (anyHaltAccept) break;
+
+      // Expand every non-halted config by one step.
+      final nextConfigs = <TmConfig>[];
+      final nextLines   = <String>{};
+      final seenKeys    = <String>{};
+
+      for (final config in current.configs) {
+        final node = nodes[config.nodeId];
+        if (node == null) continue;
+
+        // Halted configs carry forward unchanged (so they remain visible).
+        if (node.isHaltAccept || node.isHaltReject) {
+          final k = config.key;
+          if (seenKeys.add(k)) nextConfigs.add(config);
+          continue;
+        }
+
+        // Also accept-state nodes without halting — carry forward and keep alive.
+        // (The TM may loop on them, but we still need to display them.)
+
+        final headSym = config.tape.read(config.headPos);
+        final cellSym = headSym.isEmpty ? kBlank : headSym;
+
+
+        for (final line in lines.values) {
+          if (line.nodeAId != config.nodeId) continue;
+
+          for (final altRaw in line.label.split('\n')) {
+            final t = parseTmLabel(altRaw);
+            final readSym = t.read.isEmpty ? kBlank : t.read;
+
+            if (readSym != cellSym) continue;
+
+            // Apply write.
+            final writeSym = t.write.isEmpty ? kBlank : t.write;
+            final newTape = config.tape.write(config.headPos, writeSym);
+
+            // Apply head move (adjust for any tape-left-extension).
+            final headShift = newTape.headOffset - config.tape.headOffset;
+            int newHeadPos = config.headPos + headShift;
+            switch (t.direction) {
+              case TmDirection.right: newHeadPos += 1; break;
+              case TmDirection.left:  newHeadPos -= 1; break;
+              case TmDirection.stay:  break;
+            }
+
+            // Extend tape if head moved off the end.
+            final extendedTape = newTape.write(newHeadPos, newTape.read(newHeadPos));
+            final extendShift = extendedTape.headOffset - newTape.headOffset;
+            newHeadPos += extendShift;
+
+            final next = TmConfig(
+              nodeId: line.nodeBId,
+              headPos: newHeadPos,
+              tape: extendedTape,
+              usedLineId: line.id,
+            );
+
+            final k = next.key;
+            if (seenKeys.add(k)) {
+              nextConfigs.add(next);
+              nextLines.add(line.id);
+            }
           }
         }
+
+        // If no transition fired, this branch dies (implicit reject).
+        // Don't carry it forward. // suppress unused warning
       }
 
-      if (fired == null) break; // no transition — implicit reject
+      if (nextConfigs.isEmpty) break;
 
-      // Apply write.
-      final writeSym = fired.write.isEmpty ? kBlank : fired.write;
-      final newTape = snap.tape.write(snap.headPos, writeSym);
+      steps.add(TmStepSnapshot(
+        configs: nextConfigs,
+        usedLineIds: nextLines,
+      ));
 
-      // Apply move — adjusting for any tape extension that shifted indices.
-      final headShift = newTape.headOffset - snap.tape.headOffset;
-      int newHeadPos = snap.headPos + headShift;
-      switch (fired.direction) {
-        case TmDirection.right: newHeadPos += 1; break;
-        case TmDirection.left:  newHeadPos -= 1; break;
-        case TmDirection.stay:  break;
-      }
-
-      // Extend tape if head moved off either end.
-      final extendedTape = newTape.write(newHeadPos, newTape.read(newHeadPos));
-
-      // Record.
-      snap = TmSnapshot(
-        nodeId: line_nodeBId(lines, firedLineId!),
-        headPos: newHeadPos,
-        tape: extendedTape,
-        usedLineId: firedLineId,
-      );
-      snapshots.add(snap);
-    }
-
-    if (snapshots.length > 1 && !_isHalted(snapshots.last.nodeId)) {
-      if (snapshots.length >= kTmMaxSteps) {
+      totalStepCount++;
+      if (totalStepCount >= kTmMaxSteps) {
         loopDetected = true;
+        break;
       }
     }
   }
 
-  bool _isHalted(String nodeId) {
-    final node = nodes[nodeId];
-    if (node == null) return false;
-    return node.isHaltAccept || node.isHaltReject || node.isAccept;
-  }
-
-  // helper to look up the target of a fired line
-  static String line_nodeBId(Map<String, LineData> lines, String lineId) {
-    return lines[lineId]?.nodeBId ?? '';
-  }
+  // ── Tokenizer ─────────────────────────────────────────────────────────
 
   List<String> _tokenize(String input) {
     final result = <String>[];
@@ -402,6 +456,11 @@ class TmSimulator {
           i = close + 1;
           continue;
         }
+      }
+      if (i + 1 < input.length && input[i] == '\\' && input[i + 1] == '0') {
+        result.add(kBlank);
+        i += 2;
+        continue;
       }
       result.add(input[i]);
       i++;

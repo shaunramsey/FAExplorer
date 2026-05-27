@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models.dart';
 import '../pda_simulator.dart';
 import '../simulator.dart';
+import '../tm_simulator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Speed levels (ms per step)
@@ -28,6 +29,7 @@ class StringSimulatorPanel extends StatefulWidget {
     required this.boundaryKey,
     required this.simulator,
     this.pdaSimulator,
+    this.tmSimulator,
     required this.controller,
     required this.nodes,
     required this.onClose,
@@ -38,6 +40,7 @@ class StringSimulatorPanel extends StatefulWidget {
   final GlobalKey boundaryKey;
   final AutomataSimulator simulator;
   final PdaSimulator? pdaSimulator;
+  final dynamic tmSimulator;
   final TextEditingController controller;
   final Map<String, NodeData> nodes;
   final VoidCallback onClose;
@@ -82,10 +85,22 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   // ── playback ─────────────────────────────────────────────────────────────
 
+  void _syncTmStep() {
+    final tm = widget.tmSimulator as TmSimulator?;
+    if (tm != null) {
+      tm.step = widget.simulator.step;
+    }
+  }
+
   void _startPlayback() {
     if (_playing) return;
-    if (widget.simulator.step >= widget.simulator.tokens.length) {
+    final tm = widget.tmSimulator as TmSimulator?;
+    final maxStep = tm != null
+        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
+        : widget.simulator.tokens.length;
+    if (widget.simulator.step >= maxStep) {
       setState(() => widget.simulator.step = -1);
+      _syncTmStep();
       widget.onStepChanged();
     }
     setState(() => _playing = true);
@@ -106,15 +121,20 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   void _tick() {
     if (!mounted) return;
     final sim = widget.simulator;
-    if (sim.step >= sim.tokens.length) {
+    final tm = widget.tmSimulator as TmSimulator?;
+    final maxStep = tm != null
+        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
+        : sim.tokens.length;
+    if (sim.step >= maxStep) {
       setState(_stopPlayback);
       widget.onStepChanged();
       return;
     }
     setState(() => sim.step++);
+    _syncTmStep();
     widget.onStepChanged();
     _scrollToCurrentChip();
-    if (sim.step >= sim.tokens.length) {
+    if (sim.step >= maxStep) {
       setState(_stopPlayback);
     } else {
       _scheduleNextStep();
@@ -133,6 +153,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     _stopPlayback();
     if (widget.simulator.step > -1) {
       setState(() => widget.simulator.step--);
+      _syncTmStep();
       widget.onStepChanged();
       _scrollToCurrentChip();
     }
@@ -140,8 +161,13 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   void _stepForward() {
     _stopPlayback();
-    if (widget.simulator.step < widget.simulator.tokens.length) {
+    final tm = widget.tmSimulator as TmSimulator?;
+    final maxStep = tm != null
+        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
+        : widget.simulator.tokens.length;
+    if (widget.simulator.step < maxStep) {
       setState(() => widget.simulator.step++);
+      _syncTmStep();
       widget.onStepChanged();
       _scrollToCurrentChip();
     }
@@ -150,13 +176,19 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   void _rewind() {
     _stopPlayback();
     setState(() => widget.simulator.step = -1);
+    _syncTmStep();
     widget.onStepChanged();
     _scrollToChip(0);
   }
 
   void _skipToEnd() {
     _stopPlayback();
-    setState(() => widget.simulator.step = widget.simulator.tokens.length);
+    final tm = widget.tmSimulator as TmSimulator?;
+    final maxStep = tm != null
+        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
+        : widget.simulator.tokens.length;
+    setState(() => widget.simulator.step = maxStep);
+    _syncTmStep();
     widget.onStepChanged();
     _scrollToChip(widget.simulator.tokens.length - 1);
   }
@@ -226,6 +258,13 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final sim = widget.simulator;
     final tokens = sim.tokens;
     final step = sim.step;
+    final tm = widget.tmSimulator as TmSimulator?;
+    final isTmMode = tm != null;
+
+    // In TM mode the number of simulation steps is independent of input length.
+    final maxStep = isTmMode
+        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
+        : tokens.length;
 
     // Keep chip key list in sync with token count.
     if (_chipKeys.length != tokens.length) {
@@ -235,14 +274,17 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     }
 
     final atStart    = step <= -1;
-    final atEnd      = step >= tokens.length;
-    final hasTokens  = tokens.isNotEmpty;
+    final atEnd      = step >= maxStep;
+    final hasTokens  = isTmMode ? tm.steps.isNotEmpty : tokens.isNotEmpty;
     final result     = _currentResult;
     final showResult = atEnd && result != null;
 
     // Chip k is highlighted when step == k (transition for tokens[k] just fired).
     // step == -1 or step == tokens.length → no chip highlighted.
     final currentChipIndex = (step >= 0 && step < tokens.length) ? step : -1;
+
+    // Get TM tape view if available
+    final tapeView = isTmMode ? tm.tapeView : null;
 
     return Align(
       alignment: Alignment.topLeft,
@@ -326,8 +368,30 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                       ),
                     ),
 
-                    // Token tape
-                    if (hasTokens) ...[
+                    // Token/Tape display
+                    if (isTmMode && tapeView != null) ...[
+                      // TM tape view with head position
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 36,
+                        child: ListView.separated(
+                          controller: _tapeScroll,
+                          scrollDirection: Axis.horizontal,
+                          itemCount: tapeView.cells.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 2),
+                          itemBuilder: (context, i) {
+                            final isHeadHere = i == tapeView.headIndex;
+                            final cell = tapeView.cells[i];
+                            return _TapeCellChip(
+                              cell: cell,
+                              isHead: isHeadHere,
+                              pulseAnim: _pulseAnim,
+                            );
+                          },
+                        ),
+                      ),
+                    ] else if (hasTokens) ...[
+                      // PDA/DFA token tape
                       const SizedBox(height: 6),
                       SizedBox(
                         height: 32,
@@ -571,6 +635,73 @@ class _TokenChip extends StatelessWidget {
             fontSize: 12,
             color: fg,
             fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Tape cell chip (for TM mode)
+// ─────────────────────────────────────────────────────────────────────────────
+class _TapeCellChip extends StatelessWidget {
+  const _TapeCellChip({
+    required this.cell,
+    required this.isHead,
+    required this.pulseAnim,
+  });
+
+  final String cell;
+  final bool isHead;
+  final Animation<double> pulseAnim;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isHead) {
+      return AnimatedBuilder(
+        animation: pulseAnim,
+        builder: (_, child) =>
+            Transform.scale(scale: pulseAnim.value, child: child),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 28),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color.fromARGB(255, 208, 0, 255),
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(
+              color: const Color.fromARGB(255, 160, 0, 200),
+              width: 1.2,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              cell == kBlank ? '∅' : cell,
+              style: GoogleFonts.courierPrime(
+                fontSize: 12,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      constraints: const BoxConstraints(minWidth: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: Colors.black26, width: 1),
+      ),
+      child: Center(
+        child: Text(
+          cell == kBlank ? '∅' : cell,
+          style: GoogleFonts.courierPrime(
+            fontSize: 12,
+            color: Colors.black87,
+            fontWeight: FontWeight.normal,
           ),
         ),
       ),
