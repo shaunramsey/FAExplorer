@@ -182,13 +182,15 @@ class TmTape {
 
 class TmConfig {
   final String nodeId;
-  final int headPos;   // absolute index into tape.cells
+  final int headPos;      // absolute index into tape.cells — where the head IS now (post-move)
+  final int readHeadPos;  // absolute index that was READ to fire the transition (pre-move, for display)
   final TmTape tape;
   final String usedLineId;
 
   const TmConfig({
     required this.nodeId,
     required this.headPos,
+    required this.readHeadPos,
     required this.tape,
     required this.usedLineId,
   });
@@ -293,9 +295,12 @@ class TmSimulator {
       final abs = tape.absolutePos(rel);
       cells.add((abs >= 0 && abs < tape.cells.length) ? tape.cells[abs] : kBlank);
     }
+    // Highlight the cell that was READ to produce this step (pre-move position),
+    // not the post-move position where the head will read next.
+    final displayHeadPos = config.readHeadPos;
     return (
       cells: cells,
-      headIndex: config.headPos - tape.absolutePos(startPos),
+      headIndex: displayHeadPos - tape.absolutePos(startPos),
       originOffset: startPos,
     );
   }
@@ -364,6 +369,7 @@ class TmSimulator {
     final initialConfig = TmConfig(
       nodeId: startArrow.nodeId,
       headPos: initialTape.absolutePos(0),
+      readHeadPos: initialTape.absolutePos(0),
       tape: initialTape,
       usedLineId: '',
     );
@@ -413,8 +419,15 @@ class TmSimulator {
         // Halt states carry forward unchanged (so they remain visible).
         // Normal accept states are NOT halted — they continue to fire transitions.
         if (node.isHaltAccept || node.isHaltReject) {
-          final k = config.key;
-          if (seenKeys.add(k)) nextConfigs.add(config);
+          final carried = TmConfig(
+            nodeId: config.nodeId,
+            headPos: config.headPos,
+            readHeadPos: config.headPos, // halted: display current position
+            tape: config.tape,
+            usedLineId: config.usedLineId,
+          );
+          final k = carried.key;
+          if (seenKeys.add(k)) nextConfigs.add(carried);
           continue;
         }
 
@@ -451,6 +464,7 @@ class TmSimulator {
             final next = TmConfig(
               nodeId: line.nodeBId,
               headPos: newHeadPos,
+              readHeadPos: config.headPos + headShift, // position that was read (pre-move)
               tape: newTape,
               usedLineId: line.id,
             );
