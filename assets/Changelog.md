@@ -1,3 +1,7 @@
+# May 28th, 2026
+* Implemented blackboxes so that you can import your code as usable small pieces
+* Made it so TMs do not do automatic computations to allow for infinite loops to be placed 
+
 # May 27th, 2026
 * Implemented turing machines with their own mode
 * Changed the UI for batch simulator
