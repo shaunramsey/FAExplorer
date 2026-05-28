@@ -1,6 +1,8 @@
 import 'models.dart';
 import 'token_replacements.dart';
 import 'dsl_code.dart';
+import 'simulator.dart';
+import 'pda_simulator.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -683,26 +685,39 @@ class TmSimulator {
 
     try {
       final graph = DslCodec.importFromDsl(dsl);
-      if (graph.automataMode != AutomataMode.tm) {
-        return _blackBoxResultCache[cacheKey] = (
-          accepted: false,
-          outputTokens: const <String>[],
-        );
+      switch (graph.automataMode) {
+        case AutomataMode.ndfa:
+          final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
+          sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
+          final accepted = sim.finalResult() == SimResult.accept;
+          return _blackBoxResultCache[cacheKey] = (
+            accepted: accepted,
+            outputTokens: inputTokens,
+          );
+        case AutomataMode.pda:
+          final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
+          sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
+          final accepted = sim.finalResult() == PdaSimResult.accept;
+          return _blackBoxResultCache[cacheKey] = (
+            accepted: accepted,
+            outputTokens: inputTokens,
+          );
+        case AutomataMode.tm:
+          final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
+          sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
+          while (sim.computeNext()) {}
+          if (sim.result != TmResult.accept) {
+            return _blackBoxResultCache[cacheKey] = (
+              accepted: false,
+              outputTokens: const <String>[],
+            );
+          }
+          final output = _trimTapeTokens(sim.currentTape);
+          return _blackBoxResultCache[cacheKey] = (
+            accepted: true,
+            outputTokens: output,
+          );
       }
-      final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
-      sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
-      while (sim.computeNext()) {}
-      if (sim.result != TmResult.accept) {
-        return _blackBoxResultCache[cacheKey] = (
-          accepted: false,
-          outputTokens: const <String>[],
-        );
-      }
-      final output = _trimTapeTokens(sim.currentTape);
-      return _blackBoxResultCache[cacheKey] = (
-        accepted: true,
-        outputTokens: output,
-      );
     } catch (_) {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
