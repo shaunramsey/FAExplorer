@@ -56,6 +56,8 @@ class FirebaseSessionStore implements AutomataSessionStore {
               (e) => {
                 'name': e.name,
                 'dsl': e.dsl,
+                'type': e.type.name,
+                'blackBoxDescription': e.blackBoxDescription,
               },
             )
             .toList(),
@@ -77,6 +79,11 @@ class FirebaseSessionStore implements AutomataSessionStore {
           SavedExport(
             name: item['name']?.toString() ?? 'Export',
             dsl: item['dsl']?.toString() ?? '',
+            type: item['type']?.toString() == SavedExportType.blackBox.name
+                ? SavedExportType.blackBox
+                : SavedExportType.graph,
+            blackBoxDescription:
+                item['blackBoxDescription']?.toString() ?? '',
           ),
     ];
   }

@@ -140,7 +140,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   void _refreshSimulation() {
-    if (_simController.text.isEmpty && _simulator.states.isEmpty) {
+    // Even with an empty input string, PDA/TM simulations still need to rebuild
+    // so that blank (`∅`) / `~` transitions and graph edits take effect.
+    if (_automataMode == AutomataMode.ndfa &&
+        _simController.text.isEmpty &&
+        _simulator.states.isEmpty) {
       return;
     }
     _simRebuild();
@@ -216,8 +220,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _pdaSimulator.step = _pdaSimulator.tokens.length;
     }
     _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
-    if (_tmSimulator.step >= _tmSimulator.steps.length) {
-      _tmSimulator.step = _tmSimulator.steps.length - 1;
+    if (_tmSimulator.step > _tmSimulator.maxStep) {
+      _tmSimulator.step = _tmSimulator.maxStep;
     }
   }
 
@@ -461,6 +465,22 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       context,
       savedExports: _savedExports,
       onImportDsl: _importFromDsl,
+      onInsertBlackBox: (blackBox) {
+        setState(() {
+          final id = _nextId('n');
+          final pos = (_lastTapPosition ?? const Offset(260, 220)) -
+              const Offset(70, 50);
+          _nodes[id] = NodeData(
+            id: id,
+            position: pos,
+            label: blackBox.name.trim().isEmpty ? 'Black Box' : blackBox.name,
+            isBlackBox: true,
+            blackBoxDescription: blackBox.blackBoxDescription,
+            blackBoxDsl: blackBox.dsl,
+          );
+        });
+        _refreshSimulation();
+      },
       onListChanged: () {
         setState(() {});
         _schedulePersist();
@@ -818,8 +838,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             if (_automataMode == AutomataMode.pda) {
               _pdaSimulator.step = _simulator.step;
             } else if (_automataMode == AutomataMode.tm) {
-              _tmSimulator.step = _simulator.step.clamp(
-                  -1, _tmSimulator.steps.length - 1);
+              _tmSimulator.step = _simulator.step.clamp(-1, _tmSimulator.maxStep);
             }
           });
           _schedulePersist();
@@ -1007,6 +1026,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   key: ValueKey(node.id),
                   data: node,
                   lineMode: _lineMode,
+                  interactionLocked: _placingStartArrow,
                   deleteMode: _deleteMode,
                   highlighted: _simActiveNodes.contains(node.id),
 
@@ -1066,7 +1086,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                 onStepChanged: () {
                   _pdaSimulator.step = _simulator.step;
                   _tmSimulator.step = _simulator.step.clamp(
-                      -1, _tmSimulator.steps.length - 1);
+                      -1, _tmSimulator.maxStep);
                   setState(() {});
                   _schedulePersist();
                 },

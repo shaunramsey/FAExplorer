@@ -86,24 +86,10 @@ class TmConfigPanel extends StatelessWidget {
                   ),
                   const Divider(height: 16),
 
-                  // ── Loop warning ─────────────────────────────────────
-                  if (simulator.loopDetected)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'Stopped: step limit reached (possible infinite loop).',
-                        style: GoogleFonts.courierPrime(
-                          fontSize: 12,
-                          color: Colors.deepOrange.shade800,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-
                   // ── Configs list ─────────────────────────────────────
                   if (configs.isEmpty)
                     Text(
-                      simulator.loopDetected ? 'Simulation aborted' : 'No active configuration',
+                      'No active configuration',
                       style: GoogleFonts.courierPrime(fontSize: 13, color: Colors.red),
                     )
                   else
@@ -131,7 +117,10 @@ class TmConfigPanel extends StatelessWidget {
                                 tape: configs[i].tape,
                                 isAccepted: () {
                                   final node = nodes[configs[i].nodeId];
-                                  return node != null && (node.isHaltAccept || node.isAccept);
+                                  // A configuration is only "accepting" when it is explicitly
+                                  // in a halt-accept state (not merely a normal accept state,
+                                  // since the machine may still have computations to perform).
+                                  return node != null && node.isHaltAccept;
                                 }(),
                                 isRejected: () {
                                   final node = nodes[configs[i].nodeId];

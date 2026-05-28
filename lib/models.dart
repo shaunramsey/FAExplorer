@@ -46,6 +46,9 @@ class NodeData {
   bool isAccept;
   bool isHaltAccept;
   bool isHaltReject;
+  bool isBlackBox;
+  String blackBoxDescription;
+  String blackBoxDsl;
 
   final Set<String> connectedLineIds = {};
 
@@ -56,6 +59,9 @@ class NodeData {
     this.isAccept = false,
     this.isHaltAccept = false,
     this.isHaltReject = false,
+    this.isBlackBox = false,
+    this.blackBoxDescription = '',
+    this.blackBoxDsl = '',
   });
 
   bool get isHaltState => isHaltAccept || isHaltReject;
@@ -72,9 +78,17 @@ class NodeData {
     if (isHaltState) isAccept = false;
   }
 
-  Offset get center => Offset(position.dx + 50, position.dy + 50);
+  Offset get center => isBlackBox
+      ? Offset(position.dx + 70, position.dy + 50)
+      : Offset(position.dx + 50, position.dy + 50);
 
   bool containsPoint(Offset point) {
+    if (isBlackBox) {
+      return point.dx >= position.dx &&
+          point.dx <= position.dx + 140 &&
+          point.dy >= position.dy &&
+          point.dy <= position.dy + 100;
+    }
     final dx = point.dx - center.dx;
     final dy = point.dy - center.dy;
     return dx * dx + dy * dy <= 50 * 50;

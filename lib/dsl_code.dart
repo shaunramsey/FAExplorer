@@ -107,6 +107,10 @@ class DslCodec {
       if (n.isHaltAccept) {label = '<<$label>>';}
       else if (n.isHaltReject) {label = '>>$label<<';}
       out.add('${n.id} = $label');
+      if (n.isBlackBox) {
+        out.add('${n.id} blackbox = ${_escapeDsl(n.blackBoxDescription)}');
+        out.add('${n.id} blackbox dsl = ${base64Encode(utf8.encode(n.blackBoxDsl))}');
+      }
     }
     if (g.nodes.isNotEmpty) out.add('');
 
@@ -386,6 +390,57 @@ class DslCodec {
           );
         }
         if (lbl.isNotEmpty) labelToId[lbl] = id;
+        continue;
+      }
+
+      // ── nN blackbox = description ────────────────────────────────────────
+      final blackBoxDefMatch =
+          RegExp(r'^(n\d+)\s+blackbox\s*=\s*(.*)$', caseSensitive: false)
+              .firstMatch(line);
+      if (blackBoxDefMatch != null) {
+        final id = blackBoxDefMatch.group(1)!;
+        final desc = _unescapeDsl(blackBoxDefMatch.group(2)!.trim());
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ??
+            NodeData(
+              id: id,
+              position: _defaultPosition(newNodes.length),
+            );
+        node.isBlackBox = true;
+        node.blackBoxDescription = desc;
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
+        continue;
+      }
+
+      // ── nN blackbox dsl = base64 ────────────────────────────────────────
+      final blackBoxDslMatch = RegExp(
+        r'^(n\d+)\s+blackbox\s+dsl\s*=\s*(.*)$',
+        caseSensitive: false,
+      ).firstMatch(line);
+      if (blackBoxDslMatch != null) {
+        final id = blackBoxDslMatch.group(1)!;
+        final encoded = blackBoxDslMatch.group(2)!.trim();
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ??
+            NodeData(
+              id: id,
+              position: _defaultPosition(newNodes.length),
+            );
+        node.isBlackBox = true;
+        try {
+          node.blackBoxDsl = utf8.decode(base64Decode(encoded));
+        } catch (_) {
+          node.blackBoxDsl = '';
+        }
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
         continue;
       }
 
