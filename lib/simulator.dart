@@ -36,7 +36,14 @@ class AutomataSimulator {
   final List<Set<String>> states = [];
   final List<Set<String>> usedLines = [];
   final List<List<_SimConfig>> _configsByStep = [];
-  final Map<String, ({bool accepted, List<String> outputTokens})>
+  // outputHeadPos: index into outputTokens where the outer machine should
+  // resume reading after the black box runs.  For NFA/PDA black boxes this is
+  // always 0 (the inner machine accepts/rejects the whole input and the outer
+  // machine continues from the beginning of the transformed token list).  For
+  // TM black boxes it is the absolute tape-head position that the inner TM
+  // left its head at, converted to a logical token index so the outer NFA
+  // step-loop can use it as the new inputPos.
+  final Map<String, ({bool accepted, List<String> outputTokens, int outputHeadPos})>
       _blackBoxResultCache = {};
 
   int step = -1;
@@ -149,11 +156,13 @@ class AutomataSimulator {
   Iterable<String> _transitionAlternatives(String label) =>
       label.split(_transitionLabelSplitter).map((s) => s.trim());
 
-  ({bool accepted, List<String> outputTokens}) _runBlackBox(
+  ({bool accepted, List<String> outputTokens, int outputHeadPos}) _runBlackBox(
     NodeData node,
     List<String> inputTokens,
   ) {
-    if (!node.isBlackBox) return (accepted: true, outputTokens: inputTokens);
+    if (!node.isBlackBox) {
+      return (accepted: true, outputTokens: inputTokens, outputHeadPos: 0);
+    }
 
     final cacheKey = '${node.id}:${inputTokens.join('\u0001')}';
     final cached = _blackBoxResultCache[cacheKey];
@@ -164,6 +173,7 @@ class AutomataSimulator {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
+        outputHeadPos: 0,
       );
     }
 
@@ -174,16 +184,20 @@ class AutomataSimulator {
         case AutomataMode.ndfa:
           final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
+          final accepted = sim.finalResult() == SimResult.accept;
           return _blackBoxResultCache[cacheKey] = (
-            accepted: sim.finalResult() == SimResult.accept,
-            outputTokens: inputTokens,
+            accepted: accepted,
+            outputTokens: accepted ? inputTokens : const <String>[],
+            outputHeadPos: 0,
           );
         case AutomataMode.pda:
           final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
+          final accepted = sim.finalResult() == PdaSimResult.accept;
           return _blackBoxResultCache[cacheKey] = (
-            accepted: sim.finalResult() == PdaSimResult.accept,
-            outputTokens: inputTokens,
+            accepted: accepted,
+            outputTokens: accepted ? inputTokens : const <String>[],
+            outputHeadPos: 0,
           );
         case AutomataMode.tm:
           final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
@@ -194,35 +208,75 @@ class AutomataSimulator {
             return _blackBoxResultCache[cacheKey] = (
               accepted: false,
               outputTokens: const <String>[],
+              outputHeadPos: 0,
             );
           }
+          final (outputTokens: outTokens, outputHeadPos: outHeadPos) =
+              _tmOutputTokensAndHead(sim);
           return _blackBoxResultCache[cacheKey] = (
             accepted: true,
-            outputTokens: _tmOutputTokens(sim),
+            outputTokens: outTokens,
+            outputHeadPos: outHeadPos,
           );
       }
     } catch (_) {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
+        outputHeadPos: 0,
       );
     }
   }
 
-  List<String> _tmOutputTokens(TmSimulator sim) {
-    final tape = sim.currentTape;
-    if (tape == null) return const <String>[];
-    final normalized = tape.cells.map((c) => c == kBlank ? '' : c).toList();
+  /// Returns the trimmed output tokens from the inner TM's tape **and** the
+  /// logical index (into those output tokens) where the inner TM's head was
+  /// sitting when it halted.  This lets the outer machine resume reading from
+  /// the correct position in the transformed token list.
+  ({List<String> outputTokens, int outputHeadPos}) _tmOutputTokensAndHead(
+      TmSimulator sim) {
+    // Do NOT use sim.currentTape / sim.currentHeadPos — those go through the
+    // step cursor (sim.step) which is still -1 after computeNext() finishes,
+    // so they would return the *initial* tape rather than the final one.
+    // Instead, pull the halt-accept config directly from the last snapshot.
+    TmConfig? haltConfig;
+    if (sim.steps.isNotEmpty) {
+      for (final c in sim.steps.last.configs) {
+        if (sim.nodes[c.nodeId]?.isHaltAccept == true) {
+          haltConfig = c;
+          break;
+        }
+      }
+      haltConfig ??= sim.steps.last.configs.firstOrNull;
+    }
+
+    final tape = haltConfig?.tape;
+    final rawHeadPos = haltConfig?.headPos ?? 0; // absolute index
+    if (tape == null) return (outputTokens: const <String>[], outputHeadPos: 0);
+
+    // Build a map from absolute tape index → trimmed output index so we can
+    // translate the head position after stripping leading/trailing blanks.
+    final cells = tape.cells;
     int start = 0;
-    int end = normalized.length;
-    while (start < end && normalized[start].isEmpty) {
+    int end = cells.length;
+    while (start < end && (cells[start].isEmpty || cells[start] == kBlank)) {
       start++;
     }
-    while (end > start && normalized[end - 1].isEmpty) {
+    while (end > start &&
+        (cells[end - 1].isEmpty || cells[end - 1] == kBlank)) {
       end--;
     }
-    if (start >= end) return const <String>[];
-    return normalized.sublist(start, end);
+
+    final outputTokens =
+        start >= end ? const <String>[] : cells.sublist(start, end);
+
+    // Translate the absolute head position to an index in outputTokens.
+    // Clamp so it always points at a valid position (or 0 for an empty tape).
+    int outputHeadPos = 0;
+    if (outputTokens.isNotEmpty) {
+      outputHeadPos = (rawHeadPos - start).clamp(0, outputTokens.length - 1);
+    }
+
+    return (outputTokens: outputTokens, outputHeadPos: outputHeadPos);
   }
 
   bool _tmHasExplicitHaltAccept(TmSimulator sim) {
@@ -257,7 +311,7 @@ class AutomataSimulator {
         effective = _SimConfig(
           nodeId: current.nodeId,
           tokens: result.outputTokens,
-          inputPos: 0,
+          inputPos: result.outputHeadPos,
         );
         if (!visitedConfigs.containsKey(effective.key)) {
           visitedConfigs[effective.key] = effective;
@@ -343,7 +397,7 @@ class AutomataSimulator {
           effective = _SimConfig(
             nodeId: config.nodeId,
             tokens: result.outputTokens,
-            inputPos: 0,
+            inputPos: result.outputHeadPos,
           );
         }
 

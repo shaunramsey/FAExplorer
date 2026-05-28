@@ -692,7 +692,7 @@ class TmSimulator {
           final accepted = sim.finalResult() == SimResult.accept;
           return _blackBoxResultCache[cacheKey] = (
             accepted: accepted,
-            outputTokens: inputTokens,
+            outputTokens: accepted ? inputTokens : const <String>[],
           );
         case AutomataMode.pda:
           final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
@@ -700,7 +700,7 @@ class TmSimulator {
           final accepted = sim.finalResult() == PdaSimResult.accept;
           return _blackBoxResultCache[cacheKey] = (
             accepted: accepted,
-            outputTokens: inputTokens,
+            outputTokens: accepted ? inputTokens : const <String>[],
           );
         case AutomataMode.tm:
           final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
@@ -712,7 +712,20 @@ class TmSimulator {
               outputTokens: const <String>[],
             );
           }
-          final output = _trimTapeTokens(sim.currentTape);
+          // Do NOT use sim.currentTape — it goes through the step cursor
+          // (sim.step == -1) and returns the *initial* tape.  Pull the
+          // halt-accept config directly from the final snapshot instead.
+          TmConfig? haltConfig;
+          if (sim.steps.isNotEmpty) {
+            for (final c in sim.steps.last.configs) {
+              if (sim.nodes[c.nodeId]?.isHaltAccept == true) {
+                haltConfig = c;
+                break;
+              }
+            }
+            haltConfig ??= sim.steps.last.configs.firstOrNull;
+          }
+          final output = _trimTapeTokens(haltConfig?.tape);
           return _blackBoxResultCache[cacheKey] = (
             accepted: true,
             outputTokens: output,
