@@ -465,6 +465,22 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       context,
       savedExports: _savedExports,
       onImportDsl: _importFromDsl,
+      onInsertBlackBox: (blackBox) {
+        setState(() {
+          final id = _nextId('n');
+          final pos = (_lastTapPosition ?? const Offset(260, 220)) -
+              const Offset(70, 50);
+          _nodes[id] = NodeData(
+            id: id,
+            position: pos,
+            label: blackBox.name.trim().isEmpty ? 'Black Box' : blackBox.name,
+            isBlackBox: true,
+            blackBoxDescription: blackBox.blackBoxDescription,
+            blackBoxDsl: blackBox.dsl,
+          );
+        });
+        _refreshSimulation();
+      },
       onListChanged: () {
         setState(() {});
         _schedulePersist();

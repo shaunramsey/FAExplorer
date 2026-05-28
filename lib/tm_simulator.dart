@@ -1,5 +1,7 @@
 import 'models.dart';
 import 'token_replacements.dart';
+import 'dsl_code.dart';
+import 'widgets/automata_drawer.dart' show AutomataMode;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TM Transition label parsing
@@ -253,6 +255,8 @@ class TmSimulator {
   /// - accept if any config is in a normal accept state
   /// - reject otherwise
   bool noMovesTerminal = false;
+  final Map<String, ({bool accepted, List<String> outputTokens})>
+      _blackBoxResultCache = {};
 
   /// Maximum valid value for [step] given the current [steps] list.
   ///
@@ -339,6 +343,10 @@ class TmSimulator {
       for (final c in last.configs) {
         final node = nodes[c.nodeId];
         if (node == null) continue;
+        if (node.isBlackBox) {
+          final blackBox = _runBlackBoxOnTape(node, c.tape);
+          if (!blackBox.accepted) continue;
+        }
         if (node.isHaltReject) continue;
         if (node.isAccept) return TmResult.accept;
       }
@@ -371,6 +379,7 @@ class TmSimulator {
 
   void rebuild(String input, {StartArrowData? startArrow}) {
     tokens = _tokenize(input);
+    _blackBoxResultCache.clear();
     _build(startArrow: startArrow);
     if (step >= steps.length) step = steps.length - 1;
   }
@@ -438,11 +447,26 @@ class TmSimulator {
       if (node == null) continue;
       if (node.isHaltAccept || node.isHaltReject) continue;
 
-      final headSym = config.tape.read(config.headPos);
+      var effectiveConfig = config;
+      if (node.isBlackBox) {
+        final blackBox = _runBlackBoxOnTape(node, config.tape);
+        if (!blackBox.accepted) continue;
+        final outputTape = TmTape.fromTokens(blackBox.outputTokens);
+        final startHead = outputTape.absolutePos(0);
+        effectiveConfig = TmConfig(
+          nodeId: config.nodeId,
+          headPos: startHead,
+          readHeadPos: startHead,
+          tape: outputTape,
+          usedLineId: config.usedLineId,
+        );
+      }
+
+      final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
       final cellSym = headSym.isEmpty ? kBlank : headSym;
 
       for (final line in lines.values) {
-        if (line.nodeAId != config.nodeId) continue;
+        if (line.nodeAId != effectiveConfig.nodeId) continue;
         for (final altRaw in line.label.split('\n')) {
           final t = parseTmLabel(altRaw);
           final readSym = t.read.isEmpty ? kBlank : t.read;
@@ -491,11 +515,28 @@ class TmSimulator {
         continue;
       }
 
-      final headSym = config.tape.read(config.headPos);
+      var effectiveConfig = config;
+      if (node.isBlackBox) {
+        final blackBox = _runBlackBoxOnTape(node, config.tape);
+        if (!blackBox.accepted) {
+          continue;
+        }
+        final outputTape = TmTape.fromTokens(blackBox.outputTokens);
+        final startHead = outputTape.absolutePos(0);
+        effectiveConfig = TmConfig(
+          nodeId: config.nodeId,
+          headPos: startHead,
+          readHeadPos: startHead,
+          tape: outputTape,
+          usedLineId: config.usedLineId,
+        );
+      }
+
+      final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
       final cellSym = headSym.isEmpty ? kBlank : headSym;
 
       for (final line in lines.values) {
-        if (line.nodeAId != config.nodeId) continue;
+        if (line.nodeAId != effectiveConfig.nodeId) continue;
 
         for (final altRaw in line.label.split('\n')) {
           final t = parseTmLabel(altRaw);
@@ -505,11 +546,14 @@ class TmSimulator {
 
           // Apply write.
           final writeSym = t.write.isEmpty ? kBlank : t.write;
-          final newTape = config.tape.write(config.headPos, writeSym);
+          final newTape = effectiveConfig.tape.write(
+            effectiveConfig.headPos,
+            writeSym,
+          );
 
           // Apply head move. Adjust for any left-extension the write may have introduced.
-          final headShift = newTape.headOffset - config.tape.headOffset;
-          int newHeadPos = config.headPos + headShift;
+          final headShift = newTape.headOffset - effectiveConfig.tape.headOffset;
+          int newHeadPos = effectiveConfig.headPos + headShift;
           switch (t.direction) {
             case TmDirection.right:
               newHeadPos += 1;
@@ -522,7 +566,7 @@ class TmSimulator {
           }
 
           // Extend tape if the head moved beyond either end.
-          final readPosPreMove = config.headPos + headShift;
+          final readPosPreMove = effectiveConfig.headPos + headShift;
           final extended = newTape.extendToInclude(newHeadPos);
           final extendedTape = extended.tape;
           final extraShift = extended.shift;
@@ -615,5 +659,70 @@ class TmSimulator {
     if (!trimmed.startsWith('[[') || !trimmed.endsWith(']]')) return token;
     final inner = trimmed.substring(2, trimmed.length - 2).trim().toUpperCase();
     return kTokenReplacements[inner] ?? token;
+  }
+
+  ({bool accepted, List<String> outputTokens}) _runBlackBoxOnTape(
+    NodeData node,
+    TmTape tape,
+  ) {
+    if (!node.isBlackBox) {
+      return (accepted: true, outputTokens: _trimTapeTokens(tape));
+    }
+    final inputTokens = _trimTapeTokens(tape);
+    final cacheKey = '${node.id}:${inputTokens.join('\u0001')}';
+    final cached = _blackBoxResultCache[cacheKey];
+    if (cached != null) return cached;
+
+    final dsl = node.blackBoxDsl.trim();
+    if (dsl.isEmpty) {
+      return _blackBoxResultCache[cacheKey] = (
+        accepted: false,
+        outputTokens: const <String>[],
+      );
+    }
+
+    try {
+      final graph = DslCodec.importFromDsl(dsl);
+      if (graph.automataMode != AutomataMode.tm) {
+        return _blackBoxResultCache[cacheKey] = (
+          accepted: false,
+          outputTokens: const <String>[],
+        );
+      }
+      final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
+      sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
+      while (sim.computeNext()) {}
+      if (sim.result != TmResult.accept) {
+        return _blackBoxResultCache[cacheKey] = (
+          accepted: false,
+          outputTokens: const <String>[],
+        );
+      }
+      final output = _trimTapeTokens(sim.currentTape);
+      return _blackBoxResultCache[cacheKey] = (
+        accepted: true,
+        outputTokens: output,
+      );
+    } catch (_) {
+      return _blackBoxResultCache[cacheKey] = (
+        accepted: false,
+        outputTokens: const <String>[],
+      );
+    }
+  }
+
+  List<String> _trimTapeTokens(TmTape? tape) {
+    if (tape == null) return const <String>[];
+    final normalized = tape.cells.map((c) => c == kBlank ? '' : c).toList();
+    int start = 0;
+    int end = normalized.length;
+    while (start < end && normalized[start].isEmpty) {
+      start++;
+    }
+    while (end > start && normalized[end - 1].isEmpty) {
+      end--;
+    }
+    if (start >= end) return const <String>[];
+    return normalized.sublist(start, end);
   }
 }

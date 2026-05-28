@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models.dart';
+import '../dsl_code.dart';
+import '../pda_simulator.dart';
 import '../saved_export.dart';
+import '../simulator.dart';
 import '../svg_export.dart';
+import '../tm_simulator.dart';
+import '../widgets/automata_drawer.dart' show AutomataMode;
 
 void showExportDialog(
   BuildContext context, {
@@ -169,6 +174,7 @@ void showExportHistoryDialog(
   BuildContext context, {
   required List<SavedExport> savedExports,
   required String? Function(String dsl) onImportDsl,
+  required void Function(SavedExport blackBox) onInsertBlackBox,
   required void Function() onListChanged,
 }) {
   showDialog(
@@ -190,21 +196,142 @@ void showExportHistoryDialog(
                         final save = savedExports[index];
                         return ListTile(
                           title: Text(save.name),
+                          leading: save.isBlackBox
+                              ? const Icon(Icons.inbox_rounded)
+                              : const Icon(Icons.account_tree_outlined),
                           subtitle: Text(
-                            save.dsl.trim().isEmpty ? '(empty export)' : save.dsl.split('\n').first,
+                            save.isBlackBox
+                                ? (save.blackBoxDescription.trim().isEmpty
+                                    ? 'Black box machine'
+                                    : save.blackBoxDescription.trim())
+                                : (save.dsl.trim().isEmpty
+                                    ? '(empty export)'
+                                    : save.dsl.split('\n').first),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           onTap: () {
+                            if (save.isBlackBox) {
+                              showBlackBoxRunnerDialog(context, save: save);
+                              return;
+                            }
                             Navigator.of(ctx).pop();
                             final err = onImportDsl(save.dsl);
                             if (err != null) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(err)),
+                              );
                             }
                           },
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              IconButton(
+                                icon: Icon(
+                                  save.isBlackBox
+                                      ? Icons.add_box_outlined
+                                      : Icons.upload_file_outlined,
+                                ),
+                                tooltip: save.isBlackBox
+                                    ? 'Place on canvas'
+                                    : 'Import to canvas',
+                                onPressed: () {
+                                  if (save.isBlackBox) {
+                                    onInsertBlackBox(save);
+                                  } else {
+                                    final err = onImportDsl(save.dsl);
+                                    if (err != null) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(content: Text(err)),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.inbox),
+                                tooltip: 'Convert to black box',
+                                onPressed: save.isBlackBox
+                                    ? null
+                                    : () {
+                                        final nameController =
+                                            TextEditingController(
+                                          text: '${save.name} (Black Box)',
+                                        );
+                                        final descriptionController =
+                                            TextEditingController();
+                                        showDialog(
+                                          context: context,
+                                          builder: (_) => AlertDialog(
+                                            title: const Text(
+                                              'Create Black Box',
+                                            ),
+                                            content: SizedBox(
+                                              width: 420,
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  TextField(
+                                                    controller: nameController,
+                                                    decoration:
+                                                        const InputDecoration(
+                                                      labelText:
+                                                          'Black Box Name',
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 10),
+                                                  TextField(
+                                                    controller:
+                                                        descriptionController,
+                                                    maxLines: 3,
+                                                    decoration:
+                                                        const InputDecoration(
+                                                      labelText: 'Description',
+                                                      hintText:
+                                                          'Describe what this machine does.',
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(context),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              FilledButton(
+                                                onPressed: () {
+                                                  savedExports.insert(
+                                                    0,
+                                                    SavedExport(
+                                                      name: nameController.text
+                                                              .trim()
+                                                              .isEmpty
+                                                          ? '${save.name} (Black Box)'
+                                                          : nameController.text
+                                                              .trim(),
+                                                      dsl: save.dsl,
+                                                      type: SavedExportType
+                                                          .blackBox,
+                                                      blackBoxDescription:
+                                                          descriptionController
+                                                              .text
+                                                              .trim(),
+                                                    ),
+                                                  );
+                                                  onListChanged();
+                                                  setDialogState(() {});
+                                                  Navigator.pop(context);
+                                                },
+                                                child: const Text('Create'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                              ),
                               IconButton(
                                 icon: const Icon(Icons.edit),
                                 onPressed: () {
@@ -252,4 +379,168 @@ void showExportHistoryDialog(
       );
     },
   );
+}
+
+void showBlackBoxRunnerDialog(
+  BuildContext context, {
+  required SavedExport save,
+}) {
+  final inputController = TextEditingController();
+  String output = '';
+  String? errorText;
+
+  showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) => AlertDialog(
+        title: Text(
+          save.name,
+          style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold),
+        ),
+        content: SizedBox(
+          width: 700,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                save.blackBoxDescription.trim().isEmpty
+                    ? 'Black box machine'
+                    : save.blackBoxDescription.trim(),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: inputController,
+                maxLines: 8,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  hintText: 'One input string per line',
+                  errorText: errorText,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 220),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.black26),
+                  borderRadius: BorderRadius.circular(6),
+                  color: Colors.black.withOpacity(0.03),
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    output.isEmpty
+                        ? 'Output will list only accepted strings and changes.'
+                        : output,
+                    style: GoogleFonts.courierPrime(fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final results = _runBlackBox(save, inputController.text);
+              if (results.error != null) {
+                setDialogState(() {
+                  errorText = results.error;
+                });
+                return;
+              }
+              setDialogState(() {
+                errorText = null;
+                output = results.lines.isEmpty
+                    ? '(no accepted strings)'
+                    : results.lines.join('\n');
+              });
+            },
+            child: const Text('Run'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+({List<String> lines, String? error}) _runBlackBox(
+  SavedExport save,
+  String rawInput,
+) {
+  GraphState state;
+  try {
+    state = DslCodec.importFromDsl(save.dsl);
+  } catch (e) {
+    return (lines: const [], error: 'Black box parse error: $e');
+  }
+
+  final rows = rawInput
+      .split('\n')
+      .map((line) => line.replaceAll('\r', ''))
+      .where((line) => line.isNotEmpty)
+      .toList();
+
+  if (rows.isEmpty) {
+    return (lines: const [], error: null);
+  }
+
+  final output = <String>[];
+  switch (state.automataMode) {
+    case AutomataMode.ndfa:
+      final sim = AutomataSimulator(nodes: state.nodes, lines: state.lines);
+      for (final row in rows) {
+        sim.rebuild(row, startArrow: state.startArrow);
+        if (sim.finalResult() == SimResult.accept) {
+          output.add(row);
+        }
+      }
+      break;
+    case AutomataMode.pda:
+      final sim = PdaSimulator(nodes: state.nodes, lines: state.lines);
+      for (final row in rows) {
+        sim.rebuild(row, startArrow: state.startArrow);
+        if (sim.finalResult() == PdaSimResult.accept) {
+          output.add(row);
+        }
+      }
+      break;
+    case AutomataMode.tm:
+      final sim = TmSimulator(nodes: state.nodes, lines: state.lines);
+      for (final row in rows) {
+        sim.rebuild(row, startArrow: state.startArrow);
+        while (sim.computeNext()) {}
+        if (sim.result != TmResult.accept) continue;
+        final transformed = _tmOutputString(sim);
+        if (transformed == row) {
+          output.add(row);
+        } else {
+          output.add('$row -> $transformed');
+        }
+      }
+      break;
+  }
+
+  return (lines: output, error: null);
+}
+
+String _tmOutputString(TmSimulator sim) {
+  final tape = sim.currentTape;
+  if (tape == null) return '';
+  final cells = tape.cells.map((c) => c == kBlank ? '' : c).toList();
+  int start = 0;
+  int end = cells.length;
+  while (start < end && cells[start].isEmpty) {
+    start++;
+  }
+  while (end > start && cells[end - 1].isEmpty) {
+    end--;
+  }
+  if (start >= end) return '';
+  return cells.sublist(start, end).join();
 }

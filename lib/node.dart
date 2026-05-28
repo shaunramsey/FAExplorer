@@ -170,6 +170,9 @@ class _NodeState extends State<Node> {
     // When locked (e.g. placing the start arrow), do not allow selection/editing.
     final bool textFieldActive = _selected && !widget.lineMode && !widget.interactionLocked;
     final startText = getDisplayId(widget.data.id);
+    final isBlackBox = widget.data.isBlackBox;
+    final nodeWidth = isBlackBox ? 140.0 : 100.0;
+    final nodeHeight = 100.0;
 
     return Positioned(
       top: widget.data.position.dy,
@@ -190,14 +193,15 @@ class _NodeState extends State<Node> {
         },
         onDoubleTap: widget.onDoubleTap,
         child: SizedBox(
-          width: 100,
-          height: 100,
+          width: nodeWidth,
+          height: nodeHeight,
           child: Stack(
             children: [
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle,
+                    shape: isBlackBox ? BoxShape.rectangle : BoxShape.circle,
+                    borderRadius: isBlackBox ? BorderRadius.circular(10) : null,
                     border: Border.all(color: _borderColor, width: 4),
                   ),
                 ),
@@ -206,14 +210,23 @@ class _NodeState extends State<Node> {
               if (widget.data.isAccept && widget.data.canToggleNormalAccept)
                 Center(
                   child: IgnorePointer(
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _borderColor, width: 4),
-                      ),
-                    ),
+                    child: isBlackBox
+                        ? Container(
+                            width: 118,
+                            height: 78,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: _borderColor, width: 3),
+                            ),
+                          )
+                        : Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: _borderColor, width: 4),
+                            ),
+                          ),
                   ),
                 ),
 
@@ -243,13 +256,17 @@ class _NodeState extends State<Node> {
 
               Center(
                 child: SizedBox(
-                  width: 80,
+                  width: isBlackBox ? 118 : 80,
                   child: IgnorePointer(
                     ignoring: !textFieldActive,
                     child: TextField(
                       controller: _controller,
                       focusNode: _focusNode,
-                      style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 30, color: _borderColor),
+                      style: GoogleFonts.courierPrime(
+                        fontWeight: FontWeight.bold,
+                        fontSize: isBlackBox ? 20 : 30,
+                        color: _borderColor,
+                      ),
                       textAlign: TextAlign.center,
                       onEditingComplete: _deselect,
                       onTapOutside: (_) => _deselect(),
@@ -291,7 +308,7 @@ class _NodeState extends State<Node> {
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
                         isDense: true,
-                        hintText: startText,
+                        hintText: isBlackBox ? 'BLACK BOX' : startText,
                         hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
                       ),
                     ),

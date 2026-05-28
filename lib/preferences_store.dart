@@ -68,6 +68,8 @@ class PreferencesStore {
             (e) => {
               'name': e.name,
               'dsl': e.dsl,
+              'type': e.type.name,
+              'blackBoxDescription': e.blackBoxDescription,
             },
           )
           .toList(),
@@ -116,11 +118,20 @@ class PreferencesStore {
             SavedExport(
               name: item['name'] as String? ?? 'Export',
               dsl: item['dsl'] as String? ?? '',
+              type: item['type'] == SavedExportType.blackBox.name
+                  ? SavedExportType.blackBox
+                  : SavedExportType.graph,
+              blackBoxDescription: item['blackBoxDescription'] as String? ?? '',
             )
           else if (item is Map)
             SavedExport(
               name: item['name']?.toString() ?? 'Export',
               dsl: item['dsl']?.toString() ?? '',
+              type: item['type']?.toString() == SavedExportType.blackBox.name
+                  ? SavedExportType.blackBox
+                  : SavedExportType.graph,
+              blackBoxDescription:
+                  item['blackBoxDescription']?.toString() ?? '',
             ),
       ];
     } catch (_) {
