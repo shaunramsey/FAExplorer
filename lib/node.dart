@@ -6,6 +6,7 @@ import 'token_replacements.dart'; // ← single source of truth
 class Node extends StatefulWidget {
   final NodeData data;
   final bool lineMode;
+  final bool interactionLocked;
   final ValueChanged<String> onLabelChanged;
 
   final bool Function(String label, String nodeId) isLabelTaken;
@@ -23,6 +24,7 @@ class Node extends StatefulWidget {
     super.key,
     required this.data,
     required this.lineMode,
+    this.interactionLocked = false,
     required this.onLabelChanged,
     required this.isLabelTaken,
     this.onDuplicateStateChanged,
@@ -165,7 +167,8 @@ class _NodeState extends State<Node> {
 
   @override
   Widget build(BuildContext context) {
-    final bool textFieldActive = _selected && !widget.lineMode;
+    // When locked (e.g. placing the start arrow), do not allow selection/editing.
+    final bool textFieldActive = _selected && !widget.lineMode && !widget.interactionLocked;
     final startText = getDisplayId(widget.data.id);
 
     return Positioned(
@@ -174,6 +177,7 @@ class _NodeState extends State<Node> {
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
+          if (widget.interactionLocked) return;
           if (widget.deleteMode) {
             widget.onDelete?.call();
             return;

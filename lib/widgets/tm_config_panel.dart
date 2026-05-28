@@ -86,24 +86,10 @@ class TmConfigPanel extends StatelessWidget {
                   ),
                   const Divider(height: 16),
 
-                  // ── Loop warning ─────────────────────────────────────
-                  if (simulator.loopDetected)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'Stopped: step limit reached (possible infinite loop).',
-                        style: GoogleFonts.courierPrime(
-                          fontSize: 12,
-                          color: Colors.deepOrange.shade800,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-
                   // ── Configs list ─────────────────────────────────────
                   if (configs.isEmpty)
                     Text(
-                      simulator.loopDetected ? 'Simulation aborted' : 'No active configuration',
+                      'No active configuration',
                       style: GoogleFonts.courierPrime(fontSize: 13, color: Colors.red),
                     )
                   else

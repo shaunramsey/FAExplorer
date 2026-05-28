@@ -88,7 +88,8 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   void _syncTmStep() {
     final tm = widget.tmSimulator as TmSimulator?;
     if (tm != null) {
-      tm.step = widget.simulator.step;
+      // TM steps are generated lazily. Keep the TM cursor aligned with the panel cursor.
+      tm.step = widget.simulator.step.clamp(-1, tm.maxStep);
     }
   }
 
@@ -96,7 +97,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     if (_playing) return;
     final tm = widget.tmSimulator as TmSimulator?;
     final maxStep = tm != null
-        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
+        ? tm.maxStep
         : widget.simulator.tokens.length;
     if (widget.simulator.step >= maxStep) {
       setState(() => widget.simulator.step = -1);
@@ -122,16 +123,31 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     if (!mounted) return;
     final sim = widget.simulator;
     final tm = widget.tmSimulator as TmSimulator?;
-    final maxStep = tm != null
-        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
-        : sim.tokens.length;
+    if (tm != null) {
+      // TM mode: each tick performs exactly one computation step (if possible).
+      final appended = tm.computeNext();
+      if (appended) {
+        setState(() => sim.step = tm.maxStep);
+        _syncTmStep();
+        widget.onStepChanged();
+        if (_playing) {
+          _scheduleNextStep();
+        }
+      } else {
+        if (_playing) {
+          setState(_stopPlayback);
+        }
+      }
+      return;
+    }
+
+    final maxStep = sim.tokens.length;
     if (sim.step >= maxStep) {
       setState(_stopPlayback);
       widget.onStepChanged();
       return;
     }
     setState(() => sim.step++);
-    _syncTmStep();
     widget.onStepChanged();
     _scrollToCurrentChip();
     if (sim.step >= maxStep) {
@@ -162,12 +178,33 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   void _stepForward() {
     _stopPlayback();
     final tm = widget.tmSimulator as TmSimulator?;
-    final maxStep = tm != null
-        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
-        : widget.simulator.tokens.length;
+    if (tm != null) {
+      // If the user is scrubbing older history, just move the cursor forward.
+      if (widget.simulator.step < tm.maxStep) {
+        setState(() => widget.simulator.step++);
+        _syncTmStep();
+        widget.onStepChanged();
+        return;
+      }
+
+      // Otherwise compute one new step (if possible) and stay at the end.
+      final appended = tm.computeNext();
+      if (appended) {
+        setState(() => widget.simulator.step = tm.maxStep);
+        _syncTmStep();
+        widget.onStepChanged();
+      } else {
+        // Even if no new snapshot was appended, the TM may have transitioned to a
+        // terminal "no moves" state, so refresh UI.
+        _syncTmStep();
+        widget.onStepChanged();
+      }
+      return;
+    }
+
+    final maxStep = widget.simulator.tokens.length;
     if (widget.simulator.step < maxStep) {
       setState(() => widget.simulator.step++);
-      _syncTmStep();
       widget.onStepChanged();
       _scrollToCurrentChip();
     }
@@ -184,11 +221,25 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   void _skipToEnd() {
     _stopPlayback();
     final tm = widget.tmSimulator as TmSimulator?;
-    final maxStep = tm != null
-        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
-        : widget.simulator.tokens.length;
+    if (tm != null) {
+      // TM mode: fast-forward computations for up to 5 seconds.
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      bool progressed = false;
+      while (DateTime.now().isBefore(deadline)) {
+        final appended = tm.computeNext();
+        if (!appended) break;
+        progressed = true;
+      }
+      if (progressed) {
+        setState(() => widget.simulator.step = tm.maxStep);
+        _syncTmStep();
+        widget.onStepChanged();
+      }
+      return;
+    }
+
+    final maxStep = widget.simulator.tokens.length;
     setState(() => widget.simulator.step = maxStep);
-    _syncTmStep();
     widget.onStepChanged();
     _scrollToChip(widget.simulator.tokens.length - 1);
   }
@@ -271,7 +322,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
     // In TM mode the number of simulation steps is independent of input length.
     final maxStep = isTmMode
-        ? (tm.steps.isEmpty ? 0 : tm.steps.length - 1)
+        ? tm.maxStep
         : tokens.length;
 
     // Keep chip key list in sync with token count.
@@ -281,9 +332,49 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
         ..addAll(List.generate(tokens.length, (_) => GlobalKey()));
     }
 
-    final atStart    = step <= -1;
-    final atEnd      = step >= maxStep;
-    final hasTokens  = isTmMode ? tm.steps.isNotEmpty : tokens.isNotEmpty;
+    final atStart = step <= -1;
+    final hasTokens = isTmMode ? tm.steps.isNotEmpty : tokens.isNotEmpty;
+
+    // In lazy TM stepping, we're almost always sitting on the last generated snapshot,
+    // so "at end" should mean "TM cannot advance anymore" (halt/no moves).
+    bool atEnd;
+    if (isTmMode) {
+      final snap = tm.currentSnapshot;
+      if (snap == null) {
+        atEnd = true;
+      } else if (snap.configs.isEmpty) {
+        // No branches left ⇒ terminal reject.
+        atEnd = true;
+      } else {
+        // Terminal if any halt-accept exists, or if every branch is in a halt state.
+        bool anyHaltAccept = false;
+        bool anyNonHalt = false;
+        bool allHalted = true;
+        for (final c in snap.configs) {
+          final node = widget.nodes[c.nodeId];
+          if (node == null) continue;
+          if (node.isHaltAccept) anyHaltAccept = true;
+          final isHalt = node.isHaltAccept || node.isHaltReject;
+          if (!isHalt) {
+            allHalted = false;
+            anyNonHalt = true;
+          }
+        }
+        if (anyHaltAccept || allHalted) {
+          atEnd = true;
+        } else {
+          // Important: even if there are NO enabled moves, we still allow one more
+          // "Step forward" to perform the terminal kill (append empty snapshot).
+          // So we only disable controls when truly terminal.
+          atEnd = false;
+          // Silence unused local for clarity; anyNonHalt is only used for readability.
+          // ignore: unused_local_variable
+          final _ = anyNonHalt;
+        }
+      }
+    } else {
+      atEnd = step >= maxStep;
+    }
     final result     = _currentResult;
     // In TM mode the machine may halt before the user reaches atEnd, so
     // show the result banner as soon as a definitive result is available.
@@ -474,7 +565,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                         ),
                         _TransportBtn(
                           icon: Icons.skip_next,
-                          tooltip: 'Skip to end',
+                          tooltip: isTmMode ? 'Fast forward (5s)' : 'Skip to end',
                           onPressed: (hasTokens && !atEnd) ? _skipToEnd : null,
                         ),
                       ],
