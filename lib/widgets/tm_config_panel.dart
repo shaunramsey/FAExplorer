@@ -117,7 +117,10 @@ class TmConfigPanel extends StatelessWidget {
                                 tape: configs[i].tape,
                                 isAccepted: () {
                                   final node = nodes[configs[i].nodeId];
-                                  return node != null && (node.isHaltAccept || node.isAccept);
+                                  // A configuration is only "accepting" when it is explicitly
+                                  // in a halt-accept state (not merely a normal accept state,
+                                  // since the machine may still have computations to perform).
+                                  return node != null && node.isHaltAccept;
                                 }(),
                                 isRejected: () {
                                   final node = nodes[configs[i].nodeId];

@@ -226,9 +226,17 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
       final deadline = DateTime.now().add(const Duration(seconds: 5));
       bool progressed = false;
       while (DateTime.now().isBefore(deadline)) {
+        final beforeLen = tm.steps.length;
         final appended = tm.computeNext();
         if (!appended) break;
         progressed = true;
+
+        // If computing this step pushed us past the time budget, roll it back
+        // and stop (leave the cursor on the last fully-computed step).
+        if (DateTime.now().isAfter(deadline) && tm.steps.length > beforeLen) {
+          tm.undoLastStep();
+          break;
+        }
       }
       if (progressed) {
         setState(() => widget.simulator.step = tm.maxStep);

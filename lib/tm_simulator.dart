@@ -563,6 +563,19 @@ class TmSimulator {
     return true;
   }
 
+  /// Undo the most recently appended step snapshot, if possible.
+  ///
+  /// This is used by time-bounded fast-forward: if we exceed the time budget
+  /// after computing a step, we can roll back that last step and stop.
+  bool undoLastStep() {
+    if (steps.length <= 1) return false; // keep initial snapshot
+    steps.removeLast();
+    if (step > maxStep) step = maxStep;
+    // If we removed the terminal no-moves state, clear the flag.
+    noMovesTerminal = false;
+    return true;
+  }
+
   // ── Tokenizer ─────────────────────────────────────────────────────────
 
   List<String> _tokenize(String input) {
