@@ -9,3 +9,5 @@
 * [About](About.md) - For author/about information see [the about](About.md)
 
 * [License](assets/License.md) - Licensing information
+
+* [Screenshot of a sample PDA built in Ramsey's Automata Designer](/build/web/preview.png)
