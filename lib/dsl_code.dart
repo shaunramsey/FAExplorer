@@ -38,11 +38,9 @@ class DslCodec {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  static String _escapeDsl(String text) =>
-      text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
+  static String _escapeDsl(String text) => text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
 
-  static String _unescapeDsl(String text) =>
-      text.replaceAll(r'\n', '\n').replaceAll(r'\\', r'\');
+  static String _unescapeDsl(String text) => text.replaceAll(r'\n', '\n').replaceAll(r'\\', r'\');
 
   // Node ref: prefer label, fall back to id, use id(label) for duplicates.
   static String _nodeRef(NodeData node, Map<String, NodeData> nodes) {
@@ -104,12 +102,23 @@ class DslCodec {
       final num = int.tryParse(n.id.substring(1)) ?? 0;
       final rawLabel = n.label.trim().isEmpty ? _numberToAlphaLabel(num) : n.label;
       String label = _escapeDsl(rawLabel);
-      if (n.isHaltAccept) {label = '<<$label>>';}
-      else if (n.isHaltReject) {label = '>>$label<<';}
+      if (n.isHaltAccept) {
+        label = '<<$label>>';
+      } else if (n.isHaltReject) {
+        label = '>>$label<<';
+      }
       out.add('${n.id} = $label');
       if (n.isBlackBox) {
         out.add('${n.id} blackbox = ${_escapeDsl(n.blackBoxDescription)}');
-        out.add('${n.id} blackbox dsl = ${base64Encode(utf8.encode(n.blackBoxDsl))}');
+        // Store DSL as human-readable escaped text (not base64) so users can
+        // read and edit it directly.  Newlines become the literal \n sequence.
+        // Export blackbox DSL in multi-line block format for easy editing
+        final dslLines = n.blackBoxDsl.trim().split('\n');
+        out.add('${n.id} blackbox dsl {');
+        for (final dslLine in dslLines) {
+          out.add('  ${dslLine}');
+        }
+        out.add('}');
       }
     }
     if (g.nodes.isNotEmpty) out.add('');
@@ -180,7 +189,11 @@ class DslCodec {
 
   /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   static GraphState importFromDsl(String src) {
-    final newNodes = <String, NodeData>{};
+    // Preprocess: normalize multi-line blackbox dsl blocks into single lines
+    final List<String> workspaces = _preprocessBlackboxBlocks(src);
+    src = workspaces[0];
+
+    final Map<String, NodeData> newNodes = <String, NodeData>{};
     final labelToId = <String, String>{};
     final newLines = <String, LineData>{};
     final lineLabelToId = <String, String>{};
@@ -209,17 +222,18 @@ class DslCodec {
       bool haltAccept = false, haltReject = false;
       bool hasHaltMarker = false;
       if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
-        haltAccept = true; hasHaltMarker = true; lbl = lbl.substring(2, lbl.length - 2);
+        haltAccept = true;
+        hasHaltMarker = true;
+        lbl = lbl.substring(2, lbl.length - 2);
       } else if (lbl.startsWith('>>') && lbl.endsWith('<<')) {
-        haltReject = true; hasHaltMarker = true; lbl = lbl.substring(2, lbl.length - 2);
+        haltReject = true;
+        hasHaltMarker = true;
+        lbl = lbl.substring(2, lbl.length - 2);
       }
       final existing = idForLabel(lbl);
       if (existing != null) {
         if (hasHaltMarker) {
-          newNodes[existing]!.applyHaltFromLabel(
-            haltAccept: haltAccept,
-            haltReject: haltReject,
-          );
+          newNodes[existing]!.applyHaltFromLabel(haltAccept: haltAccept, haltReject: haltReject);
         }
         return existing;
       }
@@ -244,15 +258,13 @@ class DslCodec {
       if (line.isEmpty) continue;
 
       // ── pda mode [on|off] / tm mode [on|off] ─────────────────────────────
-      final pdaModeMatch =
-          RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
+      final pdaModeMatch = RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
       if (pdaModeMatch != null) {
         final flag = pdaModeMatch.group(1)?.toLowerCase();
         if (flag != 'off') automataMode = AutomataMode.pda;
         continue;
       }
-      final tmModeMatch =
-          RegExp(r'^tm\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
+      final tmModeMatch = RegExp(r'^tm\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
       if (tmModeMatch != null) {
         final flag = tmModeMatch.group(1)?.toLowerCase();
         if (flag != 'off') automataMode = AutomataMode.tm;
@@ -274,13 +286,21 @@ class DslCodec {
           continue;
         }
 
-        final angleMatch = RegExp(r'^(.+?)\s+angle\s*=\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$', caseSensitive: false).firstMatch(rest);
+        final angleMatch = RegExp(
+          r'^(.+?)\s+angle\s*=\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$',
+          caseSensitive: false,
+        ).firstMatch(rest);
         if (angleMatch != null) {
           final nid = ensureNode(_unescapeDsl(angleMatch.group(1)!.trim()));
           final dx = double.parse(angleMatch.group(2)!);
           final dy = double.parse(angleMatch.group(3)!);
           newStartArrow ??= StartArrowData(nodeId: nid);
-          newStartArrow = StartArrowData(nodeId: nid, offset: Offset(dx, dy), length: newStartArrow.length, label: newStartArrow.label);
+          newStartArrow = StartArrowData(
+            nodeId: nid,
+            offset: Offset(dx, dy),
+            length: newStartArrow.length,
+            label: newStartArrow.label,
+          );
           continue;
         }
 
@@ -292,6 +312,13 @@ class DslCodec {
           newStartArrow = StartArrowData(nodeId: ensureNode(_unescapeDsl(rest)));
         }
         continue;
+      }
+
+      ///put in the data for the black boxes
+      for (int i = 1; i < workspaces.length; i++) {
+        final String src = workspaces[i];
+        debugPrint("the source is ****${i}**** ${src}");
+        //^ TODO: src will be the internals of a single black box entity
       }
 
       // ── <line> curve = N ──────────────────────────────────────────────────
@@ -384,29 +411,20 @@ class DslCodec {
           newNodes[id] = node;
         } else {
           newNodes[id]!.label = lbl;
-          newNodes[id]!.applyHaltFromLabel(
-            haltAccept: haltAccept,
-            haltReject: haltReject,
-          );
+          newNodes[id]!.applyHaltFromLabel(haltAccept: haltAccept, haltReject: haltReject);
         }
         if (lbl.isNotEmpty) labelToId[lbl] = id;
         continue;
       }
 
       // ── nN blackbox = description ────────────────────────────────────────
-      final blackBoxDefMatch =
-          RegExp(r'^(n\d+)\s+blackbox\s*=\s*(.*)$', caseSensitive: false)
-              .firstMatch(line);
+      final blackBoxDefMatch = RegExp(r'^(n\d+)\s+blackbox\s*=\s*(.*)$', caseSensitive: false).firstMatch(line);
       if (blackBoxDefMatch != null) {
         final id = blackBoxDefMatch.group(1)!;
         final desc = _unescapeDsl(blackBoxDefMatch.group(2)!.trim());
         final num = int.tryParse(id.substring(1)) ?? -1;
         if (num >= nodeCounter) nodeCounter = num + 1;
-        final node = newNodes[id] ??
-            NodeData(
-              id: id,
-              position: _defaultPosition(newNodes.length),
-            );
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
         node.blackBoxDescription = desc;
         if (node.label.trim().isEmpty) {
@@ -417,26 +435,19 @@ class DslCodec {
       }
 
       // ── nN blackbox dsl = base64 ────────────────────────────────────────
-      final blackBoxDslMatch = RegExp(
-        r'^(n\d+)\s+blackbox\s+dsl\s*=\s*(.*)$',
-        caseSensitive: false,
-      ).firstMatch(line);
+      final blackBoxDslMatch = RegExp(r'^(n\d+)\s+blackbox\s+dsl\s*=\s*(.*)$', caseSensitive: false).firstMatch(line);
       if (blackBoxDslMatch != null) {
         final id = blackBoxDslMatch.group(1)!;
         final encoded = blackBoxDslMatch.group(2)!.trim();
         final num = int.tryParse(id.substring(1)) ?? -1;
         if (num >= nodeCounter) nodeCounter = num + 1;
-        final node = newNodes[id] ??
-            NodeData(
-              id: id,
-              position: _defaultPosition(newNodes.length),
-            );
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
-        try {
-          node.blackBoxDsl = utf8.decode(base64Decode(encoded));
-        } catch (_) {
-          node.blackBoxDsl = '';
-        }
+        // New format: plain escaped text.  Legacy format: base64.
+        // We detect base64 by checking for characters that can't appear in
+        // an escaped DSL string (spaces, equals signs used in DSL keywords,
+        // etc.).  A pure base64 string contains only [A-Za-z0-9+/=].
+        node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
         }
@@ -461,10 +472,7 @@ class DslCodec {
   // ── SVG IMPORT ─────────────────────────────────────────────────────────────
 
   static GraphState importFromSvg(String svg) {
-    final scriptMatch = RegExp(
-      r'<script[^>]*id="automata-data"[^>]*>(.*?)</script>',
-      dotAll: true,
-    ).firstMatch(svg);
+    final scriptMatch = RegExp(r'<script[^>]*id="automata-data"[^>]*>(.*?)</script>', dotAll: true).firstMatch(svg);
 
     if (scriptMatch == null) throw Exception('No embedded automata data found.');
 
@@ -496,14 +504,15 @@ class DslCodec {
       final nodeAId = l['a'] as String;
       if (newNodes[nodeAId]?.canHaveOutgoingTransitions != true) continue;
 
-      final line = LineData(
-        id: l['id'] as String,
-        nodeAId: nodeAId,
-        nodeBId: l['b'] as String,
-        label: (l['label'] as String?) ?? '',
-      )
-        ..perpendicularPart = (l['curve'] as num?)?.toDouble() ?? 0
-        ..selfLoopAngle = (l['loopAngle'] as num?)?.toDouble() ?? 0;
+      final line =
+          LineData(
+              id: l['id'] as String,
+              nodeAId: nodeAId,
+              nodeBId: l['b'] as String,
+              label: (l['label'] as String?) ?? '',
+            )
+            ..perpendicularPart = (l['curve'] as num?)?.toDouble() ?? 0
+            ..selfLoopAngle = (l['loopAngle'] as num?)?.toDouble() ?? 0;
       newLines[line.id] = line;
       newNodes[line.nodeAId]?.connectedLineIds.add(line.id);
       newNodes[line.nodeBId]?.connectedLineIds.add(line.id);
@@ -525,8 +534,12 @@ class DslCodec {
     }
 
     int highestNode = 0, highestLine = 0;
-    for (final id in newNodes.keys) {highestNode = max(highestNode, (int.tryParse(id.substring(1)) ?? 0) + 1);}
-    for (final id in newLines.keys) {highestLine = max(highestLine, (int.tryParse(id.substring(1)) ?? 0) + 1);}
+    for (final id in newNodes.keys) {
+      highestNode = max(highestNode, (int.tryParse(id.substring(1)) ?? 0) + 1);
+    }
+    for (final id in newLines.keys) {
+      highestLine = max(highestLine, (int.tryParse(id.substring(1)) ?? 0) + 1);
+    }
 
     return GraphState(
       nodes: newNodes,
@@ -539,12 +552,75 @@ class DslCodec {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+  /// Preprocesses DSL to convert multi-line blackbox blocks into single-line
+  /// format for easier parsing. Converts:
+  ///   n0 blackbox dsl {
+  ///     n0 = A
+  ///     n1 = B
+  ///   }
+  /// Into: n0 blackbox dsl = n0 = A\nn1 = B
+  static List<String> _preprocessBlackboxBlocks(String src) {
+    List<String> returns = [""];
+    final List<String>lines = src.split('\n');
+    //final List<String> lines = [src];
+    final result = <String>[]; // list of lines that are the "main workspace"
+    int i = 0;
+    while (i < lines.length) {
+      final line = lines[i].trim();
+      if (line.isEmpty) {
+        i++;
+        continue;
+      }
+      final blockMatch = RegExp(r'^(n\d+)\s+blackbox\s+dsl\s*{\s*$', caseSensitive: false).firstMatch(line);
+      if (blockMatch != null) {
+        final nodeId = blockMatch.group(1)!;
+        final blockLines = <String>[];
+        i++;
+        // Collect lines until closing brace
+        while (i < lines.length) {
+          final String blockLine = lines[i].trim();
+          if (blockLine.isEmpty) {
+            i++;
+            continue;
+          }
+          if (blockLine == '}' || blockLine == '} #') break;
+          if (blockLine.isNotEmpty && !blockLine.startsWith('#')) {
+            blockLines.add(blockLine);
+          }
+          i++;
+        }
+        // Convert back to escaped format for old parser
+        final String dslContent = blockLines.join('\n');
+        returns.add('$nodeId blackbox dsl = ${_escapeDsl(dslContent)}');
+      } else {
+        // Keep comments and empty lines as-is
+        result.add(lines[i]);
+      }
+      i++;
+    }
+    returns[0] = result.join('\n');
+    return returns;
+  }
 
-  static String? _resolveLineRef(
-    String lbl,
-    Map<String, LineData> lines,
-    Map<String, String> labelToId,
-  ) {
+  /// Decodes a blackbox DSL value that may be either the new plain-escaped
+  /// text format or the old base64 format (for backward compatibility).
+  ///
+  /// A pure base64 string only contains `[A-Za-z0-9+/=]`.  A DSL string
+  /// almost always contains spaces, newline escapes (`\n`), `=` signs inside
+  /// node definitions, etc.  We use that distinction as a heuristic.
+  static String _decodeMaybeLegacyBase64(String encoded) {
+    final isLikelyBase64 = encoded.isNotEmpty && RegExp(r'^[A-Za-z0-9+/=]+$').hasMatch(encoded);
+    if (isLikelyBase64) {
+      try {
+        return utf8.decode(base64Decode(encoded));
+      } catch (_) {
+        // Not valid base64 after all — fall through to plain-text decode.
+      }
+    }
+    return _unescapeDsl(encoded);
+  }
+
+  static String? _resolveLineRef(String lbl, Map<String, LineData> lines, Map<String, String> labelToId) {
     final explicit = RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
     if (explicit != null) return explicit.group(1);
     if (lines.containsKey(lbl)) return lbl;

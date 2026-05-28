@@ -249,89 +249,65 @@ void showExportHistoryDialog(
                                   }
                                 },
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.inbox),
-                                tooltip: 'Convert to black box',
-                                onPressed: save.isBlackBox
-                                    ? null
-                                    : () {
-                                        final nameController =
-                                            TextEditingController(
-                                          text: '${save.name} (Black Box)',
-                                        );
-                                        final descriptionController =
-                                            TextEditingController();
-                                        showDialog(
-                                          context: context,
-                                          builder: (_) => AlertDialog(
-                                            title: const Text(
-                                              'Create Black Box',
+                              // For blackbox exports, show an "Import as graph" button.
+                              // For graph exports, show an "Import as black box" button.
+                              if (save.isBlackBox)
+                                IconButton(
+                                  icon: const Icon(Icons.account_tree_outlined),
+                                  tooltip: 'Import as graph to canvas',
+                                  onPressed: () {
+                                    final err = onImportDsl(save.dsl);
+                                    if (err != null) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(err)),
+                                      );
+                                    }
+                                  },
+                                )
+                              else
+                                IconButton(
+                                  icon: const Icon(Icons.add_box_outlined),
+                                  tooltip: 'Import as black box to canvas',
+                                  onPressed: () {
+                                    final descController = TextEditingController(text: save.name);
+                                    showDialog(
+                                      context: context,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text('Black Box Details'),
+                                        content: SizedBox(
+                                          width: 420,
+                                          child: TextField(
+                                            controller: descController,
+                                            maxLines: 3,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Description',
+                                              hintText: 'Describe what this machine does.',
                                             ),
-                                            content: SizedBox(
-                                              width: 420,
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  TextField(
-                                                    controller: nameController,
-                                                    decoration:
-                                                        const InputDecoration(
-                                                      labelText:
-                                                          'Black Box Name',
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 10),
-                                                  TextField(
-                                                    controller:
-                                                        descriptionController,
-                                                    maxLines: 3,
-                                                    decoration:
-                                                        const InputDecoration(
-                                                      labelText: 'Description',
-                                                      hintText:
-                                                          'Describe what this machine does.',
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(context),
-                                                child: const Text('Cancel'),
-                                              ),
-                                              FilledButton(
-                                                onPressed: () {
-                                                  savedExports.insert(
-                                                    0,
-                                                    SavedExport(
-                                                      name: nameController.text
-                                                              .trim()
-                                                              .isEmpty
-                                                          ? '${save.name} (Black Box)'
-                                                          : nameController.text
-                                                              .trim(),
-                                                      dsl: save.dsl,
-                                                      type: SavedExportType
-                                                          .blackBox,
-                                                      blackBoxDescription:
-                                                          descriptionController
-                                                              .text
-                                                              .trim(),
-                                                    ),
-                                                  );
-                                                  onListChanged();
-                                                  setDialogState(() {});
-                                                  Navigator.pop(context);
-                                                },
-                                                child: const Text('Create'),
-                                              ),
-                                            ],
                                           ),
-                                        );
-                                      },
-                              ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: () {
+                                              final newExport = SavedExport(
+                                                name: save.name,
+                                                dsl: save.dsl,
+                                                type: SavedExportType.blackBox,
+                                                blackBoxDescription: descController.text.trim(),
+                                              );
+                                              onInsertBlackBox(newExport);
+                                              Navigator.pop(context);
+                                            },
+                                            child: const Text('Import'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
                               IconButton(
                                 icon: const Icon(Icons.edit),
                                 onPressed: () {

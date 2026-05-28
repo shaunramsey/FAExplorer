@@ -257,7 +257,7 @@ class TmSimulator {
   /// - accept if any config is in a normal accept state
   /// - reject otherwise
   bool noMovesTerminal = false;
-  final Map<String, ({bool accepted, List<String> outputTokens})>
+  final Map<String, ({bool accepted, List<String> outputTokens, int outputHeadPos})>
       _blackBoxResultCache = {};
 
   /// Maximum valid value for [step] given the current [steps] list.
@@ -454,11 +454,11 @@ class TmSimulator {
         final blackBox = _runBlackBoxOnTape(node, config.tape);
         if (!blackBox.accepted) continue;
         final outputTape = TmTape.fromTokens(blackBox.outputTokens);
-        final startHead = outputTape.absolutePos(0);
+        final headPos = outputTape.absolutePos(blackBox.outputHeadPos);
         effectiveConfig = TmConfig(
           nodeId: config.nodeId,
-          headPos: startHead,
-          readHeadPos: startHead,
+          headPos: headPos,
+          readHeadPos: headPos,
           tape: outputTape,
           usedLineId: config.usedLineId,
         );
@@ -524,11 +524,11 @@ class TmSimulator {
           continue;
         }
         final outputTape = TmTape.fromTokens(blackBox.outputTokens);
-        final startHead = outputTape.absolutePos(0);
+        final headPos = outputTape.absolutePos(blackBox.outputHeadPos);
         effectiveConfig = TmConfig(
           nodeId: config.nodeId,
-          headPos: startHead,
-          readHeadPos: startHead,
+          headPos: headPos,
+          readHeadPos: headPos,
           tape: outputTape,
           usedLineId: config.usedLineId,
         );
@@ -663,12 +663,12 @@ class TmSimulator {
     return kTokenReplacements[inner] ?? token;
   }
 
-  ({bool accepted, List<String> outputTokens}) _runBlackBoxOnTape(
+  ({bool accepted, List<String> outputTokens, int outputHeadPos}) _runBlackBoxOnTape(
     NodeData node,
     TmTape tape,
   ) {
     if (!node.isBlackBox) {
-      return (accepted: true, outputTokens: _trimTapeTokens(tape));
+      return (accepted: true, outputTokens: _trimTapeTokens(tape), outputHeadPos: 0);
     }
     final inputTokens = _trimTapeTokens(tape);
     final cacheKey = '${node.id}:${inputTokens.join('\u0001')}';
@@ -680,6 +680,7 @@ class TmSimulator {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
+        outputHeadPos: 0,
       );
     }
 
@@ -692,7 +693,8 @@ class TmSimulator {
           final accepted = sim.finalResult() == SimResult.accept;
           return _blackBoxResultCache[cacheKey] = (
             accepted: accepted,
-            outputTokens: inputTokens,
+            outputTokens: accepted ? inputTokens : const <String>[],
+            outputHeadPos: 0,
           );
         case AutomataMode.pda:
           final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
@@ -700,7 +702,8 @@ class TmSimulator {
           final accepted = sim.finalResult() == PdaSimResult.accept;
           return _blackBoxResultCache[cacheKey] = (
             accepted: accepted,
-            outputTokens: inputTokens,
+            outputTokens: accepted ? inputTokens : const <String>[],
+            outputHeadPos: 0,
           );
         case AutomataMode.tm:
           final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
@@ -710,18 +713,35 @@ class TmSimulator {
             return _blackBoxResultCache[cacheKey] = (
               accepted: false,
               outputTokens: const <String>[],
+              outputHeadPos: 0,
             );
           }
-          final output = _trimTapeTokens(sim.currentTape);
+          // Do NOT use sim.currentTape — it goes through the step cursor
+          // (sim.step == -1) and returns the *initial* tape.  Pull the
+          // halt-accept config directly from the final snapshot instead.
+          TmConfig? haltConfig;
+          if (sim.steps.isNotEmpty) {
+            for (final c in sim.steps.last.configs) {
+              if (sim.nodes[c.nodeId]?.isHaltAccept == true) {
+                haltConfig = c;
+                break;
+              }
+            }
+            haltConfig ??= sim.steps.last.configs.firstOrNull;
+          }
+          final outputHeadPos = _computeOutputHeadPos(haltConfig);
+          final output = _trimTapeTokens(haltConfig?.tape);
           return _blackBoxResultCache[cacheKey] = (
             accepted: true,
             outputTokens: output,
+            outputHeadPos: outputHeadPos,
           );
       }
     } catch (_) {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
+        outputHeadPos: 0,
       );
     }
   }
@@ -739,5 +759,31 @@ class TmSimulator {
     }
     if (start >= end) return const <String>[];
     return normalized.sublist(start, end);
+  }
+
+  /// Compute the head position in the trimmed output tokens based on the
+  /// halt config's tape and head position.
+  int _computeOutputHeadPos(TmConfig? haltConfig) {
+    if (haltConfig == null) return 0;
+    final tape = haltConfig.tape;
+    final rawHeadPos = haltConfig.headPos; // absolute index
+
+    // Build a map from absolute tape index → trimmed output index.
+    final cells = tape.cells;
+    int start = 0;
+    int end = cells.length;
+    while (start < end && (cells[start].isEmpty || cells[start] == kBlank)) {
+      start++;
+    }
+    while (end > start &&
+        (cells[end - 1].isEmpty || cells[end - 1] == kBlank)) {
+      end--;
+    }
+
+    if (start >= end) return 0; // empty tape
+
+    // Translate the absolute head position to an index in the trimmed output.
+    // Clamp so it always points at a valid position.
+    return (rawHeadPos - start).clamp(0, (end - start) - 1);
   }
 }

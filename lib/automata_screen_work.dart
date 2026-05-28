@@ -441,6 +441,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       context,
       savedExports: _savedExports,
       onImportDsl: _importFromDsl,
+      onInsertBlackBox: (savedExport) => _importFromDsl(savedExport.dsl),
       onListChanged: () {
         setState(() {});
         _schedulePersist();
