@@ -109,7 +109,15 @@ class DslCodec {
       out.add('${n.id} = $label');
       if (n.isBlackBox) {
         out.add('${n.id} blackbox = ${_escapeDsl(n.blackBoxDescription)}');
-        out.add('${n.id} blackbox dsl = ${base64Encode(utf8.encode(n.blackBoxDsl))}');
+        // Store DSL as human-readable escaped text (not base64) so users can
+        // read and edit it directly.  Newlines become the literal \n sequence.
+        // Export blackbox DSL in multi-line block format for easy editing
+        final dslLines = n.blackBoxDsl.trim().split('\n');
+        out.add('${n.id} blackbox dsl {');
+        for (final dslLine in dslLines) {
+          out.add('  ${dslLine}');
+        }
+        out.add('}');
       }
     }
     if (g.nodes.isNotEmpty) out.add('');
@@ -180,6 +188,9 @@ class DslCodec {
 
   /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   static GraphState importFromDsl(String src) {
+      // Preprocess: normalize multi-line blackbox dsl blocks into single lines
+      src = _preprocessBlackboxBlocks(src);
+
     final newNodes = <String, NodeData>{};
     final labelToId = <String, String>{};
     final newLines = <String, LineData>{};
@@ -432,11 +443,11 @@ class DslCodec {
               position: _defaultPosition(newNodes.length),
             );
         node.isBlackBox = true;
-        try {
-          node.blackBoxDsl = utf8.decode(base64Decode(encoded));
-        } catch (_) {
-          node.blackBoxDsl = '';
-        }
+        // New format: plain escaped text.  Legacy format: base64.
+        // We detect base64 by checking for characters that can't appear in
+        // an escaped DSL string (spaces, equals signs used in DSL keywords,
+        // etc.).  A pure base64 string contains only [A-Za-z0-9+/=].
+        node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
         }
@@ -539,6 +550,64 @@ class DslCodec {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+  /// Preprocesses DSL to convert multi-line blackbox blocks into single-line
+  /// format for easier parsing. Converts:
+  ///   n0 blackbox dsl {
+  ///     n0 = A
+  ///     n1 = B
+  ///   }
+  /// Into: n0 blackbox dsl = n0 = A\nn1 = B
+  static String _preprocessBlackboxBlocks(String src) {
+    final lines = src.split('\n');
+    final result = <String>[];
+    int i = 0;
+    while (i < lines.length) {
+      final line = lines[i].trim();
+      final blockMatch = RegExp(r'^(n\d+)\s+blackbox\s+dsl\s*{\s*$', caseSensitive: false).firstMatch(line);
+      if (blockMatch != null) {
+        final nodeId = blockMatch.group(1)!;
+        final blockLines = <String>[];
+        i++;
+        // Collect lines until closing brace
+        while (i < lines.length) {
+          final blockLine = lines[i].trim();
+          if (blockLine == '}' || blockLine == '} #') break;
+          if (blockLine.isNotEmpty && !blockLine.startsWith('#')) {
+            blockLines.add(blockLine);
+          }
+          i++;
+        }
+        // Convert back to escaped format for old parser
+        final dslContent = blockLines.join('\n');
+        result.add('$nodeId blackbox dsl = ${_escapeDsl(dslContent)}');
+      } else {
+        // Keep comments and empty lines as-is
+        result.add(lines[i]);
+      }
+      i++;
+    }
+    return result.join('\n');
+  }
+
+  /// Decodes a blackbox DSL value that may be either the new plain-escaped
+  /// text format or the old base64 format (for backward compatibility).
+  ///
+  /// A pure base64 string only contains `[A-Za-z0-9+/=]`.  A DSL string
+  /// almost always contains spaces, newline escapes (`\n`), `=` signs inside
+  /// node definitions, etc.  We use that distinction as a heuristic.
+  static String _decodeMaybeLegacyBase64(String encoded) {
+    final isLikelyBase64 =
+        encoded.isNotEmpty &&
+        RegExp(r'^[A-Za-z0-9+/=]+$').hasMatch(encoded);
+    if (isLikelyBase64) {
+      try {
+        return utf8.decode(base64Decode(encoded));
+      } catch (_) {
+        // Not valid base64 after all — fall through to plain-text decode.
+      }
+    }
+    return _unescapeDsl(encoded);
+  }
 
   static String? _resolveLineRef(
     String lbl,

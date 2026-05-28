@@ -112,28 +112,35 @@ class PreferencesStore {
     if (raw == null || raw.isEmpty) return [];
     try {
       final list = jsonDecode(raw) as List<dynamic>;
-      return [
-        for (final item in list)
-          if (item is Map<String, dynamic>)
-            SavedExport(
-              name: item['name'] as String? ?? 'Export',
-              dsl: item['dsl'] as String? ?? '',
-              type: item['type'] == SavedExportType.blackBox.name
-                  ? SavedExportType.blackBox
-                  : SavedExportType.graph,
-              blackBoxDescription: item['blackBoxDescription'] as String? ?? '',
-            )
-          else if (item is Map)
-            SavedExport(
-              name: item['name']?.toString() ?? 'Export',
-              dsl: item['dsl']?.toString() ?? '',
-              type: item['type']?.toString() == SavedExportType.blackBox.name
-                  ? SavedExportType.blackBox
-                  : SavedExportType.graph,
-              blackBoxDescription:
-                  item['blackBoxDescription']?.toString() ?? '',
-            ),
-      ];
+      final result = <SavedExport>[];
+      for (final item in list) {
+        if (item is! Map) continue;
+        try {
+          // Strict null checking with proper fallbacks
+          final nameRaw = item['name'];
+          final name = (nameRaw != null) ? nameRaw.toString().trim() : 'Export';
+          
+          final dslRaw = item['dsl'];
+          final dsl = (dslRaw != null) ? dslRaw.toString() : '';
+          
+          final typeStr = item['type']?.toString().trim() ?? '';
+          
+          final descRaw = item['blackBoxDescription'];
+          final desc = (descRaw != null) ? descRaw.toString() : '';
+          
+          result.add(SavedExport(
+            name: name,
+            dsl: dsl,
+            type: typeStr == SavedExportType.blackBox.name
+                ? SavedExportType.blackBox
+                : SavedExportType.graph,
+            blackBoxDescription: desc,
+          ));
+        } catch (_) {
+          // Skip individual corrupt entries rather than aborting the whole list.
+        }
+      }
+      return result;
     } catch (_) {
       return [];
     }
