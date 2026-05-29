@@ -188,6 +188,7 @@ class DslCodec {
   // ── DSL IMPORT ─────────────────────────────────────────────────────────────
 
   /// Returns a [GraphState] on success, or throws a descriptive [Exception].
+  /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   static GraphState importFromDsl(String src) {
     // Preprocess: normalize multi-line blackbox dsl blocks into single lines
     final List<String> workspaces = _preprocessBlackboxBlocks(src);
@@ -204,8 +205,6 @@ class DslCodec {
     bool looksLikePdaTransitionLabel(String lbl) {
       final s = lbl.trim();
       if (s.isEmpty) return false;
-      // We expect PDA edge labels like `a,x|y` or legacy `a,x/y`.
-      // These always contain a comma (read,pop,...) and then either `|` or `/`.
       return s.contains(',') && (s.contains('|') || s.contains('/'));
     }
 
@@ -312,13 +311,6 @@ class DslCodec {
           newStartArrow = StartArrowData(nodeId: ensureNode(_unescapeDsl(rest)));
         }
         continue;
-      }
-
-      ///put in the data for the black boxes
-      for (int i = 1; i < workspaces.length; i++) {
-        final String src = workspaces[i];
-        debugPrint("the source is ****${i}**** ${src}");
-        //^ TODO: src will be the internals of a single black box entity
       }
 
       // ── <line> curve = N ──────────────────────────────────────────────────
@@ -434,7 +426,9 @@ class DslCodec {
         continue;
       }
 
-      // ── nN blackbox dsl = base64 ────────────────────────────────────────
+      // ── nN blackbox dsl = <escaped> ──────────────────────────────────────
+      // (inline single-line form — the block form is handled after this loop
+      //  via the workspaces post-processing pass below)
       final blackBoxDslMatch = RegExp(r'^(n\d+)\s+blackbox\s+dsl\s*=\s*(.*)$', caseSensitive: false).firstMatch(line);
       if (blackBoxDslMatch != null) {
         final id = blackBoxDslMatch.group(1)!;
@@ -443,10 +437,6 @@ class DslCodec {
         if (num >= nodeCounter) nodeCounter = num + 1;
         final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
-        // New format: plain escaped text.  Legacy format: base64.
-        // We detect base64 by checking for characters that can't appear in
-        // an escaped DSL string (spaces, equals signs used in DSL keywords,
-        // etc.).  A pure base64 string contains only [A-Za-z0-9+/=].
         node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
@@ -457,6 +447,51 @@ class DslCodec {
 
       // ── bare label → create node ─────────────────────────────────────────
       ensureNode(_unescapeDsl(line));
+    }
+
+    // ── Apply blackbox DSL payloads from the preprocessed workspace entries ──
+    //
+    // _preprocessBlackboxBlocks() extracted every  `nN blackbox dsl { ... }`
+    // block into workspaces[1], workspaces[2], … as a single escaped line of
+    // the form:
+    //
+    //   n2 blackbox dsl = <escaped dsl content>
+    //
+    // The main loop above handles the inline `nN blackbox dsl = ...` form when
+    // it appears literally in workspaces[0], but the block-format payloads live
+    // in the extra workspace slots and were deliberately excluded from the main
+    // source text.  We apply them here, after all nodes have been created.
+    for (int i = 1; i < workspaces.length; i++) {
+      final entry = workspaces[i].trim();
+      if (entry.isEmpty) continue;
+
+      final bbDslMatch = RegExp(
+        r'^(n\d+)\s+blackbox\s+dsl\s*=\s*(.*)$',
+        caseSensitive: false,
+      ).firstMatch(entry);
+      if (bbDslMatch == null) continue;
+
+      final id = bbDslMatch.group(1)!;
+      final encoded = bbDslMatch.group(2)!.trim();
+      final num = int.tryParse(id.substring(1)) ?? -1;
+      if (num >= nodeCounter) nodeCounter = num + 1;
+
+      // The node must already exist from the `nN blackbox = description` line
+      // in the main DSL body.  Create a shell only if something went wrong.
+      if (!newNodes.containsKey(id)) {
+        newNodes[id] = NodeData(
+          id: id,
+          position: _defaultPosition(newNodes.length),
+        );
+      }
+
+      final node = newNodes[id]!;
+      node.isBlackBox = true;
+      node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
+
+      if (node.label.trim().isEmpty) {
+        node.label = 'BB ${id.toUpperCase()}';
+      }
     }
 
     return GraphState(
