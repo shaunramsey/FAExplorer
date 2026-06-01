@@ -40,7 +40,24 @@ class DslCodec {
 
   static String _escapeDsl(String text) => text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
 
-  static String _unescapeDsl(String text) => text.replaceAll(r'\n', '\n').replaceAll(r'\\', r'\');
+  static String _unescapeDsl(String text) {
+    final buffer = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (char == r'\' && i + 1 < text.length) {
+        final next = text[i + 1];
+        if (next == 'n') {
+          buffer.write('\n');
+        } else {
+          buffer.write(next);
+        }
+        i++;
+      } else {
+        buffer.write(char);
+      }
+    }
+    return buffer.toString();
+  }
 
   // Node ref: prefer label, fall back to id, use id(label) for duplicates.
   static String _nodeRef(NodeData node, Map<String, NodeData> nodes) {
@@ -109,11 +126,10 @@ class DslCodec {
       }
       out.add('${n.id} = $label');
       if (n.isBlackBox) {
-        out.add('${n.id} blackbox = ${_escapeDsl(n.blackBoxDescription)}');
         // Store DSL as human-readable escaped text (not base64) so users can
         // read and edit it directly.  Newlines become the literal \n sequence.
         // Export blackbox DSL in multi-line block format for easy editing
-        final dslLines = n.blackBoxDsl.trim().split('\n');
+        final dslLines = n.blackBoxDsl.split('\n');
         out.add('${n.id} blackbox dsl {');
         for (final dslLine in dslLines) {
           out.add('  ${dslLine}');
@@ -188,6 +204,7 @@ class DslCodec {
   // ── DSL IMPORT ─────────────────────────────────────────────────────────────
 
   /// Returns a [GraphState] on success, or throws a descriptive [Exception].
+  /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   static GraphState importFromDsl(String src) {
     // Preprocess: normalize multi-line blackbox dsl blocks into single lines
     final List<String> workspaces = _preprocessBlackboxBlocks(src);
@@ -204,8 +221,6 @@ class DslCodec {
     bool looksLikePdaTransitionLabel(String lbl) {
       final s = lbl.trim();
       if (s.isEmpty) return false;
-      // We expect PDA edge labels like `a,x|y` or legacy `a,x/y`.
-      // These always contain a comma (read,pop,...) and then either `|` or `/`.
       return s.contains(',') && (s.contains('|') || s.contains('/'));
     }
 
@@ -312,13 +327,6 @@ class DslCodec {
           newStartArrow = StartArrowData(nodeId: ensureNode(_unescapeDsl(rest)));
         }
         continue;
-      }
-
-      ///put in the data for the black boxes
-      for (int i = 1; i < workspaces.length; i++) {
-        final String src = workspaces[i];
-        debugPrint("the source is ****${i}**** ${src}");
-        //^ TODO: src will be the internals of a single black box entity
       }
 
       // ── <line> curve = N ──────────────────────────────────────────────────
@@ -434,7 +442,9 @@ class DslCodec {
         continue;
       }
 
-      // ── nN blackbox dsl = base64 ────────────────────────────────────────
+      // ── nN blackbox dsl = <escaped> ──────────────────────────────────────
+      // (inline single-line form — the block form is handled after this loop
+      //  via the workspaces post-processing pass below)
       final blackBoxDslMatch = RegExp(r'^(n\d+)\s+blackbox\s+dsl\s*=\s*(.*)$', caseSensitive: false).firstMatch(line);
       if (blackBoxDslMatch != null) {
         final id = blackBoxDslMatch.group(1)!;
@@ -443,10 +453,6 @@ class DslCodec {
         if (num >= nodeCounter) nodeCounter = num + 1;
         final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
-        // New format: plain escaped text.  Legacy format: base64.
-        // We detect base64 by checking for characters that can't appear in
-        // an escaped DSL string (spaces, equals signs used in DSL keywords,
-        // etc.).  A pure base64 string contains only [A-Za-z0-9+/=].
         node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
@@ -457,6 +463,51 @@ class DslCodec {
 
       // ── bare label → create node ─────────────────────────────────────────
       ensureNode(_unescapeDsl(line));
+    }
+
+    // ── Apply blackbox DSL payloads from the preprocessed workspace entries ──
+    //
+    // _preprocessBlackboxBlocks() extracted every  `nN blackbox dsl { ... }`
+    // block into workspaces[1], workspaces[2], … as a single escaped line of
+    // the form:
+    //
+    //   n2 blackbox dsl = <escaped dsl content>
+    //
+    // The main loop above handles the inline `nN blackbox dsl = ...` form when
+    // it appears literally in workspaces[0], but the block-format payloads live
+    // in the extra workspace slots and were deliberately excluded from the main
+    // source text.  We apply them here, after all nodes have been created.
+    for (int i = 1; i < workspaces.length; i++) {
+      final entry = workspaces[i].trim();
+      if (entry.isEmpty) continue;
+
+      final bbDslMatch = RegExp(
+        r'^(n\d+)\s+blackbox\s+dsl\s*=\s*(.*)$',
+        caseSensitive: false,
+      ).firstMatch(entry);
+      if (bbDslMatch == null) continue;
+
+      final id = bbDslMatch.group(1)!;
+      final encoded = bbDslMatch.group(2)!.trim();
+      final num = int.tryParse(id.substring(1)) ?? -1;
+      if (num >= nodeCounter) nodeCounter = num + 1;
+
+      // The node must already exist from the `nN blackbox = description` line
+      // in the main DSL body.  Create a shell only if something went wrong.
+      if (!newNodes.containsKey(id)) {
+        newNodes[id] = NodeData(
+          id: id,
+          position: _defaultPosition(newNodes.length),
+        );
+      }
+
+      final node = newNodes[id]!;
+      node.isBlackBox = true;
+      node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
+
+      if (node.label.trim().isEmpty) {
+        node.label = 'BB ${id.toUpperCase()}';
+      }
     }
 
     return GraphState(
@@ -560,9 +611,8 @@ class DslCodec {
   ///   }
   /// Into: n0 blackbox dsl = n0 = A\nn1 = B
   static List<String> _preprocessBlackboxBlocks(String src) {
-    List<String> returns = [""];
-    final List<String>lines = src.split('\n');
-    //final List<String> lines = [src];
+    final returns = <String>[""];
+    final lines = src.split('\n');
     final result = <String>[]; // list of lines that are the "main workspace"
     int i = 0;
     while (i < lines.length) {
@@ -578,22 +628,28 @@ class DslCodec {
         i++;
         // Collect lines until closing brace
         while (i < lines.length) {
-          final String blockLine = lines[i].trim();
-          if (blockLine.isEmpty) {
+          final rawLine = lines[i];
+          final trimmedLine = rawLine.trim();
+          if (trimmedLine == '}' || trimmedLine == '} #') break;
+          if (trimmedLine.isEmpty) {
+            blockLines.add('');
             i++;
             continue;
           }
-          if (blockLine == '}' || blockLine == '} #') break;
-          if (blockLine.isNotEmpty && !blockLine.startsWith('#')) {
-            blockLines.add(blockLine);
+
+          String contentLine = rawLine;
+          if (contentLine.startsWith('  ')) {
+            contentLine = contentLine.substring(2);
+          } else if (contentLine.startsWith('\t')) {
+            contentLine = contentLine.substring(1);
           }
+          blockLines.add(contentLine);
           i++;
         }
         // Convert back to escaped format for old parser
         final String dslContent = blockLines.join('\n');
         returns.add('$nodeId blackbox dsl = ${_escapeDsl(dslContent)}');
       } else {
-        // Keep comments and empty lines as-is
         result.add(lines[i]);
       }
       i++;

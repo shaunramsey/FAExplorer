@@ -18,23 +18,14 @@ class _HoverTile extends StatelessWidget {
   final Widget? leading;
   final VoidCallback? onTap;
 
-  const _HoverTile({
-    required this.title,
-    required this.subtitle,
-    this.leading,
-    this.onTap,
-  });
+  const _HoverTile({required this.title, required this.subtitle, this.leading, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
       message: subtitle,
       waitDuration: const Duration(milliseconds: 400),
-      child: ListTile(
-        leading: leading,
-        title: title,
-        onTap: onTap,
-      ),
+      child: ListTile(leading: leading, title: title, onTap: onTap),
     );
   }
 }
@@ -49,23 +40,14 @@ class _HoverSwitch extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
 
-  const _HoverSwitch({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
+  const _HoverSwitch({required this.title, required this.subtitle, required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
       message: subtitle,
       waitDuration: const Duration(milliseconds: 400),
-      child: SwitchListTile(
-        title: Text(title),
-        value: value,
-        onChanged: onChanged,
-      ),
+      child: SwitchListTile(title: Text(title), value: value, onChanged: onChanged),
     );
   }
 }
@@ -82,8 +64,8 @@ class _ModeRadioGroup extends StatelessWidget {
 
   static const _modes = [
     (mode: AutomataMode.ndfa, label: 'NDFA', tooltip: 'Non-deterministic Finite Automaton'),
-    (mode: AutomataMode.pda,  label: 'PDA',  tooltip: 'Pushdown Automaton — labels use read,pop|push format'),
-    (mode: AutomataMode.tm,   label: 'TM',   tooltip: 'Turing Machine — labels use read,write,direction format'),
+    (mode: AutomataMode.pda, label: 'PDA', tooltip: 'Pushdown Automaton — labels use read,pop|push format'),
+    (mode: AutomataMode.tm, label: 'TM', tooltip: 'Turing Machine — labels use read,write,direction format'),
   ];
 
   @override
@@ -96,10 +78,7 @@ class _ModeRadioGroup extends StatelessWidget {
         children: [
           Text(
             'Simulation Mode',
-            style: GoogleFonts.courierPrime(
-              fontSize: 12,
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
-            ),
+            style: GoogleFonts.courierPrime(fontSize: 12, color: theme.colorScheme.onSurface.withOpacity(0.6)),
           ),
           const SizedBox(height: 6),
           Row(
@@ -116,14 +95,10 @@ class _ModeRadioGroup extends StatelessWidget {
                       margin: const EdgeInsets.symmetric(horizontal: 2),
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
-                        color: selected
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.surfaceVariant,
+                        color: selected ? theme.colorScheme.primary : theme.colorScheme.surfaceVariant,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: selected
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.outline.withOpacity(0.4),
+                          color: selected ? theme.colorScheme.primary : theme.colorScheme.outline.withOpacity(0.4),
                         ),
                       ),
                       child: Text(
@@ -132,9 +107,7 @@ class _ModeRadioGroup extends StatelessWidget {
                         style: GoogleFonts.courierPrime(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: selected
-                              ? theme.colorScheme.onPrimary
-                              : theme.colorScheme.onSurface,
+                          color: selected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
                         ),
                       ),
                     ),
@@ -169,6 +142,7 @@ class AutomataDrawer extends StatelessWidget {
   final ValueChanged<AutomataMode> onModeChanged;
 
   final VoidCallback onBatchSimulator;
+  final VoidCallback onEquivalenceChecker;
   final VoidCallback onExport;
   final VoidCallback onImport;
   final VoidCallback onExportHistory;
@@ -186,6 +160,7 @@ class AutomataDrawer extends StatelessWidget {
     required this.onShowSimulatorChanged,
     required this.onModeChanged,
     required this.onBatchSimulator,
+    required this.onEquivalenceChecker,
     required this.onExport,
     required this.onImport,
     required this.onExportHistory,
@@ -258,6 +233,16 @@ class AutomataDrawer extends StatelessWidget {
               },
             ),
             _HoverTile(
+              leading: const Icon(Icons.compare_arrows),
+              title: const Text('Equivalence Checker'),
+              subtitle: 'Compare two automata and determine whether they accept the same language.',
+              onTap: () {
+                Navigator.pop(context);
+                onEquivalenceChecker();
+              },
+            ),
+
+            _HoverTile(
               leading: const Icon(Icons.upload_file),
               title: const Text('Export'),
               subtitle: 'Copy graph DSL to clipboard.',
@@ -295,8 +280,7 @@ class AutomataDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const MarkdownFileScreen(
-                        title: 'About', assetPath: 'assets/About.md'),
+                    builder: (_) => const MarkdownFileScreen(title: 'About', assetPath: 'assets/About.md'),
                   ),
                 );
               },
@@ -308,8 +292,7 @@ class AutomataDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const MarkdownFileScreen(
-                        title: 'Changelog', assetPath: 'assets/Changelog.md'),
+                    builder: (_) => const MarkdownFileScreen(title: 'Changelog', assetPath: 'assets/Changelog.md'),
                   ),
                 );
               },
@@ -321,8 +304,7 @@ class AutomataDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const MarkdownFileScreen(
-                        title: 'Version', assetPath: 'assets/Version.md'),
+                    builder: (_) => const MarkdownFileScreen(title: 'Version', assetPath: 'assets/Version.md'),
                   ),
                 );
               },
@@ -333,8 +315,7 @@ class AutomataDrawer extends StatelessWidget {
             // ── Danger zone ───────────────────────────────────────────────
             _HoverTile(
               leading: const Icon(Icons.delete_sweep, color: Colors.red),
-              title: const Text('Reset Canvas',
-                  style: TextStyle(color: Colors.red)),
+              title: const Text('Reset Canvas', style: TextStyle(color: Colors.red)),
               subtitle: 'Clear all nodes, transitions, and the start arrow.',
               onTap: () {
                 Navigator.pop(context);
@@ -342,16 +323,11 @@ class AutomataDrawer extends StatelessWidget {
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text('Reset canvas?'),
-                    content: const Text(
-                        'This will clear all nodes, transitions, and the start arrow.'),
+                    content: const Text('This will clear all nodes, transitions, and the start arrow.'),
                     actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel'),
-                      ),
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                       FilledButton(
-                        style: FilledButton.styleFrom(
-                            backgroundColor: Colors.red),
+                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
                         onPressed: () => Navigator.pop(ctx, true),
                         child: const Text('Reset'),
                       ),
