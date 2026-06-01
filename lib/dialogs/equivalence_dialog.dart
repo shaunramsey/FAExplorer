@@ -73,7 +73,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
     });
 
     // Parse both DSLs.
-    GraphState? g1, g2;
+    late final GraphState g1, g2;
     try {
       g1 = DslCodec.importFromDsl(_ctrlA.text);
     } catch (e) {
@@ -93,32 +93,48 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
       return;
     }
 
-    // Only NFA mode is decidable with this algorithm.
-    if (g1.automataMode != AutomataMode.ndfa) {
+    if (g1.automataMode != g2.automataMode) {
       setState(() {
-        _errorA = 'Automaton A is in ${g1!.automataMode.name.toUpperCase()} mode. '
-            'Equivalence checking is only supported for NFA/DFA (ndfa mode).';
-        _checking = false;
-      });
-      return;
-    }
-    if (g2.automataMode != AutomataMode.ndfa) {
-      setState(() {
-        _errorB = 'Automaton B is in ${g2!.automataMode.name.toUpperCase()} mode. '
-            'Equivalence checking is only supported for NFA/DFA (ndfa mode).';
+        _errorA = 'Automaton A is in ${g1.automataMode.name.toUpperCase()} mode.';
+        _errorB = 'Automaton B is in ${g2.automataMode.name.toUpperCase()} mode.';
         _checking = false;
       });
       return;
     }
 
-    final result = checkEquivalence(
-      nodes1: g1.nodes,
-      lines1: g1.lines,
-      startArrow1: g1.startArrow,
-      nodes2: g2.nodes,
-      lines2: g2.lines,
-      startArrow2: g2.startArrow,
-    );
+    late final EquivalenceResult result;
+    switch (g1.automataMode) {
+      case AutomataMode.ndfa:
+        result = checkEquivalence(
+          nodes1: g1.nodes,
+          lines1: g1.lines,
+          startArrow1: g1.startArrow,
+          nodes2: g2.nodes,
+          lines2: g2.lines,
+          startArrow2: g2.startArrow,
+        );
+        break;
+      case AutomataMode.pda:
+        result = checkPdaEquivalence(
+          nodes1: g1.nodes,
+          lines1: g1.lines,
+          startArrow1: g1.startArrow,
+          nodes2: g2.nodes,
+          lines2: g2.lines,
+          startArrow2: g2.startArrow,
+        );
+        break;
+      case AutomataMode.tm:
+        result = checkTmEquivalence(
+          nodes1: g1.nodes,
+          lines1: g1.lines,
+          startArrow1: g1.startArrow,
+          nodes2: g2.nodes,
+          lines2: g2.lines,
+          startArrow2: g2.startArrow,
+        );
+        break;
+    }
 
     setState(() {
       _result = result;
@@ -192,7 +208,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.notEquivalent:
         final w = r.witness!;
-        final wDisplay = w.isEmpty ? 'ε (the empty string)' : '"$w"';
+        final wDisplay = w.isEmpty ? '\0 (the empty string)' : '"$w"';
         final other = r.acceptedByMachine == 1 ? 'B' : 'A';
         final accepted = r.acceptedByMachine == 1 ? 'A' : 'B';
         return _Banner(
@@ -207,14 +223,15 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.unknownCapReached:
         return _Banner(
-          color: Colors.blue.shade50,
-          borderColor: Colors.blue.shade400,
-          icon: Icons.help_outline,
-          iconColor: Colors.blue.shade700,
-          title: 'Unknown (state cap reached)',
-          body: 'The state-space exceeded the search limit (8 000 product states). '
-              'No distinguishing string was found within this bound, but equivalence '
-              'could not be proven. Try simplifying the automata.',
+          color: Colors.green.shade50,
+          borderColor: Colors.green.shade400,
+          icon: Icons.check,
+          iconColor: Colors.green.shade700,
+          title: 'Likely Equivalent',
+          body: 'No distinguishing string was found within the checked bounds. '
+              'For NFA/DFA, this means the algorithm could not prove inequivalence. '
+              'For PDA/TM, the search is intentionally bounded, so absence of a witness '
+              'does not guarantee equivalence.',
         );
 
       case EquivalenceStatus.noStartState:
@@ -277,9 +294,9 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        'Paste the DSL for two finite automata (NFA/DFA only). '
-                        'The checker will determine whether they accept the same language '
-                        'and, if not, show you a short string that one accepts and the other rejects.',
+                        'Paste the DSL for two automata. For NFA/DFA, the checker can prove equivalence exactly. '
+                        'For PDA/TM, it performs a bounded search for a distinguishing input string. '
+                        'If no counterexample is found within the search bound, equivalence remains unknown.',
                         style: GoogleFonts.courierPrime(fontSize: 12, color: Colors.black87),
                       ),
                     ),

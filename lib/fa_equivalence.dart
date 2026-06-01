@@ -29,6 +29,8 @@
 //    normalises to '?' or that start from a black-box node are skipped.
 
 import 'models.dart';
+import 'pda_simulator.dart';
+import 'tm_simulator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Public result types
@@ -173,6 +175,222 @@ EquivalenceResult? _checkAcceptance(
   final witness = path.join();
   final acceptedBy = acc1 ? 1 : 2;
   return EquivalenceResult.notEquivalent(witness, acceptedBy);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Best-effort PDA/TM equivalence checking by bounded input search
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _AcceptanceOutcome { accept, reject, unknown }
+
+EquivalenceResult checkPdaEquivalence({
+  required Map<String, NodeData> nodes1,
+  required Map<String, LineData> lines1,
+  required StartArrowData? startArrow1,
+  required Map<String, NodeData> nodes2,
+  required Map<String, LineData> lines2,
+  required StartArrowData? startArrow2,
+  int maxInputLength = 4,
+  int maxTests = 400,
+}) {
+  if (startArrow1 == null || !nodes1.containsKey(startArrow1.nodeId)) {
+    return const EquivalenceResult.noStart();
+  }
+  if (startArrow2 == null || !nodes2.containsKey(startArrow2.nodeId)) {
+    return const EquivalenceResult.noStart();
+  }
+
+  final alphabet = <String>{
+    ..._pdaAlphabet(lines1),
+    ..._pdaAlphabet(lines2),
+  };
+
+  return _checkEquivalenceByTestingInputs(
+    nodes1: nodes1,
+    lines1: lines1,
+    startArrow1: startArrow1,
+    nodes2: nodes2,
+    lines2: lines2,
+    startArrow2: startArrow2,
+    alphabet: alphabet,
+    maxInputLength: maxInputLength,
+    maxTests: maxTests,
+    simulate1: (input) => _simulatePda(nodes1, lines1, startArrow1, input),
+    simulate2: (input) => _simulatePda(nodes2, lines2, startArrow2, input),
+  );
+}
+
+EquivalenceResult checkTmEquivalence({
+  required Map<String, NodeData> nodes1,
+  required Map<String, LineData> lines1,
+  required StartArrowData? startArrow1,
+  required Map<String, NodeData> nodes2,
+  required Map<String, LineData> lines2,
+  required StartArrowData? startArrow2,
+  int maxInputLength = 4,
+  int maxTests = 400,
+  int maxStepsPerInput = 300,
+}) {
+  if (startArrow1 == null || !nodes1.containsKey(startArrow1.nodeId)) {
+    return const EquivalenceResult.noStart();
+  }
+  if (startArrow2 == null || !nodes2.containsKey(startArrow2.nodeId)) {
+    return const EquivalenceResult.noStart();
+  }
+
+  final alphabet = <String>{
+    ..._tmAlphabet(lines1),
+    ..._tmAlphabet(lines2),
+  };
+
+  return _checkEquivalenceByTestingInputs(
+    nodes1: nodes1,
+    lines1: lines1,
+    startArrow1: startArrow1,
+    nodes2: nodes2,
+    lines2: lines2,
+    startArrow2: startArrow2,
+    alphabet: alphabet,
+    maxInputLength: maxInputLength,
+    maxTests: maxTests,
+    simulate1: (input) => _simulateTm(nodes1, lines1, startArrow1, input, maxStepsPerInput),
+    simulate2: (input) => _simulateTm(nodes2, lines2, startArrow2, input, maxStepsPerInput),
+  );
+}
+
+typedef _SimulatorFn = _AcceptanceOutcome Function(String input);
+
+EquivalenceResult _checkEquivalenceByTestingInputs({
+  required Map<String, NodeData> nodes1,
+  required Map<String, LineData> lines1,
+  required StartArrowData? startArrow1,
+  required Map<String, NodeData> nodes2,
+  required Map<String, LineData> lines2,
+  required StartArrowData? startArrow2,
+  required Set<String> alphabet,
+  required int maxInputLength,
+  required int maxTests,
+  required _SimulatorFn simulate1,
+  required _SimulatorFn simulate2,
+}) {
+  final inputs = _generateInputCandidates(alphabet, maxInputLength, maxTests);
+  for (final input in inputs) {
+    final outcome1 = simulate1(input);
+    final outcome2 = simulate2(input);
+
+    if (outcome1 == _AcceptanceOutcome.unknown || outcome2 == _AcceptanceOutcome.unknown) {
+      continue;
+    }
+
+    if (outcome1 != outcome2) {
+      final acceptedBy = outcome1 == _AcceptanceOutcome.accept ? 1 : 2;
+      return EquivalenceResult.notEquivalent(input, acceptedBy);
+    }
+  }
+
+  return const EquivalenceResult.capReached();
+}
+
+_AcceptanceOutcome _simulatePda(
+  Map<String, NodeData> nodes,
+  Map<String, LineData> lines,
+  StartArrowData? startArrow,
+  String input,
+) {
+  final sim = PdaSimulator(nodes: nodes, lines: lines);
+  sim.rebuild(input, startArrow: startArrow);
+  if (sim.stackGrowthLoopDetected) return _AcceptanceOutcome.unknown;
+  return sim.finalResult() == PdaSimResult.accept
+      ? _AcceptanceOutcome.accept
+      : _AcceptanceOutcome.reject;
+}
+
+_AcceptanceOutcome _simulateTm(
+  Map<String, NodeData> nodes,
+  Map<String, LineData> lines,
+  StartArrowData? startArrow,
+  String input,
+  int maxStepsPerInput,
+) {
+  final sim = TmSimulator(nodes: nodes, lines: lines);
+  sim.rebuild(input, startArrow: startArrow);
+
+  for (int step = 0; step < maxStepsPerInput; step++) {
+    if (sim.result != TmResult.running) break;
+    if (!sim.computeNext()) break;
+  }
+
+  if (sim.result == TmResult.running) return _AcceptanceOutcome.unknown;
+  return sim.result == TmResult.accept
+      ? _AcceptanceOutcome.accept
+      : _AcceptanceOutcome.reject;
+}
+
+Set<String> _pdaAlphabet(Map<String, LineData> lines) {
+  final alphabet = <String>{};
+  for (final line in lines.values) {
+    for (final alt in line.label.split('\n')) {
+      final t = parsePdaLabel(alt);
+      if (t.read.isNotEmpty && t.read != kStackBottom) {
+        alphabet.add(t.read);
+      }
+    }
+  }
+  return alphabet;
+}
+
+Set<String> _tmAlphabet(Map<String, LineData> lines) {
+  final alphabet = <String>{};
+  for (final line in lines.values) {
+    for (final alt in line.label.split('\n')) {
+      final t = parseTmLabel(alt);
+      if (t.read.isNotEmpty) {
+        alphabet.add(t.read);
+      }
+    }
+  }
+  return alphabet;
+}
+
+Iterable<String> _generateInputCandidates(
+  Set<String> alphabet,
+  int maxInputLength,
+  int maxTests,
+) sync* {
+  yield '';
+  if (alphabet.isEmpty) return;
+
+  final symbols = alphabet.toList()..sort();
+  final queue = <List<String>>[];
+  for (final symbol in symbols) {
+    queue.add([symbol]);
+  }
+
+  while (queue.isNotEmpty && maxTests > 1) {
+    final tokenSeq = queue.removeAt(0);
+    yield _encodeInputTokens(tokenSeq);
+    maxTests--;
+    if (tokenSeq.length < maxInputLength) {
+      for (final symbol in symbols) {
+        queue.add([...tokenSeq, symbol]);
+      }
+    }
+  }
+}
+
+String _encodeInputTokens(List<String> tokens) {
+  if (tokens.isEmpty) return '';
+  final buffer = StringBuffer();
+  for (final token in tokens) {
+    if (token.length == 1 && token != '"') {
+      buffer.write(token);
+    } else {
+      buffer.write('"');
+      buffer.write(token.replaceAll('"', ''));
+      buffer.write('"');
+    }
+  }
+  return buffer.toString();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
