@@ -483,7 +483,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             position: pos,
             label: blackBox.name.trim().isEmpty ? 'Black Box' : blackBox.name,
             isBlackBox: true,
-            blackBoxDescription: blackBox.blackBoxDescription,
+            blackBoxDescription: '',
             blackBoxDsl: blackBox.dsl,
           );
         });

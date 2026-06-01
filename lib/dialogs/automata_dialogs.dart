@@ -201,9 +201,7 @@ void showExportHistoryDialog(
                               : const Icon(Icons.account_tree_outlined),
                           subtitle: Text(
                             save.isBlackBox
-                                ? (save.blackBoxDescription.trim().isEmpty
-                                    ? 'Black box machine'
-                                    : save.blackBoxDescription.trim())
+                                ? 'Black box machine'
                                 : (save.dsl.trim().isEmpty
                                     ? '(empty export)'
                                     : save.dsl.split('\n').first),
@@ -269,19 +267,19 @@ void showExportHistoryDialog(
                                   icon: const Icon(Icons.add_box_outlined),
                                   tooltip: 'Import as black box to canvas',
                                   onPressed: () {
-                                    final descController = TextEditingController(text: save.name);
+                                    final nameController = TextEditingController(text: save.name);
                                     showDialog(
                                       context: context,
                                       builder: (_) => AlertDialog(
-                                        title: const Text('Black Box Details'),
+                                        title: const Text('Black Box Name'),
                                         content: SizedBox(
                                           width: 420,
                                           child: TextField(
-                                            controller: descController,
-                                            maxLines: 3,
+                                            controller: nameController,
+                                            maxLines: 1,
                                             decoration: const InputDecoration(
-                                              labelText: 'Description',
-                                              hintText: 'Describe what this machine does.',
+                                              labelText: 'Name',
+                                              hintText: 'Enter a name for the black box.',
                                             ),
                                           ),
                                         ),
@@ -293,10 +291,9 @@ void showExportHistoryDialog(
                                           FilledButton(
                                             onPressed: () {
                                               final newExport = SavedExport(
-                                                name: save.name,
+                                                name: nameController.text.trim().isEmpty ? save.name : nameController.text.trim(),
                                                 dsl: save.dsl,
                                                 type: SavedExportType.blackBox,
-                                                blackBoxDescription: descController.text.trim(),
                                               );
                                               onInsertBlackBox(newExport);
                                               Navigator.pop(context);
@@ -380,9 +377,7 @@ void showBlackBoxRunnerDialog(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                save.blackBoxDescription.trim().isEmpty
-                    ? 'Black box machine'
-                    : save.blackBoxDescription.trim(),
+                'Black box machine',
               ),
               const SizedBox(height: 10),
               TextField(

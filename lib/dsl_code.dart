@@ -126,7 +126,6 @@ class DslCodec {
       }
       out.add('${n.id} = $label');
       if (n.isBlackBox) {
-        out.add('${n.id} blackbox = ${_escapeDsl(n.blackBoxDescription)}');
         // Store DSL as human-readable escaped text (not base64) so users can
         // read and edit it directly.  Newlines become the literal \n sequence.
         // Export blackbox DSL in multi-line block format for easy editing

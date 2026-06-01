@@ -22,10 +22,12 @@ void main() {
     node.blackBoxDsl = 'n0 = A\n\nn1 = B';
 
     final exported = DslCodec.exportToDsl(state);
+    expect(exported.contains('blackbox ='), isFalse);
+
     final imported = DslCodec.importFromDsl(exported);
 
     expect(imported.nodes['n0']!.label, 'BB');
-    expect(imported.nodes['n0']!.blackBoxDescription, 'My black box');
+    expect(imported.nodes['n0']!.blackBoxDescription, '');
     expect(imported.nodes['n0']!.blackBoxDsl, 'n0 = A\n\nn1 = B');
   });
 
