@@ -15,6 +15,7 @@ import 'pda_simulator.dart';
 import 'saved_export.dart';
 import 'dialogs/automata_dialogs.dart';
 import 'dialogs/batch_simulator_dialog.dart';
+import 'dialogs/equivalence_dialog.dart';
 import 'widgets/automata_drawer.dart';
 import 'widgets/help_overlay.dart';
 import 'widgets/rubber_band_painter.dart';
@@ -430,6 +431,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     );
   }
 
+  void _showEquivalenceDialog() {
+    showEquivalenceDialog(
+      context,
+      initialDsl: _exportToDsl(),
+    );
+  }
+
   void _setLineMode(bool value) {
     setState(() {
       _lineMode = value;
@@ -803,6 +811,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
           _schedulePersist();
         },
         onBatchSimulator: _openBatchSimulatorDialog,
+        onEquivalenceChecker: _showEquivalenceDialog,
         onExport: _showExportDialog,
         onImport: _showImportDialog,
         onExportHistory: _showExportHistory,

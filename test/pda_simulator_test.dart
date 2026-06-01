@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:automata_designer/models.dart';
 import 'package:automata_designer/pda_simulator.dart';
 import 'package:automata_designer/dsl_code.dart';
-import 'package:flutter/material.dart';
 
 void main() {
   group('parsePdaLabel', () {
