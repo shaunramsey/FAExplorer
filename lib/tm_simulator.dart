@@ -346,7 +346,7 @@ class TmSimulator {
         final node = nodes[c.nodeId];
         if (node == null) continue;
         if (node.isBlackBox) {
-          final blackBox = _runBlackBoxOnTape(node, c.tape);
+          final blackBox = _runBlackBoxOnTape(node, c.tape, headPos: c.headPos);
           if (!blackBox.accepted) continue;
         }
         if (node.isHaltReject) continue;
@@ -451,7 +451,7 @@ class TmSimulator {
 
       var effectiveConfig = config;
       if (node.isBlackBox) {
-        final blackBox = _runBlackBoxOnTape(node, config.tape);
+        final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
         if (!blackBox.accepted) continue;
         final outputTape = TmTape.fromTokens(blackBox.outputTokens);
         final headPos = outputTape.absolutePos(blackBox.outputHeadPos);
@@ -519,7 +519,7 @@ class TmSimulator {
 
       var effectiveConfig = config;
       if (node.isBlackBox) {
-        final blackBox = _runBlackBoxOnTape(node, config.tape);
+        final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
         if (!blackBox.accepted) {
           continue;
         }
@@ -663,15 +663,73 @@ class TmSimulator {
     return kTokenReplacements[inner] ?? token;
   }
 
+  /// Run the black-box inner machine on the cells of [tape] starting at
+  /// [headPos] (the outer TM's current head position).
+  ///
+  /// The inner machine only sees the slice  tape[headPos..]  (leading and
+  /// trailing blanks stripped).  On success the outer tape is reconstructed
+  /// as  tape[0..headPos)  +  innerOutput  +  tape[headPos+sliceLen..]  and
+  /// [outputHeadPos] is the absolute position in that reconstructed tape where
+  /// the inner machine left its head.
+  ///
+  /// The cache key includes [headPos] so that the same node visited at
+  /// different head positions produces separate cache entries.
   ({bool accepted, List<String> outputTokens, int outputHeadPos}) _runBlackBoxOnTape(
     NodeData node,
-    TmTape tape,
-  ) {
+    TmTape tape, {
+    int? headPos,
+  }) {
+    // Use the supplied headPos, or fall back to the tape's logical origin (for
+    // callers that haven't been updated yet / non-blackbox nodes).
+    final int effectiveHeadPos = headPos ?? tape.absolutePos(0);
+
     if (!node.isBlackBox) {
-      return (accepted: true, outputTokens: _trimTapeTokens(tape), outputHeadPos: 0);
+      final fullTokens = _trimTapeTokens(tape);
+      // Translate absolute effectiveHeadPos to an index in the trimmed list.
+      final cells = tape.cells;
+      int trimStart = 0;
+      while (trimStart < cells.length &&
+          (cells[trimStart].isEmpty || cells[trimStart] == kBlank)) {
+        trimStart++;
+      }
+      final relativeHeadPos =
+          (effectiveHeadPos - trimStart).clamp(0, fullTokens.isEmpty ? 0 : fullTokens.length - 1);
+      return (accepted: true, outputTokens: fullTokens, outputHeadPos: relativeHeadPos);
     }
-    final inputTokens = _trimTapeTokens(tape);
-    final cacheKey = '${node.id}:${inputTokens.join('\u0001')}';
+
+    // Extract the full tape as non-blank tokens so we can slice from headPos.
+    final allCells = tape.cells;
+    // Convert absolute headPos to an index in allCells (it already is absolute).
+    // Build a list of (absoluteIndex, symbol) pairs for non-blank cells so we
+    // can locate the slice boundary.
+    //
+    // The "slice" the inner machine sees is: everything at or after effectiveHeadPos
+    // up to the end of the non-blank region.
+    int tapeNonBlankEnd = allCells.length;
+    while (tapeNonBlankEnd > 0 &&
+        (allCells[tapeNonBlankEnd - 1].isEmpty ||
+            allCells[tapeNonBlankEnd - 1] == kBlank)) {
+      tapeNonBlankEnd--;
+    }
+    // The slice start is effectiveHeadPos (clamped into the valid range).
+    final sliceStart = effectiveHeadPos.clamp(0, tapeNonBlankEnd);
+    final sliceEnd = tapeNonBlankEnd;
+    final slicedCells = sliceStart < sliceEnd
+        ? allCells.sublist(sliceStart, sliceEnd)
+        : const <String>[];
+    // Strip trailing blanks from the slice (leading blanks are already gone
+    // because we start exactly at the head).
+    final inputTokens = slicedCells
+        .map((c) => (c.isEmpty || c == kBlank) ? '' : c)
+        .toList();
+    // Remove any leading/trailing empties from the inner input so the inner
+    // machine gets a clean tape.
+    int iStart = 0, iEnd = inputTokens.length;
+    while (iStart < iEnd && inputTokens[iStart].isEmpty) iStart++;
+    while (iEnd > iStart && inputTokens[iEnd - 1].isEmpty) iEnd--;
+    final cleanInput = iStart < iEnd ? inputTokens.sublist(iStart, iEnd) : const <String>[];
+
+    final cacheKey = '${node.id}:$effectiveHeadPos:${cleanInput.join('\u0001')}';
     final cached = _blackBoxResultCache[cacheKey];
     if (cached != null) return cached;
 
@@ -680,8 +738,43 @@ class TmSimulator {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
-        outputHeadPos: 0,
+        outputHeadPos: effectiveHeadPos,
       );
+    }
+
+    // Helper: reconstruct the full token list and translate the inner head pos
+    // back to an absolute position in the outer tape.
+    ({List<String> outputTokens, int outputHeadPos}) _splice(
+      List<String> innerOutput,
+      int innerHeadRelative,
+    ) {
+      // Cells before the slice (the part the outer TM already processed).
+      final before = sliceStart > 0
+          ? allCells
+              .sublist(0, sliceStart)
+              .map((c) => (c.isEmpty || c == kBlank) ? '' : c)
+              .toList()
+          : const <String>[];
+      // Cells after the slice (untouched by the inner machine).
+      final after = sliceEnd < allCells.length
+          ? allCells
+              .sublist(sliceEnd)
+              .map((c) => (c.isEmpty || c == kBlank) ? '' : c)
+              .toList()
+          : const <String>[];
+
+      final full = [...before, ...innerOutput, ...after];
+      // Strip overall leading/trailing blanks to get the trimmed token list.
+      int fs = 0, fe = full.length;
+      while (fs < fe && full[fs].isEmpty) fs++;
+      while (fe > fs && full[fe - 1].isEmpty) fe--;
+      final trimmed = fs < fe ? full.sublist(fs, fe) : const <String>[];
+
+      // Absolute head pos in the reconstructed tape = before.length + innerHeadRelative.
+      final absHead = before.length + innerHeadRelative;
+      // Translate to an index in the trimmed list.
+      final relHead = (absHead - fs).clamp(0, trimmed.isEmpty ? 0 : trimmed.length - 1);
+      return (outputTokens: trimmed, outputHeadPos: relHead);
     }
 
     try {
@@ -689,31 +782,48 @@ class TmSimulator {
       switch (graph.automataMode) {
         case AutomataMode.ndfa:
           final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
-          sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
+          sim.rebuild(cleanInput.join(), startArrow: graph.startArrow);
           final accepted = sim.finalResult() == SimResult.accept;
+          if (!accepted) {
+            return _blackBoxResultCache[cacheKey] = (
+              accepted: false,
+              outputTokens: const <String>[],
+              outputHeadPos: effectiveHeadPos,
+            );
+          }
+          // NFA: no tape rewrite; head advances past the consumed slice.
+          final spliced = _splice(cleanInput, cleanInput.length);
           return _blackBoxResultCache[cacheKey] = (
-            accepted: accepted,
-            outputTokens: accepted ? inputTokens : const <String>[],
-            outputHeadPos: 0,
+            accepted: true,
+            outputTokens: spliced.outputTokens,
+            outputHeadPos: spliced.outputHeadPos,
           );
         case AutomataMode.pda:
           final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
-          sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
+          sim.rebuild(cleanInput.join(), startArrow: graph.startArrow);
           final accepted = sim.finalResult() == PdaSimResult.accept;
+          if (!accepted) {
+            return _blackBoxResultCache[cacheKey] = (
+              accepted: false,
+              outputTokens: const <String>[],
+              outputHeadPos: effectiveHeadPos,
+            );
+          }
+          final splicedPda = _splice(cleanInput, cleanInput.length);
           return _blackBoxResultCache[cacheKey] = (
-            accepted: accepted,
-            outputTokens: accepted ? inputTokens : const <String>[],
-            outputHeadPos: 0,
+            accepted: true,
+            outputTokens: splicedPda.outputTokens,
+            outputHeadPos: splicedPda.outputHeadPos,
           );
         case AutomataMode.tm:
           final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
-          sim.rebuild(inputTokens.join(), startArrow: graph.startArrow);
+          sim.rebuild(cleanInput.join(), startArrow: graph.startArrow);
           while (sim.computeNext()) {}
           if (sim.result != TmResult.accept) {
             return _blackBoxResultCache[cacheKey] = (
               accepted: false,
               outputTokens: const <String>[],
-              outputHeadPos: 0,
+              outputHeadPos: effectiveHeadPos,
             );
           }
           // Do NOT use sim.currentTape — it goes through the step cursor
@@ -729,19 +839,20 @@ class TmSimulator {
             }
             haltConfig ??= sim.steps.last.configs.firstOrNull;
           }
-          final outputHeadPos = _computeOutputHeadPos(haltConfig);
-          final output = _trimTapeTokens(haltConfig?.tape);
+          final innerHeadRelative = _computeOutputHeadPos(haltConfig);
+          final innerOutput = _trimTapeTokens(haltConfig?.tape);
+          final splicedTm = _splice(innerOutput, innerHeadRelative);
           return _blackBoxResultCache[cacheKey] = (
             accepted: true,
-            outputTokens: output,
-            outputHeadPos: outputHeadPos,
+            outputTokens: splicedTm.outputTokens,
+            outputHeadPos: splicedTm.outputHeadPos,
           );
       }
     } catch (_) {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
-        outputHeadPos: 0,
+        outputHeadPos: effectiveHeadPos,
       );
     }
   }
