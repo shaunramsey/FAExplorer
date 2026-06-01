@@ -452,11 +452,7 @@ class TmSimulator {
       if (node.isHaltAccept || node.isHaltReject) continue;
 
       var effectiveConfig = config;
-      String? preBlackBoxCellSym;
       if (node.isBlackBox) {
-        final preSym = config.tape.read(config.headPos);
-        preBlackBoxCellSym = preSym.isEmpty ? kBlank : preSym;
-
         final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
         if (!blackBox.accepted) continue;
         final outputTape = TmTape.fromTokens(blackBox.outputTokens);
@@ -471,7 +467,7 @@ class TmSimulator {
       }
 
       final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
-      final cellSym = preBlackBoxCellSym ?? (headSym.isEmpty ? kBlank : headSym);
+      final cellSym = headSym.isEmpty ? kBlank : headSym;
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
@@ -524,17 +520,7 @@ class TmSimulator {
       }
 
       var effectiveConfig = config;
-      // For blackbox nodes, the symbol used to match outgoing transitions is
-      // the one that was under the head BEFORE the blackbox ran (the symbol
-      // that triggered entry into this blackbox node).  The blackbox does its
-      // own internal read/write/move; the outgoing arc label's "read" field
-      // is just the routing key that caused us to enter the blackbox, not a
-      // fresh read of the post-blackbox tape.
-      String? preBlackBoxCellSym;
       if (node.isBlackBox) {
-        final preSym = config.tape.read(config.headPos);
-        preBlackBoxCellSym = preSym.isEmpty ? kBlank : preSym;
-
         final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
         if (!blackBox.accepted) {
           continue;
@@ -550,10 +536,8 @@ class TmSimulator {
         );
       }
 
-      // Use pre-blackbox symbol for transition matching on blackbox nodes;
-      // use the normal post-move head symbol for regular nodes.
       final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
-      final cellSym = preBlackBoxCellSym ?? (headSym.isEmpty ? kBlank : headSym);
+      final cellSym = headSym.isEmpty ? kBlank : headSym;
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
