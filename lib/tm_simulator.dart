@@ -32,11 +32,15 @@ class TmTransition {
   final String read;
   final String write;
   final TmDirection direction;
+  /// True when the label is `~` (or all tildes): unconditional jump that
+  /// neither reads, writes, nor moves the head.
+  final bool isEpsilon;
 
   const TmTransition({
     required this.read,
     required this.write,
     required this.direction,
+    this.isEpsilon = false,
   });
 }
 
@@ -46,6 +50,13 @@ TmTransition parseTmLabel(String raw) {
   final s = parseTokenText(preprocessed.trim());
   if (s.isEmpty) {
     return TmTransition(read: kBlank, write: kBlank, direction: TmDirection.stay);
+  }
+
+  // All-tilde label → unconditional epsilon jump (no read/write/move).
+  if (s.isNotEmpty && s.runes.every((r) => r == '~'.codeUnitAt(0))) {
+    return TmTransition(
+      read: '', write: '', direction: TmDirection.stay, isEpsilon: true,
+    );
   }
 
   // Format 1: read,write,dir  (comma-separated)
@@ -473,8 +484,10 @@ class TmSimulator {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
         for (final altRaw in line.label.split('\n')) {
           final t = parseTmLabel(altRaw);
-          final readSym = t.read.isEmpty ? kBlank : t.read;
-          if (readSym != cellSym) continue;
+          if (!t.isEpsilon) {
+            final readSym = t.read.isEmpty ? kBlank : t.read;
+            if (readSym != cellSym) continue;
+          }
           return true;
         }
       }
@@ -546,13 +559,13 @@ class TmSimulator {
           final t = parseTmLabel(altRaw);
           final readSym = t.read.isEmpty ? kBlank : t.read;
 
-          if (readSym != cellSym) continue;
+          if (!t.isEpsilon && readSym != cellSym) continue;
 
           final TmConfig next;
-          if (node.isBlackBox) {
-            // Blackbox nodes: the arc label is a routing key only.  All tape
-            // work (read/write/move) was already performed inside the blackbox;
-            // just change the state and carry the post-blackbox tape/head as-is.
+          if (node.isBlackBox || t.isEpsilon) {
+            // Blackbox nodes and epsilon transitions: no write or move.
+            // For blackbox nodes all tape work was done inside the blackbox.
+            // For epsilon (~) transitions the head and tape are left as-is.
             next = TmConfig(
               nodeId: line.nodeBId,
               headPos: effectiveConfig.headPos,
