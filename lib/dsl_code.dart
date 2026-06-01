@@ -40,7 +40,24 @@ class DslCodec {
 
   static String _escapeDsl(String text) => text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
 
-  static String _unescapeDsl(String text) => text.replaceAll(r'\n', '\n').replaceAll(r'\\', r'\');
+  static String _unescapeDsl(String text) {
+    final buffer = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (char == r'\' && i + 1 < text.length) {
+        final next = text[i + 1];
+        if (next == 'n') {
+          buffer.write('\n');
+        } else {
+          buffer.write(next);
+        }
+        i++;
+      } else {
+        buffer.write(char);
+      }
+    }
+    return buffer.toString();
+  }
 
   // Node ref: prefer label, fall back to id, use id(label) for duplicates.
   static String _nodeRef(NodeData node, Map<String, NodeData> nodes) {
@@ -113,7 +130,7 @@ class DslCodec {
         // Store DSL as human-readable escaped text (not base64) so users can
         // read and edit it directly.  Newlines become the literal \n sequence.
         // Export blackbox DSL in multi-line block format for easy editing
-        final dslLines = n.blackBoxDsl.trim().split('\n');
+        final dslLines = n.blackBoxDsl.split('\n');
         out.add('${n.id} blackbox dsl {');
         for (final dslLine in dslLines) {
           out.add('  ${dslLine}');
@@ -595,9 +612,8 @@ class DslCodec {
   ///   }
   /// Into: n0 blackbox dsl = n0 = A\nn1 = B
   static List<String> _preprocessBlackboxBlocks(String src) {
-    List<String> returns = [""];
-    final List<String>lines = src.split('\n');
-    //final List<String> lines = [src];
+    final returns = <String>[""];
+    final lines = src.split('\n');
     final result = <String>[]; // list of lines that are the "main workspace"
     int i = 0;
     while (i < lines.length) {
@@ -613,22 +629,28 @@ class DslCodec {
         i++;
         // Collect lines until closing brace
         while (i < lines.length) {
-          final String blockLine = lines[i].trim();
-          if (blockLine.isEmpty) {
+          final rawLine = lines[i];
+          final trimmedLine = rawLine.trim();
+          if (trimmedLine == '}' || trimmedLine == '} #') break;
+          if (trimmedLine.isEmpty) {
+            blockLines.add('');
             i++;
             continue;
           }
-          if (blockLine == '}' || blockLine == '} #') break;
-          if (blockLine.isNotEmpty && !blockLine.startsWith('#')) {
-            blockLines.add(blockLine);
+
+          String contentLine = rawLine;
+          if (contentLine.startsWith('  ')) {
+            contentLine = contentLine.substring(2);
+          } else if (contentLine.startsWith('\t')) {
+            contentLine = contentLine.substring(1);
           }
+          blockLines.add(contentLine);
           i++;
         }
         // Convert back to escaped format for old parser
         final String dslContent = blockLines.join('\n');
         returns.add('$nodeId blackbox dsl = ${_escapeDsl(dslContent)}');
       } else {
-        // Keep comments and empty lines as-is
         result.add(lines[i]);
       }
       i++;
