@@ -680,6 +680,17 @@ class DslCodec {
     final explicit = RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
     if (explicit != null) return explicit.group(1);
     if (lines.containsKey(lbl)) return lbl;
+    // Accept 1-based numeric line ids in DSL (e.g. "l1") by mapping them
+    // to the internal zero-based ids ("l0"). This makes the DSL friendlier
+    // for users who expect 1-based numbering while keeping internal ids as-is.
+    final oneBasedMatch = RegExp(r'^l(\d+)$').firstMatch(lbl);
+    if (oneBasedMatch != null) {
+      final num = int.tryParse(oneBasedMatch.group(1)!) ?? 0;
+      if (num > 0) {
+        final candidate = 'l${num - 1}';
+        if (lines.containsKey(candidate)) return candidate;
+      }
+    }
     return labelToId[lbl];
   }
 

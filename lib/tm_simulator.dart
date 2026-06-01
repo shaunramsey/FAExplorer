@@ -276,6 +276,8 @@ class TmSimulator {
   }
 
   Set<String> get activeLines {
+    // At step=-1 the simulation hasn't moved yet; no transition has fired.
+    if (step < 0) return {};
     final snap = _snapshotAt(step);
     return snap?.usedLineIds ?? {};
   }
@@ -450,7 +452,11 @@ class TmSimulator {
       if (node.isHaltAccept || node.isHaltReject) continue;
 
       var effectiveConfig = config;
+      String? preBlackBoxCellSym;
       if (node.isBlackBox) {
+        final preSym = config.tape.read(config.headPos);
+        preBlackBoxCellSym = preSym.isEmpty ? kBlank : preSym;
+
         final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
         if (!blackBox.accepted) continue;
         final outputTape = TmTape.fromTokens(blackBox.outputTokens);
@@ -465,7 +471,7 @@ class TmSimulator {
       }
 
       final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
-      final cellSym = headSym.isEmpty ? kBlank : headSym;
+      final cellSym = preBlackBoxCellSym ?? (headSym.isEmpty ? kBlank : headSym);
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
@@ -518,7 +524,17 @@ class TmSimulator {
       }
 
       var effectiveConfig = config;
+      // For blackbox nodes, the symbol used to match outgoing transitions is
+      // the one that was under the head BEFORE the blackbox ran (the symbol
+      // that triggered entry into this blackbox node).  The blackbox does its
+      // own internal read/write/move; the outgoing arc label's "read" field
+      // is just the routing key that caused us to enter the blackbox, not a
+      // fresh read of the post-blackbox tape.
+      String? preBlackBoxCellSym;
       if (node.isBlackBox) {
+        final preSym = config.tape.read(config.headPos);
+        preBlackBoxCellSym = preSym.isEmpty ? kBlank : preSym;
+
         final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
         if (!blackBox.accepted) {
           continue;
@@ -534,8 +550,10 @@ class TmSimulator {
         );
       }
 
+      // Use pre-blackbox symbol for transition matching on blackbox nodes;
+      // use the normal post-move head symbol for regular nodes.
       final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
-      final cellSym = headSym.isEmpty ? kBlank : headSym;
+      final cellSym = preBlackBoxCellSym ?? (headSym.isEmpty ? kBlank : headSym);
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
@@ -546,43 +564,57 @@ class TmSimulator {
 
           if (readSym != cellSym) continue;
 
-          // Apply write.
-          final writeSym = t.write.isEmpty ? kBlank : t.write;
-          final newTape = effectiveConfig.tape.write(
-            effectiveConfig.headPos,
-            writeSym,
-          );
+          final TmConfig next;
+          if (node.isBlackBox) {
+            // Blackbox nodes: the arc label is a routing key only.  All tape
+            // work (read/write/move) was already performed inside the blackbox;
+            // just change the state and carry the post-blackbox tape/head as-is.
+            next = TmConfig(
+              nodeId: line.nodeBId,
+              headPos: effectiveConfig.headPos,
+              readHeadPos: effectiveConfig.headPos,
+              tape: effectiveConfig.tape,
+              usedLineId: line.id,
+            );
+          } else {
+            // Apply write.
+            final writeSym = t.write.isEmpty ? kBlank : t.write;
+            final newTape = effectiveConfig.tape.write(
+              effectiveConfig.headPos,
+              writeSym,
+            );
 
-          // Apply head move. Adjust for any left-extension the write may have introduced.
-          final headShift = newTape.headOffset - effectiveConfig.tape.headOffset;
-          int newHeadPos = effectiveConfig.headPos + headShift;
-          switch (t.direction) {
-            case TmDirection.right:
-              newHeadPos += 1;
-              break;
-            case TmDirection.left:
-              newHeadPos -= 1;
-              break;
-            case TmDirection.stay:
-              break;
+            // Apply head move. Adjust for any left-extension the write may have introduced.
+            final headShift = newTape.headOffset - effectiveConfig.tape.headOffset;
+            int newHeadPos = effectiveConfig.headPos + headShift;
+            switch (t.direction) {
+              case TmDirection.right:
+                newHeadPos += 1;
+                break;
+              case TmDirection.left:
+                newHeadPos -= 1;
+                break;
+              case TmDirection.stay:
+                break;
+            }
+
+            // Extend tape if the head moved beyond either end.
+            final readPosPreMove = effectiveConfig.headPos + headShift;
+            final extended = newTape.extendToInclude(newHeadPos);
+            final extendedTape = extended.tape;
+            final extraShift = extended.shift;
+
+            final adjustedHeadPos = newHeadPos + extraShift;
+            final adjustedReadPos = readPosPreMove + extraShift;
+
+            next = TmConfig(
+              nodeId: line.nodeBId,
+              headPos: adjustedHeadPos,
+              readHeadPos: adjustedReadPos, // position that was read (pre-move)
+              tape: extendedTape,
+              usedLineId: line.id,
+            );
           }
-
-          // Extend tape if the head moved beyond either end.
-          final readPosPreMove = effectiveConfig.headPos + headShift;
-          final extended = newTape.extendToInclude(newHeadPos);
-          final extendedTape = extended.tape;
-          final extraShift = extended.shift;
-
-          final adjustedHeadPos = newHeadPos + extraShift;
-          final adjustedReadPos = readPosPreMove + extraShift;
-
-          final next = TmConfig(
-            nodeId: line.nodeBId,
-            headPos: adjustedHeadPos,
-            readHeadPos: adjustedReadPos, // position that was read (pre-move)
-            tape: extendedTape,
-            usedLineId: line.id,
-          );
           final k = next.key;
           if (seenKeys.add(k)) {
             nextConfigs.add(next);
@@ -773,7 +805,12 @@ class TmSimulator {
       // Absolute head pos in the reconstructed tape = before.length + innerHeadRelative.
       final absHead = before.length + innerHeadRelative;
       // Translate to an index in the trimmed list.
-      final relHead = (absHead - fs).clamp(0, trimmed.isEmpty ? 0 : trimmed.length - 1);
+      // Allow one-past-end (== trimmed.length) so a head that moved off the
+      // right edge of the non-blank content is not snapped back onto the last
+      // symbol.  TmTape.fromTokens wraps the token list with a leading and a
+      // trailing blank, so absolutePos(trimmed.length) correctly resolves to
+      // the trailing blank cell.
+      final relHead = (absHead - fs).clamp(0, trimmed.length);
       return (outputTokens: trimmed, outputHeadPos: relHead);
     }
 
@@ -874,12 +911,19 @@ class TmSimulator {
 
   /// Compute the head position in the trimmed output tokens based on the
   /// halt config's tape and head position.
+  ///
+  /// The returned value may equal [trimmedLength] when the head has moved one
+  /// cell past the last non-blank symbol (i.e. it is sitting on a blank just
+  /// beyond the right edge of the content).  Callers must handle this
+  /// "one-past-end" case — TmTape.fromTokens wraps the token list with a
+  /// leading and a trailing blank, so absolutePos(trimmedLength) maps exactly
+  /// onto the trailing blank cell, which is the correct behaviour.
   int _computeOutputHeadPos(TmConfig? haltConfig) {
     if (haltConfig == null) return 0;
     final tape = haltConfig.tape;
     final rawHeadPos = haltConfig.headPos; // absolute index
 
-    // Build a map from absolute tape index → trimmed output index.
+    // Locate the non-blank region of the tape.
     final cells = tape.cells;
     int start = 0;
     int end = cells.length;
@@ -894,7 +938,10 @@ class TmSimulator {
     if (start >= end) return 0; // empty tape
 
     // Translate the absolute head position to an index in the trimmed output.
-    // Clamp so it always points at a valid position.
-    return (rawHeadPos - start).clamp(0, (end - start) - 1);
+    // Allow one-past-end (== trimmedLength) so that a head that moved off the
+    // right edge of the content is not incorrectly snapped back onto the last
+    // symbol.  Clamp to [0, trimmedLength] (inclusive on both ends).
+    final trimmedLen = end - start;
+    return (rawHeadPos - start).clamp(0, trimmedLen);
   }
 }
