@@ -138,6 +138,7 @@ class _AppGateState extends State<AppGate> {
         sessionStore: _sessionStore!,
         isGuest: widget.authService.isGuest,
         userEmail: widget.authService.user?.email,
+        onGoToGame: () => setState(() => _mode = _AppMode.game),
         onSignOut: _handleSignOut,
       );
     }
@@ -234,7 +235,7 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
                       Text(
                         'DESIGNER',
                         style: GoogleFonts.orbitron(
-                          color: const Color(0xFF1A3D4D),
+                          color: const Color(0xFF00E5FF),
                           fontSize: 18,
                           letterSpacing: 12,
                         ),

@@ -147,6 +147,7 @@ class AutomataDrawer extends StatelessWidget {
   final VoidCallback onImport;
   final VoidCallback onExportHistory;
   final VoidCallback onReset;
+  final VoidCallback? onGoToGame;
   final Future<void> Function()? onSignOut;
 
   const AutomataDrawer({
@@ -165,6 +166,7 @@ class AutomataDrawer extends StatelessWidget {
     required this.onImport,
     required this.onExportHistory,
     required this.onReset,
+    this.onGoToGame,
     this.onSignOut,
 
     // ── Legacy compat: old callers may still pass showPdaMode / onShowPdaModeChanged.
@@ -269,6 +271,17 @@ class AutomataDrawer extends StatelessWidget {
                 onExportHistory();
               },
             ),
+
+            if (onGoToGame != null)
+              _HoverTile(
+                leading: const Icon(Icons.videogame_asset),
+                title: const Text('Game Mode'),
+                subtitle: 'Open the level select screen.',
+                onTap: () {
+                  Navigator.pop(context);
+                  onGoToGame!();
+                },
+              ),
 
             const Divider(),
 
