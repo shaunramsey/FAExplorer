@@ -56,6 +56,8 @@ class AutomataSimulator {
   }
 
   Set<String> get activeLines {
+    // At step=-1 the simulation hasn't moved yet; no transition has fired.
+    if (step < 0) return {};
     if (usedLines.isEmpty) return {};
     final idx = step + 1;
     if (idx < 0 || idx >= usedLines.length) return {};
@@ -156,15 +158,33 @@ class AutomataSimulator {
   Iterable<String> _transitionAlternatives(String label) =>
       label.split(_transitionLabelSplitter).map((s) => s.trim());
 
+  /// Run the black-box inner machine on the tokens that the outer machine has
+  /// NOT yet consumed, i.e. [inputTokens] sliced from [inputPos] onward.
+  ///
+  /// [inputPos] is the outer machine's current read pointer (the index of the
+  /// first token the black box should see).  The returned [outputHeadPos] is
+  /// already translated back to an absolute index in the *full* [inputTokens]
+  /// list so callers can use it directly as the new outer [inputPos].
+  ///
+  /// The cache key includes [inputPos] so that the same black-box node visited
+  /// at different pointer positions produces separate cache entries.
   ({bool accepted, List<String> outputTokens, int outputHeadPos}) _runBlackBox(
     NodeData node,
     List<String> inputTokens,
+    int inputPos,
   ) {
     if (!node.isBlackBox) {
-      return (accepted: true, outputTokens: inputTokens, outputHeadPos: 0);
+      return (accepted: true, outputTokens: inputTokens, outputHeadPos: inputPos);
     }
 
-    final cacheKey = '${node.id}:${inputTokens.join('\u0001')}';
+    // Slice the token list to only what the outer machine hasn't consumed yet.
+    // If inputPos is out of range treat it as an empty slice rather than
+    // returning the whole input (which would confuse the inner machine).
+    final slicedTokens = (inputPos >= 0 && inputPos <= inputTokens.length)
+      ? (inputPos < inputTokens.length ? inputTokens.sublist(inputPos) : <String>[]) 
+      : <String>[];
+
+    final cacheKey = '${node.id}:$inputPos:${slicedTokens.join('\u0001')}';
     final cached = _blackBoxResultCache[cacheKey];
     if (cached != null) return cached;
 
@@ -173,22 +193,24 @@ class AutomataSimulator {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
-        outputHeadPos: 0,
+        outputHeadPos: inputPos,
       );
     }
 
     try {
       final graph = DslCodec.importFromDsl(dsl);
-      final input = inputTokens.join();
+      final input = slicedTokens.join();
       switch (graph.automataMode) {
         case AutomataMode.ndfa:
           final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
           final accepted = sim.finalResult() == SimResult.accept;
+          // NFA/PDA black boxes consume their entire slice and the outer machine
+          // continues from the end of that slice (i.e. inputPos + slicedTokens.length).
           return _blackBoxResultCache[cacheKey] = (
             accepted: accepted,
             outputTokens: accepted ? inputTokens : const <String>[],
-            outputHeadPos: 0,
+            outputHeadPos: accepted ? inputPos + slicedTokens.length : inputPos,
           );
         case AutomataMode.pda:
           final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
@@ -197,33 +219,44 @@ class AutomataSimulator {
           return _blackBoxResultCache[cacheKey] = (
             accepted: accepted,
             outputTokens: accepted ? inputTokens : const <String>[],
-            outputHeadPos: 0,
+            outputHeadPos: accepted ? inputPos + slicedTokens.length : inputPos,
           );
         case AutomataMode.tm:
           final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
           while (sim.computeNext()) {}
-          final hasHaltAccept = _tmHasExplicitHaltAccept(sim);
-          if (!hasHaltAccept) {
+          if (sim.result != TmResult.accept) {
             return _blackBoxResultCache[cacheKey] = (
               accepted: false,
               outputTokens: const <String>[],
-              outputHeadPos: 0,
+              outputHeadPos: inputPos,
             );
           }
-          final (outputTokens: outTokens, outputHeadPos: outHeadPos) =
+          final (outputTokens: outTokens, outputHeadPos: innerHeadPos) =
               _tmOutputTokensAndHead(sim);
+          // The TM black box may rewrite its slice.  Reconstruct the full token
+          // list as: tokens before inputPos  +  TM's output  +  tokens after the slice.
+          final tokensAfter = inputPos + slicedTokens.length < inputTokens.length
+              ? inputTokens.sublist(inputPos + slicedTokens.length)
+              : const <String>[];
+          final reconstructed = [
+            ...inputTokens.sublist(0, inputPos),
+            ...outTokens,
+            ...tokensAfter,
+          ];
+          // innerHeadPos is relative to outTokens; translate to the reconstructed list.
+          final absoluteHeadPos = inputPos + innerHeadPos;
           return _blackBoxResultCache[cacheKey] = (
             accepted: true,
-            outputTokens: outTokens,
-            outputHeadPos: outHeadPos,
+            outputTokens: reconstructed,
+            outputHeadPos: absoluteHeadPos,
           );
       }
     } catch (_) {
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
-        outputHeadPos: 0,
+        outputHeadPos: inputPos,
       );
     }
   }
@@ -237,16 +270,17 @@ class AutomataSimulator {
     // Do NOT use sim.currentTape / sim.currentHeadPos — those go through the
     // step cursor (sim.step) which is still -1 after computeNext() finishes,
     // so they would return the *initial* tape rather than the final one.
-    // Instead, pull the halt-accept config directly from the last snapshot.
+    // Instead, pull an accepting config from the last snapshot.
     TmConfig? haltConfig;
     if (sim.steps.isNotEmpty) {
-      for (final c in sim.steps.last.configs) {
-        if (sim.nodes[c.nodeId]?.isHaltAccept == true) {
-          haltConfig = c;
-          break;
-        }
-      }
-      haltConfig ??= sim.steps.last.configs.firstOrNull;
+      final finalConfigs = sim.steps.last.configs;
+      haltConfig = finalConfigs.where(
+        (c) => sim.nodes[c.nodeId]?.isHaltAccept == true,
+      ).firstOrNull;
+      haltConfig ??= finalConfigs.where(
+        (c) => sim.nodes[c.nodeId]?.isAccept == true,
+      ).firstOrNull;
+      haltConfig ??= finalConfigs.firstOrNull;
     }
 
     final tape = haltConfig?.tape;
@@ -279,16 +313,6 @@ class AutomataSimulator {
     return (outputTokens: outputTokens, outputHeadPos: outputHeadPos);
   }
 
-  bool _tmHasExplicitHaltAccept(TmSimulator sim) {
-    if (sim.steps.isEmpty) return false;
-    final last = sim.steps.last;
-    for (final config in last.configs) {
-      final node = sim.nodes[config.nodeId];
-      if (node?.isHaltAccept == true) return true;
-    }
-    return false;
-  }
-
   (Set<_SimConfig>, Set<String>) _epsilonClosure(Set<_SimConfig> startConfigs) {
     final visitedConfigs = <String, _SimConfig>{
       for (final cfg in startConfigs) cfg.key: cfg,
@@ -303,21 +327,23 @@ class AutomataSimulator {
 
       var effective = current;
       if (currentNode.isBlackBox) {
-        final result = _runBlackBox(currentNode, current.tokens);
+        final result = _runBlackBox(currentNode, current.tokens, current.inputPos);
         if (!result.accepted) {
-          visitedConfigs.remove(current.key);
-          continue;
-        }
-        effective = _SimConfig(
-          nodeId: current.nodeId,
-          tokens: result.outputTokens,
-          inputPos: result.outputHeadPos,
-        );
-        if (!visitedConfigs.containsKey(effective.key)) {
-          visitedConfigs[effective.key] = effective;
-          queue.add(effective);
-        } else if (effective.key != current.key) {
-          continue;
+          // If inner machine rejected, keep the original config so we can
+          // still explore epsilon/null transitions from the black-box node.
+          effective = current;
+        } else {
+          effective = _SimConfig(
+            nodeId: current.nodeId,
+            tokens: result.outputTokens,
+            inputPos: result.outputHeadPos,
+          );
+          if (!visitedConfigs.containsKey(effective.key)) {
+            visitedConfigs[effective.key] = effective;
+            queue.add(effective);
+          } else if (effective.key != current.key) {
+            continue;
+          }
         }
       }
 
@@ -328,12 +354,13 @@ class AutomataSimulator {
         bool isNormalEpsilon = false;
         bool isNullJump = false;
         final atEndOfInput = effective.inputPos >= effective.tokens.length;
-        final nullWasExplicitlyTyped = effective.tokens.any(_isNullToken);
 
         for (final alt in _epsilonAlternatives(line.label)) {
           final normalized = _normalizeSimToken(alt);
+          final nullWasExplicitlyTyped = current.tokens.any(_isNullToken);
+
           if (normalized.isEmpty || normalized == '~') isNormalEpsilon = true;
-          if (normalized == '?' && atEndOfInput && !nullWasExplicitlyTyped) {
+          if (normalized == '?' && atEndOfInput && (!nullWasExplicitlyTyped || currentNode.isBlackBox)) {
             isNullJump = true;
           }
         }
@@ -392,7 +419,7 @@ class AutomataSimulator {
 
         var effective = config;
         if (node.isBlackBox) {
-          final result = _runBlackBox(node, config.tokens);
+          final result = _runBlackBox(node, config.tokens, config.inputPos);
           if (!result.accepted) continue;
           effective = _SimConfig(
             nodeId: config.nodeId,
@@ -401,27 +428,51 @@ class AutomataSimulator {
           );
         }
 
-        if (effective.inputPos >= effective.tokens.length) continue;
+        // If the black box (or normal config) has consumed all tokens, it
+        // cannot fire a normal consuming transition — but it CAN take a null
+        // (`?`) epsilon jump.  Forward it into nextConfigs so _epsilonClosure
+        // can pick up those null transitions.  Mark consumedAny=true because
+        // the black box itself did consume input.
+        if (effective.inputPos >= effective.tokens.length) {
+          if (node.isBlackBox) {
+            consumedAny = true;
+            nextConfigs.add(effective);
+          }
+          continue;
+        }
 
-        final token = effective.tokens[effective.inputPos];
-        final nullWasExplicitlyTyped = effective.tokens.any(_isNullToken);
+        final nullWasExplicitlyTyped = config.tokens.any(_isNullToken);
 
         for (final line in lines.values) {
           if (line.nodeAId != effective.nodeId) continue;
           for (final alt in _transitionAlternatives(line.label)) {
             if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) continue;
-            if (_normalizeSimToken(alt) == _normalizeSimToken(token)) {
-              consumedAny = true;
-              nextConfigs.add(
-                _SimConfig(
-                  nodeId: line.nodeBId,
-                  tokens: effective.tokens,
-                  inputPos: effective.inputPos + 1,
-                ),
-              );
-              stepLines.add(line.id);
-              break;
+            // Treat the transition label as a sequence of tokens and attempt
+            // to match that sequence starting at the current input position.
+            final labelTokens = _tokenize(alt);
+            final normalizedLabel = labelTokens.map(_normalizeSimToken).toList();
+            final remaining = effective.tokens.length - effective.inputPos;
+            if (normalizedLabel.length > remaining) continue;
+
+            var allMatch = true;
+            for (int i = 0; i < normalizedLabel.length; i++) {
+              if (normalizedLabel[i] != _normalizeSimToken(effective.tokens[effective.inputPos + i])) {
+                allMatch = false;
+                break;
+              }
             }
+            if (!allMatch) continue;
+
+            consumedAny = true;
+            nextConfigs.add(
+              _SimConfig(
+                nodeId: line.nodeBId,
+                tokens: effective.tokens,
+                inputPos: effective.inputPos + normalizedLabel.length,
+              ),
+            );
+            stepLines.add(line.id);
+            break;
           }
         }
       }

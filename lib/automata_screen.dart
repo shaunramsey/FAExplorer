@@ -30,12 +30,14 @@ class AutomataScreen extends StatefulWidget {
     required this.sessionStore,
     this.isGuest = false,
     this.userEmail,
+    this.onGoToGame,
     this.onSignOut,
   });
 
   final AutomataSessionStore sessionStore;
   final bool isGuest;
   final String? userEmail;
+  final VoidCallback? onGoToGame;
   final Future<void> Function()? onSignOut;
 
   @override
@@ -857,6 +859,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onImport: _showImportDialog,
         onExportHistory: _showExportHistory,
         onReset: _reset,
+        onGoToGame: widget.onGoToGame,
         onSignOut: widget.onSignOut,
       ),
 

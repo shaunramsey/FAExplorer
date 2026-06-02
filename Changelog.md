@@ -1,3 +1,11 @@
+# June 1st, 2026
+* Fixed blackbox logic to make them import and export properly
+* Fixed more blackbox logic to make them properly end and begin their cursors
+* Added ~ jumps in TM mode so that they can be taken no matter what input and do not do anything
+* Removed black box descriptions
+* Added in a way to check for machine equivalencies
+* Worked on implementing game logic
+
 # May 28th, 2026
 * Implemented blackboxes so that you can import your code as usable small pieces
 * Made it so TMs do not do automatic computations to allow for infinite loops to be placed 

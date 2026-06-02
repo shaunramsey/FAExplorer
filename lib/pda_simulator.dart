@@ -203,6 +203,8 @@ class PdaSimulator {
   }
 
   Set<String> get activeLines {
+    // At step=-1 the simulation hasn't moved yet; no transition has fired.
+    if (step < 0) return {};
     final idx = step + 1;
     if (idx < 0 || idx >= steps.length) return {};
     return steps[idx].usedLineIds;
