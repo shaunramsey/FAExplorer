@@ -412,7 +412,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           final by = result.acceptedByMachine;
           final yourMachine = by == 1 ? 'your automaton' : 'the target';
           final other = by == 1 ? 'the target' : 'your automaton';
-          final inputDesc = witness.isEmpty ? 'ε (empty string)' : '"$witness"';
+          final inputDesc = witness.isEmpty ? '∅ (empty string)' : '"$witness"';
           _checkResult = '✗ Not equivalent.\n\n'
               'Distinguishing witness: $inputDesc\n'
               '$yourMachine accepts it but $other does not.';
