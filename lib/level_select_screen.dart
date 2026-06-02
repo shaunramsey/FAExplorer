@@ -24,7 +24,7 @@ const double _kColGap      = 180.0; // horizontal gap between column centres
 const double _kRowGap      = 116.0; // vertical gap between row centres
 const double _kTopPad      = 96.0;  // space for the top bar
 const double _kBotPad      = 56.0;
-const double _kSidePad     = 60.0;  // left/right canvas padding
+const double _kSidePad     = 120.0;  // left/right canvas padding
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette

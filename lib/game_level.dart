@@ -163,15 +163,18 @@ class GameLevel {
 // ─────────────────────────────────────────────────────────────────────────────
 //  LEVEL REGISTRY
 //  ──────────────────────────────────────────────────────────────────────────
-//  Add your levels here.  The SVG files live in  assets/levels/<id>.svg
-//  (make sure each is listed in pubspec.yaml under flutter > assets).
+//  Add your levels here.  DSL levels (dsl: '...') do not require SVG files.
 //
 //  The x/y coordinates place the node on the neural-network map.
 //  Use values in [0, 1] — the map renderer scales them to the screen.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const List<GameLevel> kAllLevels = [
-  // ── Layer 0 — Introduction ──────────────────────────────────────────────
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  SHOWCASE LEVELS  (always unlocked, show off PDA / TM)
+  // ═══════════════════════════════════════════════════════════════════════════
+
   GameLevel(
     id: 'level_1',
     title: 'Level 1',
@@ -200,6 +203,7 @@ const List<GameLevel> kAllLevels = [
     y: 0.72,
     tag: 'custom',
   ),
+
   GameLevel(
     id: 'level_2',
     title: 'Level 2',
@@ -253,6 +257,7 @@ const List<GameLevel> kAllLevels = [
     y: 0.83,
     tag: 'custom',
   ),
+
   GameLevel(
     id: 'level_3',
     title: 'Level 3',
@@ -306,129 +311,35 @@ const List<GameLevel> kAllLevels = [
     tag: 'custom',
   ),
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 0 — INTRODUCTION  (x < 0.15)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Accept exactly "a" ──────────────────────────────────────────────────
   GameLevel(
     id: 'intro_accept_a',
     title: 'Accept "a"',
     description:
         'Build an automaton that accepts exactly the string "a" and rejects everything else.',
-    svgAsset: 'assets/levels/intro_accept_a.svg',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n0 = (484.0, 380.0)
+      n1 = (784.0, 380.0)
+      n1 is accepted
+      n0 to n1 = a
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
     unlockRule: AlwaysUnlocked(),
     x: 0.05,
     y: 0.15,
     tag: 'intro',
   ),
 
-  // ── Layer 1 — Basic DFA ─────────────────────────────────────────────────
-  GameLevel(
-    id: 'dfa_ab',
-    title: 'Ends with "ab"',
-    description:
-        'Build an automaton over {a, b} that accepts all strings ending in "ab".',
-    svgAsset: 'assets/levels/dfa_ab.svg',
-    unlockRule: RequireLevel('intro_accept_a'),
-    x: 0.18,
-    y: 0.10,
-    tag: 'dfa',
-  ),
-  GameLevel(
-    id: 'dfa_even_a',
-    title: 'Even number of a\'s',
-    description:
-        'Build an automaton that accepts strings over {a, b} with an even number of a\'s (zero counts as even).',
-    svgAsset: 'assets/levels/dfa_even_a.svg',
-    unlockRule: RequireLevel('intro_accept_a'),
-    x: 0.18,
-    y: 0.25,
-    tag: 'dfa',
-  ),
-
-  // ── Layer 2 — NFA ───────────────────────────────────────────────────────
-  GameLevel(
-    id: 'nfa_ends_b',
-    title: 'Ends with "b"',
-    description:
-        'Build an NFA that accepts all strings over {a, b} that end with "b".',
-    svgAsset: 'assets/levels/nfa_ends_b.svg',
-    unlockRule: RequireAny(['dfa_ab', 'dfa_even_a']),
-    x: 0.31,
-    y: 0.15,
-    tag: 'nfa',
-  ),
-
-  // ── Layer 3 — Mixed requirement ─────────────────────────────────────────
-  GameLevel(
-    id: 'nfa_complex',
-    title: 'Contains "aba"',
-    description:
-        'Build an NFA that accepts exactly those strings over {a, b} that contain "aba" as a substring.',
-    svgAsset: 'assets/levels/nfa_complex.svg',
-    unlockRule: RequireAll(['dfa_ab', 'dfa_even_a']),
-    x: 0.44,
-    y: 0.10,
-    tag: 'nfa',
-  ),
-  GameLevel(
-    id: 'epsilon_closure',
-    title: '∅-Closures',
-    description:
-        'Use ∅-transitions to build a compact NFA that accepts strings matching a* | b*.',
-    svgAsset: 'assets/levels/epsilon_closure.svg',
-    unlockRule: RequireAll(['nfa_ends_b', 'dfa_ab']),
-    x: 0.44,
-    y: 0.28,
-    tag: 'nfa',
-  ),
-  GameLevel(
-    id: 'dfa_complement',
-    title: 'Complement',
-    description:
-        'Build the complement of the "even a\'s" language — accept all strings with an ODD number of a\'s.',
-    svgAsset: 'assets/levels/dfa_complement.svg',
-    unlockRule: RequireExpression(
-      isAnd: false, // OR
-      children: [
-        RequireLevel('dfa_even_a'),
-        RequireLevel('nfa_ends_b'),
-      ],
-    ),
-    x: 0.44,
-    y: 0.46,
-    tag: 'dfa',
-  ),
-
-  // ── Layer 4 — Boss levels ───────────────────────────────────────────────
-  GameLevel(
-    id: 'boss_three_states',
-    title: 'Three-state Challenge',
-    description:
-        'Build a 3-state DFA over {0, 1} that accepts all strings whose binary value is divisible by 3.',
-    svgAsset: 'assets/levels/boss_three_states.svg',
-    unlockRule: RequireAll(['nfa_complex', 'epsilon_closure', 'dfa_complement']),
-    x: 0.80,
-    y: 0.20,
-    tag: 'boss',
-  ),
-  GameLevel(
-    id: 'boss_palindrome',
-    title: 'Palindrome Detector',
-    description:
-        'Build an automaton (any type) that accepts strings over {a, b} that are palindromes of length ≤ 5.',
-    svgAsset: 'assets/levels/boss_palindrome.svg',
-    unlockRule: RequireExpression(
-      isAnd: true,
-      children: [
-        RequireLevel('boss_three_states'),
-        RequireAny(['nfa_complex', 'epsilon_closure']),
-      ],
-    ),
-    x: 0.90,
-    y: 0.30,
-    tag: 'boss',
-  ),
-
-  // ── DSL Levels — from designer chat ────────────────────────────────────
-
-  // ── Beginner: Simple string/parity puzzles ──────────────────────────────
+  // ── Even 0s ─────────────────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_even_0s',
     title: 'Even 0s',
@@ -460,6 +371,7 @@ const List<GameLevel> kAllLevels = [
     tag: 'dfa',
   ),
 
+  // ── Only empty string (NFA) ──────────────────────────────────────────────
   GameLevel(
     id: 'dsl_only_empty_nfa',
     title: 'Only ∅ (NFA)',
@@ -480,6 +392,101 @@ const List<GameLevel> kAllLevels = [
     tag: 'nfa',
   ),
 
+  // ── Accept Everything ────────────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_accepts_everything',
+    title: 'Accept Everything',
+    description:
+        'Build a DFA that accepts every string (including ∅). '
+        'Use "." to represent the entire alphabet.',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n0 = (734.0, 447.3)
+      n0 is accepted
+      n0 to n0 = .
+      . loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: AlwaysUnlocked(),
+    x: 0.05,
+    y: 0.75,
+    tag: 'dfa',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 1 — BASICS  (0.15 ≤ x < 0.28)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Ends with "ab" ───────────────────────────────────────────────────────
+  GameLevel(
+    id: 'dfa_ab',
+    title: 'Ends with "ab"',
+    description:
+        'Build an automaton over {a, b} that accepts all strings ending in "ab".',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n2 = C
+      n0 = (360.0, 340.0)
+      n1 = (680.0, 340.0)
+      n2 = (1000.0, 340.0)
+      n2 is accepted
+      n0 to n1 = a
+      n0 to n0 = b
+      n1 to n1 = a
+      n1 to n2 = b
+      n2 to n1 = a
+      n2 to n0 = b
+      l0(b) loop angle = -1.5708
+      l2(a) loop angle = -1.5708
+      l4(a) curve = -60.0
+      l5(b) curve = -60.0
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('intro_accept_a'),
+    x: 0.18,
+    y: 0.10,
+    tag: 'dfa',
+  ),
+
+  // ── Even number of a's ───────────────────────────────────────────────────
+  GameLevel(
+    id: 'dfa_even_a',
+    title: "Even number of a's",
+    description:
+        "Build an automaton that accepts strings over {a, b} with an even number of a's (zero counts as even).",
+    svgAsset: '',
+    dsl: '''
+      n0 = even
+      n1 = odd
+      n0 = (504.0, 360.0)
+      n1 = (904.0, 360.0)
+      n0 is accepted
+      n0 to n1 = a
+      n1 to n0 = a
+      n0 to n0 = b
+      n1 to n1 = b
+      l0(a) curve = -80.0
+      l1(a) curve = -80.0
+      l2(b) loop angle = -1.5708
+      l3(b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('intro_accept_a'),
+    x: 0.18,
+    y: 0.25,
+    tag: 'dfa',
+  ),
+
+  // ── Only ∅ (DFA) ─────────────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_only_empty_dfa',
     title: 'Only ∅ (DFA)',
@@ -506,29 +513,7 @@ const List<GameLevel> kAllLevels = [
     tag: 'dfa',
   ),
 
-  GameLevel(
-    id: 'dsl_accepts_everything',
-    title: 'Accept Everything',
-    description:
-        'Build a DFA that accepts every string (including ∅). '
-        'Use "." to represent the entire alphabet.',
-    svgAsset: '',
-    dsl: '''
-      n0 = A
-      n0 = (734.0, 447.3)
-      n0 is accepted
-      n0 to n0 = .
-      . loop angle = -1.5708
-      to n0
-      to n0 angle = -1.0000, 0.0000
-    ''',
-    automataMode: AutomataMode.ndfa,
-    unlockRule: AlwaysUnlocked(),
-    x: 0.05,
-    y: 0.75,
-    tag: 'dfa',
-  ),
-
+  // ── Accept Everything (NFA + ~-jump) ─────────────────────────────────────
   GameLevel(
     id: 'dsl_accepts_everything_nfa',
     title: 'Accept Everything (NFA + ~-jump)',
@@ -555,7 +540,63 @@ const List<GameLevel> kAllLevels = [
     tag: 'nfa',
   ),
 
-  // ── Intermediate: single-zero / ends-with puzzles ───────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 2 — STRINGS  (0.28 ≤ x < 0.42)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Ends with "b" (NFA) ──────────────────────────────────────────────────
+  GameLevel(
+    id: 'nfa_ends_b',
+    title: 'Ends with "b"',
+    description:
+        'Build an NFA that accepts all strings over {a, b} that end with "b".',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n0 = (432.7, 360.0)
+      n1 = (759.3, 360.0)
+      n1 is accepted
+      n0 to n0 = a,b
+      n0 to n1 = b
+      a,b loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['dfa_ab', 'dfa_even_a']),
+    x: 0.31,
+    y: 0.15,
+    tag: 'nfa',
+  ),
+
+  // ── Ends with "b" (NFA — dsl variant) ───────────────────────────────────
+  GameLevel(
+    id: 'dsl_ends_b_nfa',
+    title: 'Ends with b (NFA)',
+    description:
+        'Build an NFA over {a, b} that accepts all strings ending in "b".',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n0 = (432.7, 324.7)
+      n1 = (759.3, 327.3)
+      n1 is accepted
+      n0 to n0 = a,b
+      n0 to n1 = b
+      a,b loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: AlwaysUnlocked(),
+    x: 0.31,
+    y: 0.62,
+    tag: 'nfa',
+  ),
+
+  // ── Exactly one 0 (DFA) ──────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_exactly_one_0_dfa',
     title: 'Exactly One 0 (DFA)',
@@ -589,6 +630,149 @@ const List<GameLevel> kAllLevels = [
     tag: 'dfa',
   ),
 
+  // ── Starts with "ab" ────────────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_starts_ab',
+    title: 'Starts with "ab"',
+    description:
+        'Build a DFA over {a, b} that accepts all strings that begin with "ab".',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n2 = C
+      n3 = dead
+      n0 = (300.0, 360.0)
+      n1 = (620.0, 360.0)
+      n2 = (940.0, 360.0)
+      n3 = (620.0, 600.0)
+      n2 is accepted
+      n0 to n1 = a
+      n0 to n3 = b
+      n1 to n2 = b
+      n1 to n3 = a
+      n2 to n2 = a,b
+      n3 to n3 = a,b
+      l4(a,b) loop angle = -1.5708
+      l5(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('dfa_ab'),
+    x: 0.31,
+    y: 0.80,
+    tag: 'dfa',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 3 — PATTERNS  (0.42 ≤ x < 0.56)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Contains "aba" ───────────────────────────────────────────────────────
+  GameLevel(
+    id: 'nfa_complex',
+    title: 'Contains "aba"',
+    description:
+        'Build an NFA that accepts exactly those strings over {a, b} that contain "aba" as a substring.',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n2 = C
+      n3 = D
+      n0 = (280.0, 360.0)
+      n1 = (580.0, 360.0)
+      n2 = (880.0, 360.0)
+      n3 = (1180.0, 360.0)
+      n3 is accepted
+      n0 to n0 = a,b
+      n0 to n1 = a
+      n1 to n2 = b
+      n2 to n3 = a
+      n3 to n3 = a,b
+      l0(a,b) loop angle = -1.5708
+      l4(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAll(['dfa_ab', 'dfa_even_a']),
+    x: 0.44,
+    y: 0.10,
+    tag: 'nfa',
+  ),
+
+  // ── ∅-Closures: a* | b* ──────────────────────────────────────────────────
+  GameLevel(
+    id: 'epsilon_closure',
+    title: '∅-Closures',
+    description:
+        'Use ∅-transitions to build a compact NFA that accepts strings matching a* | b*.',
+    svgAsset: '',
+    dsl: '''
+      n0 = S
+      n1 = A
+      n2 = B
+      n0 = (500.0, 360.0)
+      n1 = (820.0, 220.0)
+      n2 = (820.0, 500.0)
+      n1 is accepted
+      n2 is accepted
+      n0 to n1
+      n0 to n2
+      n1 to n1 = a
+      n2 to n2 = b
+      l2(a) loop angle = -1.5708
+      l3(b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAll(['nfa_ends_b', 'dfa_ab']),
+    x: 0.44,
+    y: 0.28,
+    tag: 'nfa',
+  ),
+
+  // ── Complement: odd a's ──────────────────────────────────────────────────
+  GameLevel(
+    id: 'dfa_complement',
+    title: 'Complement',
+    description:
+        "Build the complement of the \"even a's\" language — accept all strings with an ODD number of a's.",
+    svgAsset: '',
+    dsl: '''
+      n0 = even
+      n1 = odd
+      n0 = (504.0, 360.0)
+      n1 = (904.0, 360.0)
+      n1 is accepted
+      n0 to n1 = a
+      n1 to n0 = a
+      n0 to n0 = b
+      n1 to n1 = b
+      l0(a) curve = -80.0
+      l1(a) curve = -80.0
+      l2(b) loop angle = -1.5708
+      l3(b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireExpression(
+      isAnd: false,
+      children: [
+        RequireLevel('dfa_even_a'),
+        RequireLevel('nfa_ends_b'),
+      ],
+    ),
+    x: 0.44,
+    y: 0.46,
+    tag: 'dfa',
+  ),
+
+  // ── Exactly one 0 (NFA) ──────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_exactly_one_0_nfa',
     title: 'Exactly One 0 (NFA)',
@@ -617,31 +801,7 @@ const List<GameLevel> kAllLevels = [
     tag: 'nfa',
   ),
 
-  GameLevel(
-    id: 'dsl_ends_b_nfa',
-    title: 'Ends with b (NFA)',
-    description:
-        'Build an NFA over {a, b} that accepts all strings ending in "b".',
-    svgAsset: '',
-    dsl: '''
-      n0 = A
-      n1 = B
-      n0 = (432.7, 324.7)
-      n1 = (759.3, 327.3)
-      n1 is accepted
-      n0 to n0 = a,b
-      n0 to n1 = b
-      a,b loop angle = -1.5708
-      to n0
-      to n0 angle = -1.0000, 0.0000
-    ''',
-    automataMode: AutomataMode.ndfa,
-    unlockRule: AlwaysUnlocked(),
-    x: 0.31,
-    y: 0.62,
-    tag: 'nfa',
-  ),
-
+  // ── Ends with b (DFA) ────────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_ends_b_dfa',
     title: 'Ends with b (DFA)',
@@ -679,7 +839,48 @@ const List<GameLevel> kAllLevels = [
     tag: 'dfa',
   ),
 
-  // ── Intermediate: substring / suffix patterns ───────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 4 — ADVANCED  (0.56 ≤ x < 0.68)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Boss: div-by-3 ───────────────────────────────────────────────────────
+  GameLevel(
+    id: 'boss_three_states',
+    title: 'Three-state Challenge',
+    description:
+        'Build a 3-state DFA over {0, 1} that accepts all strings whose binary value is divisible by 3.',
+    svgAsset: '',
+    dsl: '''
+      n0 = 0
+      n1 = 1
+      n2 = 2
+      n0 = (538.7, 187.3)
+      n1 = (1036.7, 342.0)
+      n2 = (670.0, 578.7)
+      n0 is accepted
+      n0 to n1 = 1
+      n1 to n0 = 1
+      n0 to n0 = 0
+      n1 to n2 = 0
+      n2 to n1 = 0
+      n2 to n2 = 1
+      l0(1) curve = 75.9
+      l1(1) curve = 79.5
+      l3(0) curve = 91.1
+      l4(0) curve = 25.3
+      l2(0) loop angle = -1.5708
+      l5(1) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAll(['nfa_complex', 'epsilon_closure', 'dfa_complement']),
+    x: 0.57,
+    y: 0.20,
+    tag: 'boss',
+  ),
+
+  // ── Ends with abc (NFA) ──────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_ends_abc_nfa',
     title: 'Ends with abc (NFA)',
@@ -707,10 +908,106 @@ const List<GameLevel> kAllLevels = [
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_b_nfa'),
     x: 0.57,
-    y: 0.22,
+    y: 0.38,
     tag: 'nfa',
   ),
 
+  // ── Ends in 00 or 11 (NFA) ───────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_ends_two_same_nfa',
+    title: 'Ends in 00 or 11 (NFA)',
+    description:
+        'Build an NFA over {0,1} that accepts strings ending in "00" or "11".',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n2 = C
+      n3 = D
+      n4 = E
+      n0 = (604.7, 275.3)
+      n1 = (934.7, 190.0)
+      n2 = (1212.0, 198.7)
+      n3 = (910.0, 474.7)
+      n4 = (1160.7, 511.3)
+      n2 is accepted
+      n4 is accepted
+      n0 to n3 = 0
+      n3 to n4 = 0
+      n0 to n1 = 1
+      n1 to n2 = 1
+      n2 to n2 = 1
+      n4 to n4 = 0
+      n0 to n0 = 1,0
+      l4(1) loop angle = -1.5708
+      l5(0) loop angle = -1.5708
+      1,0 loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('dsl_ends_b_nfa'),
+    x: 0.57,
+    y: 0.55,
+    tag: 'nfa',
+  ),
+
+  // ── Boss: palindrome ─────────────────────────────────────────────────────
+  GameLevel(
+    id: 'boss_palindrome',
+    title: 'Palindrome Detector',
+    description:
+        'Build an automaton (any type) that accepts strings over {a, b} that are palindromes of length ≤ 5.',
+    svgAsset: '',
+    dsl: '''
+      n0 = start
+      n1 = a
+      n2 = b
+      n3 = aa
+      n4 = ab
+      n5 = ba
+      n6 = bb
+      n0 = (400.0, 400.0)
+      n1 = (700.0, 240.0)
+      n2 = (700.0, 560.0)
+      n3 = (1000.0, 160.0)
+      n4 = (1000.0, 320.0)
+      n5 = (1000.0, 480.0)
+      n6 = (1000.0, 640.0)
+      n0 is accepted
+      n1 is accepted
+      n2 is accepted
+      n3 is accepted
+      n6 is accepted
+      n0 to n1 = a
+      n0 to n2 = b
+      n1 to n3 = a
+      n1 to n4 = b
+      n2 to n5 = a
+      n2 to n6 = b
+      n3 to n3 = a
+      n6 to n6 = b
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireExpression(
+      isAnd: true,
+      children: [
+        RequireLevel('boss_three_states'),
+        RequireAny(['nfa_complex', 'epsilon_closure']),
+      ],
+    ),
+    x: 0.57,
+    y: 0.75,
+    tag: 'boss',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 5 — SUFFIX  (0.68 ≤ x < 0.78)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Ends with abc (DFA) ──────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_ends_abc_dfa',
     title: 'Ends with abc (DFA)',
@@ -748,50 +1045,39 @@ const List<GameLevel> kAllLevels = [
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_abc_nfa'),
     x: 0.70,
-    y: 0.35,
+    y: 0.10,
     tag: 'dfa',
   ),
 
-  // ── Intermediate: ends in double / two-symbol suffix ───────────────────
+  // ── Hungry Caterpillar (NFA) ─────────────────────────────────────────────
   GameLevel(
-    id: 'dsl_ends_two_same_nfa',
-    title: 'Ends in 00 or 11 (NFA)',
+    id: 'dsl_caterpillar_nfa',
+    title: 'Hungry Caterpillar (NFA)',
     description:
-        'Build an NFA over {0,1} that accepts strings ending in "00" or "11".',
+        'The Very Hungry Caterpillar ends by eating EXACTLY one "Green Leaf".\n'
+        'Build an NFA over story words where .-"Green Leaf" means '
+        '"every word except Green Leaf". Accept strings whose last food item is exactly one Green Leaf.',
     svgAsset: '',
-    dsl: '''
+    dsl: r'''
       n0 = A
       n1 = B
-      n2 = C
-      n3 = D
-      n4 = E
-      n0 = (604.7, 275.3)
-      n1 = (934.7, 190.0)
-      n2 = (1212.0, 198.7)
-      n3 = (910.0, 474.7)
-      n4 = (1160.7, 511.3)
-      n2 is accepted
-      n4 is accepted
-      n0 to n3 = 0
-      n3 to n4 = 0
-      n0 to n1 = 1
-      n1 to n2 = 1
-      n2 to n2 = 1
-      n4 to n4 = 0
-      n0 to n0 = 1,0
-      l4(1) loop angle = -1.5708
-      l5(0) loop angle = -1.5708
-      1,0 loop angle = -1.5708
+      n0 = (689.3, 458.7)
+      n1 = (1080.7, 454.7)
+      n1 is accepted
+      n0 to n1 = "Green Leaf"
+      n0 to n0 = .-"Green Leaf"
+      .-"Green Leaf" loop angle = -1.5708
       to n0
       to n0 angle = -1.0000, 0.0000
     ''',
     automataMode: AutomataMode.ndfa,
-    unlockRule: RequireLevel('dsl_ends_b_nfa'),
-    x: 0.57,
-    y: 0.65,
+    unlockRule: RequireLevel('dsl_ends_abc_nfa'),
+    x: 0.70,
+    y: 0.28,
     tag: 'nfa',
   ),
 
+  // ── Ends in 00 or 11 (DFA) ───────────────────────────────────────────────
   GameLevel(
     id: 'dsl_ends_two_same_dfa',
     title: 'Ends in 00 or 11 (DFA)',
@@ -836,38 +1122,39 @@ const List<GameLevel> kAllLevels = [
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_two_same_nfa'),
     x: 0.70,
-    y: 0.55,
+    y: 0.45,
     tag: 'dfa',
   ),
 
-  // ── Advanced: word-level / natural-language patterns ────────────────────
+  // ── Halt on y ────────────────────────────────────────────────────────────
   GameLevel(
-    id: 'dsl_caterpillar_nfa',
-    title: 'Hungry Caterpillar (NFA)',
+    id: 'dsl_halt_accept_y',
+    title: 'Halt on y',
     description:
-        'The Very Hungry Caterpillar ends by eating EXACTLY one "Green Leaf".\n'
-        'Build an NFA over story words where .-"Green Leaf" means '
-        '"every word except Green Leaf". Accept strings whose last food item is exactly one Green Leaf.',
+        'Build an FA over the lowercase English alphabet that stops computing '
+        'and accepts the moment it sees the letter "y".\n'
+        'Use <<Ha>> to mark a halt-and-accept state, and .-y to mean '
+        '"every letter except y".',
     svgAsset: '',
-    dsl: r'''
+    dsl: '''
       n0 = A
-      n1 = B
-      n0 = (689.3, 458.7)
-      n1 = (1080.7, 454.7)
-      n1 is accepted
-      n0 to n1 = "Green Leaf"
-      n0 to n0 = .-"Green Leaf"
-      .-"Green Leaf" loop angle = -1.5708
+      n1 = <<Ha>>
+      n0 = (484.0, 492.0)
+      Ha = (834.0, 492.0)
+      n0 to Ha = y
+      n0 to n0 = a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,z
+      a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,z loop angle = -1.5708
       to n0
       to n0 angle = -1.0000, 0.0000
     ''',
     automataMode: AutomataMode.ndfa,
-    unlockRule: RequireLevel('dsl_ends_abc_nfa'),
+    unlockRule: RequireLevel('dsl_accepts_everything_nfa'),
     x: 0.70,
-    y: 0.15,
+    y: 0.65,
     tag: 'nfa',
   ),
 
+  // ── Hungry Caterpillar (DFA) ─────────────────────────────────────────────
   GameLevel(
     id: 'dsl_caterpillar_dfa',
     title: 'Hungry Caterpillar (DFA)',
@@ -896,40 +1183,16 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_caterpillar_nfa'),
-    x: 0.80,
-    y: 0.45,
+    x: 0.70,
+    y: 0.83,
     tag: 'dfa',
   ),
 
-  // ── Advanced: halt-and-accept ───────────────────────────────────────────
-  GameLevel(
-    id: 'dsl_halt_accept_y',
-    title: 'Halt on y',
-    description:
-        'Build an FA over the lowercase English alphabet that stops computing '
-        'and accepts the moment it sees the letter "y".\n'
-        'Use <<Ha>> to mark a halt-and-accept state, and .-y to mean '
-        '"every letter except y".',
-    svgAsset: '',
-    dsl: '''
-      n0 = A
-      n1 = <<Ha>>
-      n0 = (484.0, 492.0)
-      Ha = (834.0, 492.0)
-      n0 to Ha = y
-      n0 to n0 = a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,z
-      a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,z loop angle = -1.5708
-      to n0
-      to n0 angle = -1.0000, 0.0000
-    ''',
-    automataMode: AutomataMode.ndfa,
-    unlockRule: RequireLevel('dsl_accepts_everything_nfa'),
-    x: 0.70,
-    y: 0.75,
-    tag: 'nfa',
-  ),
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 6 — LANGUAGE  (0.78 ≤ x < 0.88)
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  // ── Advanced: binary modular arithmetic ────────────────────────────────
+  // ── Binary Mod 3 ─────────────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_binary_mod3',
     title: 'Binary Mod 3',
@@ -964,10 +1227,114 @@ const List<GameLevel> kAllLevels = [
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_even_0s'),
     x: 0.80,
-    y: 0.68,
+    y: 0.20,
     tag: 'dfa',
   ),
 
+  // ── Contains "aab" ───────────────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_contains_aab',
+    title: 'Contains "aab"',
+    description:
+        'Build an NFA over {a, b} that accepts all strings containing "aab" as a substring.',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n2 = C
+      n3 = D
+      n0 = (300.0, 380.0)
+      n1 = (620.0, 380.0)
+      n2 = (940.0, 380.0)
+      n3 = (1260.0, 380.0)
+      n3 is accepted
+      n0 to n0 = a,b
+      n0 to n1 = a
+      n1 to n2 = a
+      n2 to n3 = b
+      n3 to n3 = a,b
+      l0(a,b) loop angle = -1.5708
+      l4(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('nfa_complex'),
+    x: 0.80,
+    y: 0.38,
+    tag: 'nfa',
+  ),
+
+  // ── Length divisible by 3 ────────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_len_div3',
+    title: 'Length div by 3',
+    description:
+        'Build a DFA over {a, b} that accepts all strings whose length is divisible by 3 '
+        '(including the empty string).',
+    svgAsset: '',
+    dsl: '''
+      n0 = 0
+      n1 = 1
+      n2 = 2
+      n0 = (500.0, 260.0)
+      n1 = (880.0, 440.0)
+      n2 = (500.0, 620.0)
+      n0 is accepted
+      n0 to n1 = a,b
+      n1 to n2 = a,b
+      n2 to n0 = a,b
+      l0(a,b) curve = 60.0
+      l1(a,b) curve = 60.0
+      l2(a,b) curve = 60.0
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('dsl_ends_b_dfa'),
+    x: 0.80,
+    y: 0.55,
+    tag: 'dfa',
+  ),
+
+  // ── At least two b's ─────────────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_at_least_two_b',
+    title: 'At Least Two b\'s',
+    description:
+        'Build a DFA over {a, b} that accepts all strings containing at least two occurrences of "b".',
+    svgAsset: '',
+    dsl: '''
+      n0 = zero
+      n1 = one
+      n2 = two
+      n0 = (380.0, 380.0)
+      n1 = (740.0, 380.0)
+      n2 = (1100.0, 380.0)
+      n2 is accepted
+      n0 to n1 = b
+      n1 to n2 = b
+      n0 to n0 = a
+      n1 to n1 = a
+      n2 to n2 = a,b
+      l0(a) loop angle = -1.5708
+      l2(a) loop angle = -1.5708
+      l4(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('dsl_ends_b_dfa'),
+    x: 0.80,
+    y: 0.72,
+    tag: 'dfa',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  COLUMN 7 — CHALLENGE  (x ≥ 0.88)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Binary Mod 7 ─────────────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_binary_mod7',
     title: 'Binary Mod 7',
@@ -1024,10 +1391,83 @@ const List<GameLevel> kAllLevels = [
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_binary_mod3'),
     x: 0.90,
-    y: 0.62,
+    y: 0.22,
     tag: 'boss',
   ),
 
+  // ── No consecutive b's ───────────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_no_consec_b',
+    title: 'No Consecutive b\'s',
+    description:
+        'Build a DFA over {a, b} that accepts all strings containing no two consecutive b\'s.',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n2 = dead
+      n0 = (400.0, 340.0)
+      n1 = (780.0, 340.0)
+      n2 = (580.0, 580.0)
+      n0 is accepted
+      n1 is accepted
+      n0 to n1 = b
+      n0 to n0 = a
+      n1 to n0 = a
+      n1 to n2 = b
+      n2 to n2 = a,b
+      l0(a) loop angle = -1.5708
+      l4(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('dsl_ends_two_same_dfa'),
+    x: 0.90,
+    y: 0.42,
+    tag: 'dfa',
+  ),
+
+  // ── Not "aba" ────────────────────────────────────────────────────────────
+  GameLevel(
+    id: 'dsl_not_aba',
+    title: 'Does NOT contain "aba"',
+    description:
+        'Build a DFA over {a, b} that accepts strings that do NOT contain "aba" as a substring.',
+    svgAsset: '',
+    dsl: '''
+      n0 = A
+      n1 = B
+      n2 = C
+      n3 = dead
+      n0 = (300.0, 340.0)
+      n1 = (620.0, 340.0)
+      n2 = (940.0, 340.0)
+      n3 = (620.0, 600.0)
+      n0 is accepted
+      n1 is accepted
+      n2 is accepted
+      n0 to n1 = a
+      n0 to n0 = b
+      n1 to n1 = a
+      n1 to n2 = b
+      n2 to n3 = a
+      n2 to n0 = b
+      n3 to n3 = a,b
+      l0(b) loop angle = -1.5708
+      l2(a) loop angle = -1.5708
+      l6(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('nfa_complex'),
+    x: 0.90,
+    y: 0.62,
+    tag: 'dfa',
+  ),
+
+  // ── Binary Mod 8 ─────────────────────────────────────────────────────────
   GameLevel(
     id: 'dsl_binary_mod8',
     title: 'Binary Mod 8',
