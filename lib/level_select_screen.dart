@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  Level Select Screen — neural-network visual layout
+//  Level Select Screen — horizontal neural-network layout
 //
-//  Nodes = game levels.
-//  Edges = unlock dependency arrows drawn between nodes.
-//  Completed nodes glow; locked nodes are dimmed.
+//  Scrolls left → right through columns (difficulty layers).
+//  Each node shows its title + a visible unlock requirement beneath it.
+//  Edges are drawn as animated bezier curves between nodes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:math';
@@ -15,17 +15,94 @@ import 'game_progress_store.dart';
 import 'game_puzzle.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Layout constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+const double _kNodeW       = 148.0; // node card width
+const double _kNodeH       = 88.0;  // node card height
+const double _kColGap      = 180.0; // horizontal gap between column centres
+const double _kRowGap      = 116.0; // vertical gap between row centres
+const double _kTopPad      = 96.0;  // space for the top bar
+const double _kBotPad      = 56.0;
+const double _kSidePad     = 60.0;  // left/right canvas padding
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _kBg = Color(0xFF07080F);
-const _kEdgeColor = Color(0xFF1A2535);
-const _kEdgeUnlocked = Color(0xFF1E6B55);
-const _kTextDim = Color(0xFF4A5568);
-const _kTextLight = Color(0xFFCDD5E0);
+const _kBg           = Color(0xFF05080F);
+const _kGridLine     = Color(0xFF0D1620);
+const _kEdgeDim      = Color(0xFF0E2030);
+const _kEdgeActive   = Color(0xFF0E4A38);
+const _kEdgeBright   = Color(0xFF1FD99A);
+const _kTextDim      = Color(0xFF3A4A5E);
+const _kTextMid      = Color(0xFF6B7E96);
+const _kTextLight    = Color(0xFFCDD5E0);
+const _kLockBg       = Color(0xFF080D14);
+const _kLockBorder   = Color(0xFF141E2A);
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Level Select Screen
+//  Level column layout
+//
+//  Each GameLevel carries an `x` in [0,1] which we re-interpret here as a
+//  column index, and a `y` in [0,1] as the row position within that column.
+//  We convert them to absolute pixel positions on the scrollable canvas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The layout bucketed by column (left-to-right difficulty layers).
+/// We derive columns from each level's `x` value bucketed into bands.
+int _colIndex(double x) {
+  if (x < 0.15) return 0;
+  if (x < 0.28) return 1;
+  if (x < 0.42) return 2;
+  if (x < 0.56) return 3;
+  if (x < 0.68) return 4;
+  if (x < 0.78) return 5;
+  if (x < 0.88) return 6;
+  return 7;
+}
+
+/// Given all levels, compute absolute Offset(cx, cy) for each level id.
+Map<String, Offset> _buildPositions(List<GameLevel> levels, double canvasH) {
+  // Group by column
+  final Map<int, List<GameLevel>> cols = {};
+  for (final l in levels) {
+    final c = _colIndex(l.x);
+    cols.putIfAbsent(c, () => []).add(l);
+  }
+
+  final Map<String, Offset> result = {};
+
+  for (final entry in cols.entries) {
+    final colIdx = entry.key;
+    final members = entry.value
+      ..sort((a, b) => a.y.compareTo(b.y));
+
+    final cx = _kSidePad + colIdx * _kColGap;
+
+    // Distribute rows evenly in the usable vertical space
+    final usableH = canvasH - _kTopPad - _kBotPad;
+    for (int i = 0; i < members.length; i++) {
+      // Use the level's y directly scaled into usable space
+      final cy = _kTopPad + members[i].y * usableH;
+      result[members[i].id] = Offset(cx, cy);
+    }
+  }
+
+  return result;
+}
+
+double _canvasWidth(List<GameLevel> levels) {
+  int maxCol = 0;
+  for (final l in levels) {
+    final c = _colIndex(l.x);
+    if (c > maxCol) maxCol = c;
+  }
+  return _kSidePad * 2 + maxCol * _kColGap + _kNodeW;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LevelSelectScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
 class LevelSelectScreen extends StatefulWidget {
@@ -45,7 +122,7 @@ class LevelSelectScreen extends StatefulWidget {
 class _LevelSelectScreenState extends State<LevelSelectScreen>
     with TickerProviderStateMixin {
   late final AnimationController _pulseCtrl;
-  late final AnimationController _scanCtrl;
+  late final AnimationController _flowCtrl;
   late final AnimationController _entryCtrl;
 
   Set<String> _completed = {};
@@ -60,90 +137,46 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
       duration: const Duration(seconds: 3),
     )..repeat(reverse: true);
 
-    _scanCtrl = AnimationController(
+    _flowCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 8),
+      duration: const Duration(seconds: 4),
     )..repeat();
 
     _entryCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 800),
     )..forward();
   }
 
   @override
   void dispose() {
     _pulseCtrl.dispose();
-    _scanCtrl.dispose();
+    _flowCtrl.dispose();
     _entryCtrl.dispose();
     super.dispose();
   }
 
-  void _reload() {
-    setState(() {
-      _completed = widget.progressStore.loadCompletedLevels();
-    });
-  }
+  void _reload() => setState(() {
+        _completed = widget.progressStore.loadCompletedLevels();
+      });
 
-  bool _isUnlocked(GameLevel level) =>
-      level.unlockRule.isSatisfied(_completed);
-
+  bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completed);
   bool _isCompleted(String id) => _completed.contains(id);
 
-  void _onNodeTap(GameLevel level) {
+  void _onTap(GameLevel level) {
     if (!_isUnlocked(level)) {
-      _showLockedDialog(level);
-      return;
+      _showLockedSheet(level);
+    } else {
+      _openLevel(level);
     }
-    _openLevel(level);
   }
 
-  void _showLockedDialog(GameLevel level) {
-    showDialog(
+  void _showLockedSheet(GameLevel level) {
+    final tagColor = levelTagColor(level.tag);
+    showModalBottomSheet(
       context: context,
-      builder: (_) => Dialog(
-        backgroundColor: const Color(0xFF0D1117),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFF1E2A3A), width: 1.5),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.lock_outline, color: Color(0xFF4A5568), size: 40),
-              const SizedBox(height: 16),
-              Text(
-                level.title,
-                style: GoogleFonts.orbitron(
-                  color: _kTextLight,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                level.unlockRule.describe(),
-                style: GoogleFonts.sourceCodePro(
-                  color: const Color(0xFF718096),
-                  fontSize: 13,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'OK',
-                  style: GoogleFonts.orbitron(color: levelTagColor(level.tag)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      backgroundColor: Colors.transparent,
+      builder: (_) => _LockedSheet(level: level, tagColor: tagColor),
     );
   }
 
@@ -163,226 +196,90 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
 
   @override
   Widget build(BuildContext context) {
+    final screenH = MediaQuery.of(context).size.height;
+    final canvasW = _canvasWidth(kAllLevels);
+    final positions = _buildPositions(kAllLevels, screenH);
+
     return Scaffold(
       backgroundColor: _kBg,
       body: Stack(
         children: [
-          // ── Animated scan-line ──────────────────────────────────────────
-          AnimatedBuilder(
-            animation: _scanCtrl,
-            builder: (ctx, _) {
-              final h = MediaQuery.of(ctx).size.height;
-              return Positioned(
-                top: _scanCtrl.value * h - 2,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: 2,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        const Color(0xFF00E5FF).withOpacity(0.15),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+          // ── Background grid ────────────────────────────────────────────
+          CustomPaint(
+            size: Size(MediaQuery.of(context).size.width,
+                MediaQuery.of(context).size.height),
+            painter: _GridPainter(),
           ),
 
-          // ── Neural network canvas ───────────────────────────────────────
-          LayoutBuilder(
-            builder: (ctx, constraints) {
-              final w = constraints.maxWidth;
-              final h = constraints.maxHeight;
-              return AnimatedBuilder(
-                animation: Listenable.merge([_pulseCtrl, _entryCtrl]),
+          // ── Scrollable canvas ──────────────────────────────────────────
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: SizedBox(
+              width: canvasW,
+              height: screenH,
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_pulseCtrl, _flowCtrl, _entryCtrl]),
                 builder: (context, _) {
-                  return CustomPaint(
-                    size: Size(w, h),
-                    painter: _NeuralNetPainter(
-                      levels: kAllLevels,
-                      completed: _completed,
-                      isUnlocked: _isUnlocked,
-                      pulseValue: _pulseCtrl.value,
-                      entryValue: CurvedAnimation(
-                        parent: _entryCtrl,
-                        curve: Curves.easeOut,
-                      ).value,
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-
-          // ── Tappable node overlays ─────────────────────────────────────
-          LayoutBuilder(
-            builder: (ctx, constraints) {
-              final w = constraints.maxWidth;
-              final h = constraints.maxHeight;
-              final usableH = h - 80; // leave top bar space
-              final topPad = 80.0;
-
-              return Stack(
-                children: kAllLevels.map((level) {
-                  final cx = level.x * w;
-                  final cy = topPad + level.y * usableH;
-                  final unlocked = _isUnlocked(level);
-                  final completed = _isCompleted(level.id);
-                  const r = 36.0;
-
-                  return Positioned(
-                    left: cx - r,
-                    top: cy - r,
-                    width: r * 2,
-                    height: r * 2,
-                    child: GestureDetector(
-                      onTap: () => _onNodeTap(level),
-                      child: Tooltip(
-                        message: level.title,
-                        preferBelow: false,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.transparent,
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // ── Edge layer (CustomPaint behind nodes) ──────────
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _EdgePainter(
+                            levels: kAllLevels,
+                            positions: positions,
+                            completed: _completed,
+                            isUnlocked: _isUnlocked,
+                            flowValue: _flowCtrl.value,
+                            pulseValue: _pulseCtrl.value,
+                            entryValue: CurvedAnimation(
+                              parent: _entryCtrl,
+                              curve: Curves.easeOut,
+                            ).value,
                           ),
-                          child: Center(
-                            child: _NodeBadge(
+                        ),
+                      ),
+
+                      // ── Node cards ─────────────────────────────────────
+                      ...kAllLevels.map((level) {
+                        final pos = positions[level.id]!;
+                        final unlocked = _isUnlocked(level);
+                        final completed = _isCompleted(level.id);
+
+                        return Positioned(
+                          left: pos.dx - _kNodeW / 2,
+                          top: pos.dy - _kNodeH / 2,
+                          width: _kNodeW,
+                          height: _kNodeH,
+                          child: GestureDetector(
+                            onTap: () => _onTap(level),
+                            child: _NodeCard(
                               level: level,
                               unlocked: unlocked,
                               completed: completed,
                               pulseAnim: _pulseCtrl,
                             ),
                           ),
-                        ),
-                      ),
-                    ),
+                        );
+                      }),
+                    ],
                   );
-                }).toList(),
-              );
-            },
-          ),
-
-          // ── Top bar ────────────────────────────────────────────────────
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Row(
-                children: [
-                  Text(
-                    'AUTOMATA',
-                    style: GoogleFonts.orbitron(
-                      color: const Color(0xFF00E5FF),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 4,
-                    ),
-                  ),
-                  const Spacer(),
-                  // Progress indicator
-                  AnimatedBuilder(
-                    animation: _entryCtrl,
-                    builder: (_, __) {
-                      final done = _completed.length;
-                      final total = kAllLevels.length;
-                      return Row(
-                        children: [
-                          Text(
-                            '$done / $total',
-                            style: GoogleFonts.orbitron(
-                              color: _kTextLight,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          SizedBox(
-                            width: 80,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: total > 0 ? done / total : 0,
-                                backgroundColor: const Color(0xFF1A2535),
-                                valueColor: const AlwaysStoppedAnimation(
-                                    Color(0xFF00E5FF)),
-                                minHeight: 6,
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 16),
-                  // Sandbox button
-                  GestureDetector(
-                    onTap: widget.onGoToSandbox,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                            color: const Color(0xFF1E2A3A), width: 1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'SANDBOX',
-                        style: GoogleFonts.orbitron(
-                          color: _kTextDim,
-                          fontSize: 11,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                },
               ),
             ),
           ),
 
-          // ── Legend ────────────────────────────────────────────────────
-          Positioned(
-            bottom: 24,
-            left: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final entry in {
-                  'intro': 'Introduction',
-                  'dfa': 'DFA',
-                  'nfa': 'NFA',
-                  'boss': 'Boss',
-                  'custom': 'Puzzle',
-                }.entries)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: levelTagColor(entry.key),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          entry.value,
-                          style: GoogleFonts.sourceCodePro(
-                            color: _kTextDim,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
+          // ── Top bar ────────────────────────────────────────────────────
+          _TopBar(
+            completed: _completed.length,
+            total: kAllLevels.length,
+            onSandbox: widget.onGoToSandbox,
           ),
+
+          // ── Column labels ──────────────────────────────────────────────
+          _ColumnLabels(levels: kAllLevels, screenH: screenH),
         ],
       ),
     );
@@ -390,16 +287,205 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Node Badge widget
+//  Column labels (pinned to top, scrolls with content via a second scroll view
+//  that is synced — simpler: just overlay static labels from positions)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NodeBadge extends StatelessWidget {
+class _ColumnLabels extends StatelessWidget {
+  final List<GameLevel> levels;
+  final double screenH;
+
+  const _ColumnLabels({required this.levels, required this.screenH});
+
+  static const _names = {
+    0: 'FOUNDATION',
+    1: 'BASICS',
+    2: 'STRINGS',
+    3: 'PATTERNS',
+    4: 'ADVANCED',
+    5: 'SUFFIX',
+    6: 'LANGUAGE',
+    7: 'CHALLENGE',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    // Determine which columns exist
+    final Set<int> usedCols = {};
+    for (final l in levels) usedCols.add(_colIndex(l.x));
+
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      height: _kTopPad,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        child: SizedBox(
+          width: _canvasWidth(levels),
+          child: Stack(
+            children: [
+              for (final col in usedCols)
+                Positioned(
+                  left: _kSidePad + col * _kColGap - _kNodeW / 2,
+                  top: 60,
+                  width: _kNodeW,
+                  child: Text(
+                    _names[col] ?? 'LAYER $col',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.orbitron(
+                      color: _kTextDim,
+                      fontSize: 7.5,
+                      letterSpacing: 2.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Top bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TopBar extends StatelessWidget {
+  final int completed;
+  final int total;
+  final VoidCallback onSandbox;
+
+  const _TopBar({
+    required this.completed,
+    required this.total,
+    required this.onSandbox,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Row(
+          children: [
+            // Title
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AUTOMATA',
+                  style: GoogleFonts.orbitron(
+                    color: const Color(0xFF00E5FF),
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 4,
+                  ),
+                ),
+                Text(
+                  'LEARNING MAP',
+                  style: GoogleFonts.orbitron(
+                    color: _kTextDim,
+                    fontSize: 8,
+                    letterSpacing: 3.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(width: 20),
+
+            // Scroll hint
+            Row(
+              children: [
+                const Icon(Icons.chevron_left, color: _kTextDim, size: 14),
+                const Icon(Icons.chevron_right, color: _kTextDim, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  'SCROLL',
+                  style: GoogleFonts.orbitron(
+                    color: _kTextDim,
+                    fontSize: 8,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
+            ),
+
+            const Spacer(),
+
+            // Progress
+            Row(
+              children: [
+                Text(
+                  '$completed / $total',
+                  style: GoogleFonts.orbitron(
+                    color: _kTextLight,
+                    fontSize: 12,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 70,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: total > 0 ? completed / total : 0,
+                      backgroundColor: const Color(0xFF0D1620),
+                      valueColor: const AlwaysStoppedAnimation(Color(0xFF00E5FF)),
+                      minHeight: 5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(width: 14),
+
+            // Sandbox
+            GestureDetector(
+              onTap: onSandbox,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFF1A2535), width: 1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'SANDBOX',
+                  style: GoogleFonts.orbitron(
+                    color: _kTextDim,
+                    fontSize: 9,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Node Card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NodeCard extends StatelessWidget {
   final GameLevel level;
   final bool unlocked;
   final bool completed;
   final Animation<double> pulseAnim;
 
-  const _NodeBadge({
+  const _NodeCard({
     required this.level,
     required this.unlocked,
     required this.completed,
@@ -409,53 +495,110 @@ class _NodeBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tagColor = levelTagColor(level.tag);
-    final baseColor = unlocked ? tagColor : const Color(0xFF1E2A3A);
-    final glowOpacity = completed
-        ? 0.5 + pulseAnim.value * 0.4
-        : unlocked
-            ? 0.15 + pulseAnim.value * 0.15
-            : 0.0;
 
     return AnimatedBuilder(
       animation: pulseAnim,
       builder: (_, __) {
+        final glowOpacity = completed
+            ? 0.35 + pulseAnim.value * 0.25
+            : unlocked
+                ? 0.12 + pulseAnim.value * 0.08
+                : 0.0;
+
+        final borderColor = completed
+            ? tagColor.withOpacity(0.85)
+            : unlocked
+                ? tagColor.withOpacity(0.55)
+                : _kLockBorder;
+
+        final bgColor = completed
+            ? tagColor.withOpacity(0.10)
+            : unlocked
+                ? tagColor.withOpacity(0.05)
+                : _kLockBg;
+
         return Container(
-          width: 52,
-          height: 52,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: completed
-                ? baseColor.withOpacity(0.2)
-                : unlocked
-                    ? baseColor.withOpacity(0.1)
-                    : const Color(0xFF0D1117),
-            border: Border.all(
-              color: baseColor.withOpacity(unlocked ? 0.8 : 0.3),
-              width: completed ? 2.5 : 1.5,
-            ),
+            color: bgColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor, width: completed ? 1.8 : 1.2),
             boxShadow: glowOpacity > 0
                 ? [
                     BoxShadow(
                       color: tagColor.withOpacity(glowOpacity),
-                      blurRadius: completed ? 18 : 8,
-                      spreadRadius: completed ? 3 : 1,
+                      blurRadius: completed ? 22 : 10,
+                      spreadRadius: completed ? 2 : 0,
                     ),
                   ]
                 : null,
           ),
-          child: Center(
-            child: completed
-                ? Icon(Icons.check, color: tagColor, size: 22)
-                : unlocked
-                    ? Text(
-                        level.tag == 'boss' ? '★' : '●',
-                        style: TextStyle(
-                          color: tagColor.withOpacity(0.9),
-                          fontSize: level.tag == 'boss' ? 20 : 14,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // ── Status icon row ──────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (completed)
+                      Icon(Icons.check_circle, color: tagColor, size: 13)
+                    else if (unlocked)
+                      Icon(Icons.radio_button_unchecked,
+                          color: tagColor.withOpacity(0.7), size: 11)
+                    else
+                      Icon(Icons.lock_outline, color: _kTextDim, size: 11),
+                    const SizedBox(width: 4),
+                    // Tag pill
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: tagColor.withOpacity(unlocked ? 0.15 : 0.06),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        (level.tag ?? 'misc').toUpperCase(),
+                        style: GoogleFonts.orbitron(
+                          color: unlocked
+                              ? tagColor.withOpacity(0.9)
+                              : _kTextDim,
+                          fontSize: 6.5,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w700,
                         ),
-                      )
-                    : const Icon(Icons.lock,
-                        color: Color(0xFF2D3748), size: 16),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 5),
+
+                // ── Title ────────────────────────────────────────────────
+                Text(
+                  level.title,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.orbitron(
+                    color: completed
+                        ? tagColor
+                        : unlocked
+                            ? _kTextLight
+                            : _kTextDim,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    height: 1.3,
+                  ),
+                ),
+
+                const SizedBox(height: 5),
+
+                // ── Unlock requirement or "READY" ─────────────────────
+                _UnlockHint(level: level, unlocked: unlocked, completed: completed),
+              ],
+            ),
           ),
         );
       },
@@ -464,166 +607,449 @@ class _NodeBadge extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Neural Network CustomPainter
-//  — draws edges + background node rings
+//  Unlock hint (shown inside each node card)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NeuralNetPainter extends CustomPainter {
+class _UnlockHint extends StatelessWidget {
+  final GameLevel level;
+  final bool unlocked;
+  final bool completed;
+
+  const _UnlockHint({
+    required this.level,
+    required this.unlocked,
+    required this.completed,
+  });
+
+  String _shortHint() {
+    final rule = level.unlockRule;
+    if (rule is AlwaysUnlocked) return 'AVAILABLE';
+    if (rule is RequireLevel) {
+      final dep = kLevelById[rule.levelId];
+      return 'NEED: ${dep?.title ?? rule.levelId}';
+    }
+    if (rule is RequireAll) {
+      if (rule.levelIds.length == 1) {
+        final dep = kLevelById[rule.levelIds.first];
+        return 'NEED: ${dep?.title ?? rule.levelIds.first}';
+      }
+      return 'NEED ALL ${rule.levelIds.length} PREREQS';
+    }
+    if (rule is RequireAny) {
+      return 'NEED ANY PREREQ';
+    }
+    if (rule is RequireExpression) {
+      return 'NEED MULTIPLE';
+    }
+    return 'LOCKED';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tagColor = levelTagColor(level.tag);
+
+    if (completed) {
+      return Text(
+        'COMPLETE',
+        style: GoogleFonts.sourceCodePro(
+          color: tagColor.withOpacity(0.8),
+          fontSize: 7.5,
+          letterSpacing: 1.5,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+    }
+
+    if (unlocked) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: tagColor.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: Text(
+          'TAP TO PLAY',
+          style: GoogleFonts.sourceCodePro(
+            color: tagColor.withOpacity(0.9),
+            fontSize: 7,
+            letterSpacing: 1.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    // Locked — show requirement
+    return Text(
+      _shortHint(),
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.sourceCodePro(
+        color: _kTextMid,
+        fontSize: 7,
+        letterSpacing: 0.8,
+        height: 1.4,
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Locked bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LockedSheet extends StatelessWidget {
+  final GameLevel level;
+  final Color tagColor;
+
+  const _LockedSheet({required this.level, required this.tagColor});
+
+  /// Build a rich description of the exact requirements.
+  List<String> _requiredTitles() {
+    return _extractIds(level.unlockRule)
+        .map((id) => kLevelById[id]?.title ?? id)
+        .toList();
+  }
+
+  List<String> _extractIds(UnlockRule rule) {
+    if (rule is AlwaysUnlocked) return [];
+    if (rule is RequireLevel) return [rule.levelId];
+    if (rule is RequireAll) return rule.levelIds;
+    if (rule is RequireAny) return rule.levelIds;
+    if (rule is RequireExpression) {
+      return rule.children.expand(_extractIds).toList();
+    }
+    return [];
+  }
+
+  bool _isAnd() {
+    final rule = level.unlockRule;
+    if (rule is RequireAll) return true;
+    if (rule is RequireExpression) return rule.isAnd;
+    return true; // single requirement = doesn't matter
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final titles = _requiredTitles();
+    final isAnd = _isAnd();
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0F18),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF1A2535), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.6),
+            blurRadius: 24,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E2A3A),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+
+          Row(
+            children: [
+              Icon(Icons.lock, color: _kTextDim, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  level.title,
+                  style: GoogleFonts.orbitron(
+                    color: _kTextLight,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: tagColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: tagColor.withOpacity(0.3)),
+                ),
+                child: Text(
+                  (level.tag ?? 'misc').toUpperCase(),
+                  style: GoogleFonts.orbitron(
+                    color: tagColor,
+                    fontSize: 9,
+                    letterSpacing: 1.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          if (titles.isEmpty)
+            Text(
+              'This level is always available.',
+              style: GoogleFonts.sourceCodePro(
+                  color: _kTextMid, fontSize: 13),
+            )
+          else ...[
+            Text(
+              titles.length == 1
+                  ? 'TO UNLOCK, COMPLETE:'
+                  : isAnd
+                      ? 'TO UNLOCK, COMPLETE ALL OF:'
+                      : 'TO UNLOCK, COMPLETE ANY ONE OF:',
+              style: GoogleFonts.orbitron(
+                color: _kTextDim,
+                fontSize: 9,
+                letterSpacing: 2,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...titles.map((t) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: tagColor.withOpacity(0.6),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          t,
+                          style: GoogleFonts.sourceCodePro(
+                            color: _kTextLight,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
+
+          const SizedBox(height: 20),
+
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                backgroundColor: tagColor.withOpacity(0.08),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(color: tagColor.withOpacity(0.25)),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: Text(
+                'GOT IT',
+                style: GoogleFonts.orbitron(
+                  color: tagColor,
+                  fontSize: 12,
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Background grid painter
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _kGridLine
+      ..strokeWidth = 0.5;
+
+    const spacing = 40.0;
+    for (double x = 0; x < size.width; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GridPainter old) => false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Edge painter — draws bezier curves between dependent nodes
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EdgePainter extends CustomPainter {
   final List<GameLevel> levels;
+  final Map<String, Offset> positions;
   final Set<String> completed;
   final bool Function(GameLevel) isUnlocked;
+  final double flowValue;
   final double pulseValue;
   final double entryValue;
 
-  _NeuralNetPainter({
+  _EdgePainter({
     required this.levels,
+    required this.positions,
     required this.completed,
     required this.isUnlocked,
+    required this.flowValue,
     required this.pulseValue,
     required this.entryValue,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final usableH = size.height - 80;
-    const topPad = 80.0;
-
-    Offset pos(GameLevel l) =>
-        Offset(l.x * size.width, topPad + l.y * usableH);
-
-    // ── Faint background radial glow ────────────────────────────────────
-    final center = Offset(size.width / 2, size.height / 2);
-    final radialPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFF001829).withOpacity(0.6),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCenter(
-          center: center,
-          width: size.width * 1.4,
-          height: size.height * 1.4));
-    canvas.drawRect(Offset.zero & size, radialPaint);
-
-    // ── Edges ────────────────────────────────────────────────────────────
     for (final level in levels) {
-      _drawEdgesFor(canvas, level, pos);
-    }
-
-    // ── Node outer rings (glow effect) ───────────────────────────────────
-    for (final level in levels) {
-      final p = pos(level);
-      final tagColor = levelTagColor(level.tag);
-      final isComp = completed.contains(level.id);
-      final isUnlock = isUnlocked(level);
-
-      if (isComp || isUnlock) {
-        final glowR = 34.0 + (isComp ? pulseValue * 6 : 0);
-        canvas.drawCircle(
-          p,
-          glowR,
-          Paint()
-            ..color = tagColor
-                .withOpacity(isComp ? 0.08 + pulseValue * 0.06 : 0.04)
-            ..style = PaintingStyle.fill,
-        );
-      }
-    }
-
-    // ── Level labels ───────────────────────────────────────────────────
-    for (final level in levels) {
-      final p = pos(level);
-      final isUnlock = isUnlocked(level);
-      final isComp = completed.contains(level.id);
-      final tagColor = levelTagColor(level.tag);
-
-      final labelPainter = TextPainter(
-        text: TextSpan(
-          text: level.title,
-          style: TextStyle(
-            fontFamily: 'Orbitron',
-            color: isComp
-                ? tagColor.withOpacity(0.9)
-                : isUnlock
-                    ? _kTextLight.withOpacity(0.85)
-                    : _kTextDim.withOpacity(0.5),
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        textAlign: TextAlign.center,
-      )..layout(maxWidth: 100);
-
-      labelPainter.paint(
-        canvas,
-        Offset(p.dx - labelPainter.width / 2, p.dy + 32),
-      );
+      _drawEdgesFor(canvas, level);
     }
   }
 
-  void _drawEdgesFor(
-      Canvas canvas, GameLevel level, Offset Function(GameLevel) pos) {
-    final destIds = _extractDependencies(level.unlockRule);
-    if (destIds.isEmpty) return;
+  List<String> _extractDeps(UnlockRule rule) {
+    if (rule is AlwaysUnlocked) return [];
+    if (rule is RequireLevel) return [rule.levelId];
+    if (rule is RequireAll) return rule.levelIds;
+    if (rule is RequireAny) return rule.levelIds;
+    if (rule is RequireExpression) {
+      return rule.children.expand(_extractDeps).toList();
+    }
+    return [];
+  }
 
-    final dest = pos(level);
-    final levelCompleted = completed.contains(level.id);
+  void _drawEdgesFor(Canvas canvas, GameLevel dest) {
+    final destPos = positions[dest.id];
+    if (destPos == null) return;
 
-    for (final srcId in destIds) {
+    final deps = _extractDeps(dest.unlockRule);
+    final destCompleted = completed.contains(dest.id);
+
+    for (final srcId in deps) {
       final srcLevel = kLevelById[srcId];
       if (srcLevel == null) continue;
-      final src = pos(srcLevel);
+      final srcPos = positions[srcId];
+      if (srcPos == null) continue;
 
       final srcCompleted = completed.contains(srcId);
-      final edgeColor = (srcCompleted && levelCompleted)
-          ? _kEdgeUnlocked
-          : (srcCompleted ? const Color(0xFF1A3D2B) : _kEdgeColor);
+      final edgeActive = srcCompleted;
+      final edgeBright = srcCompleted && destCompleted;
 
-      final paint = Paint()
-        ..color = edgeColor.withOpacity(0.6)
-        ..strokeWidth = srcCompleted ? 1.5 : 1.0
-        ..style = PaintingStyle.stroke;
+      // Edge colour
+      Color edgeColor;
+      double strokeW;
+      if (edgeBright) {
+        edgeColor = _kEdgeBright.withOpacity(0.55 + pulseValue * 0.25);
+        strokeW = 2.0;
+      } else if (edgeActive) {
+        edgeColor = _kEdgeActive.withOpacity(0.45 + pulseValue * 0.2);
+        strokeW = 1.5;
+      } else {
+        edgeColor = _kEdgeDim.withOpacity(0.5);
+        strokeW = 1.0;
+      }
 
-      // Draw a slightly curved edge
-      final midX = (src.dx + dest.dx) / 2;
-      final midY = (src.dy + dest.dy) / 2;
-      final ctrlPt = Offset(midX, midY);
+      // Anchor on the right edge of src card, left edge of dest card
+      final src = Offset(srcPos.dx + _kNodeW / 2, srcPos.dy);
+      final dst = Offset(destPos.dx - _kNodeW / 2, destPos.dy);
+
+      final ctrlDist = (dst.dx - src.dx).abs() * 0.45;
+      final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
+      final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
 
       final path = Path()
         ..moveTo(src.dx, src.dy)
-        ..quadraticBezierTo(ctrlPt.dx, ctrlPt.dy, dest.dx, dest.dy);
-      canvas.drawPath(path, paint);
+        ..cubicTo(ctrl1.dx, ctrl1.dy, ctrl2.dx, ctrl2.dy, dst.dx, dst.dy);
 
-      // Arrowhead near destination
-      if (srcCompleted) {
-        _drawArrow(canvas, src, dest, edgeColor.withOpacity(0.7));
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = edgeColor
+          ..strokeWidth = strokeW
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round,
+      );
+
+      // Animated flow dot on active edges
+      if (edgeActive && entryValue >= 1.0) {
+        final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
+        final pt = _cubicPoint(src, ctrl1, ctrl2, dst, t);
+        canvas.drawCircle(
+          pt,
+          edgeBright ? 3.0 : 2.0,
+          Paint()
+            ..color = edgeBright
+                ? _kEdgeBright.withOpacity(0.9)
+                : _kEdgeActive.withOpacity(0.8),
+        );
+      }
+
+      // Arrow tip at destination
+      if (edgeActive) {
+        _drawArrow(canvas, ctrl2, dst, edgeColor, strokeW);
       }
     }
   }
 
-  void _drawArrow(Canvas canvas, Offset from, Offset to, Color color) {
-    const arrowLen = 8.0;
-    const arrowWing = 4.0;
+  Offset _cubicPoint(
+      Offset p0, Offset p1, Offset p2, Offset p3, double t) {
+    final mt = 1 - t;
+    return Offset(
+      mt * mt * mt * p0.dx +
+          3 * mt * mt * t * p1.dx +
+          3 * mt * t * t * p2.dx +
+          t * t * t * p3.dx,
+      mt * mt * mt * p0.dy +
+          3 * mt * mt * t * p1.dy +
+          3 * mt * t * t * p2.dy +
+          t * t * t * p3.dy,
+    );
+  }
+
+  void _drawArrow(
+      Canvas canvas, Offset from, Offset to, Color color, double w) {
+    const len = 8.0;
+    const wing = 4.5;
     final angle = atan2(to.dy - from.dy, to.dx - from.dx);
-    final tip = Offset(
-      to.dx - cos(angle) * 36,
-      to.dy - sin(angle) * 36,
-    );
-    final p1 = Offset(
-      tip.dx - arrowLen * cos(angle) + arrowWing * sin(angle),
-      tip.dy - arrowLen * sin(angle) - arrowWing * cos(angle),
-    );
-    final p2 = Offset(
-      tip.dx - arrowLen * cos(angle) - arrowWing * sin(angle),
-      tip.dy - arrowLen * sin(angle) + arrowWing * cos(angle),
-    );
+    final tip = Offset(to.dx - cos(angle) * 2, to.dy - sin(angle) * 2);
     canvas.drawPath(
       Path()
         ..moveTo(tip.dx, tip.dy)
-        ..lineTo(p1.dx, p1.dy)
-        ..lineTo(p2.dx, p2.dy)
+        ..lineTo(tip.dx - len * cos(angle) + wing * sin(angle),
+            tip.dy - len * sin(angle) - wing * cos(angle))
+        ..lineTo(tip.dx - len * cos(angle) - wing * sin(angle),
+            tip.dy - len * sin(angle) + wing * cos(angle))
         ..close(),
       Paint()
         ..color = color
@@ -631,20 +1057,9 @@ class _NeuralNetPainter extends CustomPainter {
     );
   }
 
-  /// Flatten an UnlockRule into a list of level IDs it depends on.
-  List<String> _extractDependencies(UnlockRule rule) {
-    if (rule is AlwaysUnlocked) return [];
-    if (rule is RequireLevel) return [rule.levelId];
-    if (rule is RequireAll) return rule.levelIds;
-    if (rule is RequireAny) return rule.levelIds;
-    if (rule is RequireExpression) {
-      return rule.children.expand(_extractDependencies).toList();
-    }
-    return [];
-  }
-
   @override
-  bool shouldRepaint(_NeuralNetPainter old) =>
+  bool shouldRepaint(_EdgePainter old) =>
+      old.flowValue != flowValue ||
       old.pulseValue != pulseValue ||
       old.entryValue != entryValue ||
       old.completed != completed;

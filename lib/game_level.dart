@@ -60,7 +60,10 @@ class RequireLevel extends UnlockRule {
   bool isSatisfied(Set<String> completedIds) => completedIds.contains(levelId);
 
   @override
-  String describe() => 'Complete "$levelId" first';
+  String describe() {
+    final title = kLevelById[levelId]?.title ?? levelId;
+    return 'Complete "$title" first';
+  }
 }
 
 /// Requires ALL listed levels to be completed (AND gate).
@@ -73,7 +76,10 @@ class RequireAll extends UnlockRule {
       levelIds.every(completedIds.contains);
 
   @override
-  String describe() => 'Complete all of: ${levelIds.join(", ")}';
+  String describe() {
+    final titles = levelIds.map((id) => kLevelById[id]?.title ?? id).join(', ');
+    return 'Complete all of: $titles';
+  }
 }
 
 /// Requires AT LEAST ONE listed level to be completed (OR gate).
@@ -86,7 +92,10 @@ class RequireAny extends UnlockRule {
       levelIds.any(completedIds.contains);
 
   @override
-  String describe() => 'Complete any of: ${levelIds.join(", ")}';
+  String describe() {
+    final titles = levelIds.map((id) => kLevelById[id]?.title ?? id).join(', ');
+    return 'Complete any of: $titles';
+  }
 }
 
 /// Arbitrary nested AND/OR expression.
@@ -188,7 +197,7 @@ const List<GameLevel> kAllLevels = [
     automataMode: AutomataMode.ndfa,
     unlockRule: AlwaysUnlocked(),
     x: 0.18,
-    y: 0.15,
+    y: 0.72,
     tag: 'custom',
   ),
   GameLevel(
@@ -240,8 +249,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.pda,
     unlockRule: AlwaysUnlocked(),
-    x: 0.5,
-    y: 0.15,
+    x: 0.18,
+    y: 0.83,
     tag: 'custom',
   ),
   GameLevel(
@@ -292,8 +301,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.tm,
     unlockRule: AlwaysUnlocked(),
-    x: 0.82,
-    y: 0.15,
+    x: 0.18,
+    y: 0.93,
     tag: 'custom',
   ),
 
@@ -304,8 +313,8 @@ const List<GameLevel> kAllLevels = [
         'Build an automaton that accepts exactly the string "a" and rejects everything else.',
     svgAsset: 'assets/levels/intro_accept_a.svg',
     unlockRule: AlwaysUnlocked(),
-    x: 0.5,
-    y: 0.05,
+    x: 0.05,
+    y: 0.15,
     tag: 'intro',
   ),
 
@@ -317,8 +326,8 @@ const List<GameLevel> kAllLevels = [
         'Build an automaton over {a, b} that accepts all strings ending in "ab".',
     svgAsset: 'assets/levels/dfa_ab.svg',
     unlockRule: RequireLevel('intro_accept_a'),
-    x: 0.25,
-    y: 0.22,
+    x: 0.18,
+    y: 0.10,
     tag: 'dfa',
   ),
   GameLevel(
@@ -328,8 +337,8 @@ const List<GameLevel> kAllLevels = [
         'Build an automaton that accepts strings over {a, b} with an even number of a\'s (zero counts as even).',
     svgAsset: 'assets/levels/dfa_even_a.svg',
     unlockRule: RequireLevel('intro_accept_a'),
-    x: 0.75,
-    y: 0.22,
+    x: 0.18,
+    y: 0.25,
     tag: 'dfa',
   ),
 
@@ -341,8 +350,8 @@ const List<GameLevel> kAllLevels = [
         'Build an NFA that accepts all strings over {a, b} that end with "b".',
     svgAsset: 'assets/levels/nfa_ends_b.svg',
     unlockRule: RequireAny(['dfa_ab', 'dfa_even_a']),
-    x: 0.5,
-    y: 0.4,
+    x: 0.31,
+    y: 0.15,
     tag: 'nfa',
   ),
 
@@ -354,8 +363,8 @@ const List<GameLevel> kAllLevels = [
         'Build an NFA that accepts exactly those strings over {a, b} that contain "aba" as a substring.',
     svgAsset: 'assets/levels/nfa_complex.svg',
     unlockRule: RequireAll(['dfa_ab', 'dfa_even_a']),
-    x: 0.15,
-    y: 0.57,
+    x: 0.44,
+    y: 0.10,
     tag: 'nfa',
   ),
   GameLevel(
@@ -365,8 +374,8 @@ const List<GameLevel> kAllLevels = [
         'Use ∅-transitions to build a compact NFA that accepts strings matching a* | b*.',
     svgAsset: 'assets/levels/epsilon_closure.svg',
     unlockRule: RequireAll(['nfa_ends_b', 'dfa_ab']),
-    x: 0.5,
-    y: 0.57,
+    x: 0.44,
+    y: 0.28,
     tag: 'nfa',
   ),
   GameLevel(
@@ -382,8 +391,8 @@ const List<GameLevel> kAllLevels = [
         RequireLevel('nfa_ends_b'),
       ],
     ),
-    x: 0.85,
-    y: 0.57,
+    x: 0.44,
+    y: 0.46,
     tag: 'dfa',
   ),
 
@@ -395,8 +404,8 @@ const List<GameLevel> kAllLevels = [
         'Build a 3-state DFA over {0, 1} that accepts all strings whose binary value is divisible by 3.',
     svgAsset: 'assets/levels/boss_three_states.svg',
     unlockRule: RequireAll(['nfa_complex', 'epsilon_closure', 'dfa_complement']),
-    x: 0.5,
-    y: 0.78,
+    x: 0.80,
+    y: 0.20,
     tag: 'boss',
   ),
   GameLevel(
@@ -412,8 +421,8 @@ const List<GameLevel> kAllLevels = [
         RequireAny(['nfa_complex', 'epsilon_closure']),
       ],
     ),
-    x: 0.5,
-    y: 0.93,
+    x: 0.90,
+    y: 0.30,
     tag: 'boss',
   ),
 
@@ -446,8 +455,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: AlwaysUnlocked(),
-    x: 0.10,
-    y: 0.30,
+    x: 0.05,
+    y: 0.35,
     tag: 'dfa',
   ),
 
@@ -466,8 +475,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: AlwaysUnlocked(),
-    x: 0.30,
-    y: 0.30,
+    x: 0.05,
+    y: 0.55,
     tag: 'nfa',
   ),
 
@@ -492,8 +501,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_only_empty_nfa'),
-    x: 0.50,
-    y: 0.30,
+    x: 0.18,
+    y: 0.42,
     tag: 'dfa',
   ),
 
@@ -515,8 +524,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: AlwaysUnlocked(),
-    x: 0.70,
-    y: 0.30,
+    x: 0.05,
+    y: 0.75,
     tag: 'dfa',
   ),
 
@@ -541,8 +550,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_accepts_everything'),
-    x: 0.90,
-    y: 0.30,
+    x: 0.18,
+    y: 0.58,
     tag: 'nfa',
   ),
 
@@ -575,8 +584,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_even_0s'),
-    x: 0.20,
-    y: 0.45,
+    x: 0.31,
+    y: 0.42,
     tag: 'dfa',
   ),
 
@@ -603,8 +612,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_exactly_one_0_dfa'),
-    x: 0.40,
-    y: 0.45,
+    x: 0.44,
+    y: 0.63,
     tag: 'nfa',
   ),
 
@@ -628,8 +637,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: AlwaysUnlocked(),
-    x: 0.60,
-    y: 0.45,
+    x: 0.31,
+    y: 0.62,
     tag: 'nfa',
   ),
 
@@ -665,8 +674,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_b_nfa'),
-    x: 0.80,
-    y: 0.45,
+    x: 0.44,
+    y: 0.80,
     tag: 'dfa',
   ),
 
@@ -697,8 +706,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_b_nfa'),
-    x: 0.20,
-    y: 0.60,
+    x: 0.57,
+    y: 0.22,
     tag: 'nfa',
   ),
 
@@ -738,8 +747,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_abc_nfa'),
-    x: 0.40,
-    y: 0.60,
+    x: 0.70,
+    y: 0.35,
     tag: 'dfa',
   ),
 
@@ -778,8 +787,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_b_nfa'),
-    x: 0.60,
-    y: 0.60,
+    x: 0.57,
+    y: 0.65,
     tag: 'nfa',
   ),
 
@@ -826,8 +835,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_two_same_nfa'),
-    x: 0.80,
-    y: 0.60,
+    x: 0.70,
+    y: 0.55,
     tag: 'dfa',
   ),
 
@@ -854,8 +863,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_abc_nfa'),
-    x: 0.20,
-    y: 0.75,
+    x: 0.70,
+    y: 0.15,
     tag: 'nfa',
   ),
 
@@ -887,8 +896,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_caterpillar_nfa'),
-    x: 0.40,
-    y: 0.75,
+    x: 0.80,
+    y: 0.45,
     tag: 'dfa',
   ),
 
@@ -915,7 +924,7 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_accepts_everything_nfa'),
-    x: 0.60,
+    x: 0.70,
     y: 0.75,
     tag: 'nfa',
   ),
@@ -955,7 +964,7 @@ const List<GameLevel> kAllLevels = [
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_even_0s'),
     x: 0.80,
-    y: 0.75,
+    y: 0.68,
     tag: 'dfa',
   ),
 
@@ -1014,8 +1023,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_binary_mod3'),
-    x: 0.20,
-    y: 0.88,
+    x: 0.90,
+    y: 0.62,
     tag: 'boss',
   ),
 
@@ -1073,8 +1082,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_binary_mod7'),
-    x: 0.50,
-    y: 0.88,
+    x: 0.97,
+    y: 0.46,
     tag: 'boss',
   ),
 ];
