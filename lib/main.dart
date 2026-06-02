@@ -2,7 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'app_gate.dart';
+import 'game_gate.dart';
 import 'auth/auth_service.dart';
 import 'firebase_options.dart';
 
