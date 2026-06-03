@@ -121,18 +121,7 @@ double _canvasWidth(List<GameLevel> levels) {
 /// Minimum canvas height so the tallest column never has overlapping nodes.
 /// Always at least [screenH] so the canvas fills the viewport.
 double _canvasHeight(List<GameLevel> levels, double screenH) {
-  final layerById = _computeLayersFromDeps(levels);
-  final Map<int, int> colCounts = {};
-  for (final layer in layerById.values) {
-    colCounts[layer] = (colCounts[layer] ?? 0) + 1;
-  }
-  final maxCount = colCounts.values.fold(0, (a, b) => a > b ? a : b);
-  final needed = _kTopPad
-      + maxCount * _kNodeH
-      + (maxCount - 1) * (_kRowGap - _kNodeH)
-      + _kBotPad
-      + _kLegendH;
-  return needed > screenH ? needed : screenH;
+  return screenH;
 }
 
 double _canvasWidthFromPositions(Map<String, Offset> positions) {
@@ -204,16 +193,18 @@ Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double can
 
     final cx = _kSidePad + colIdx * _kColGap;
     final count = members.length;
-
-    final minRequired = count * _kNodeH + (count - 1) * _kMinRowPad;
     final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    final totalSpan = minRequired > usableH ? minRequired : usableH;
-    final gap = count > 1 ? totalSpan / (count - 1) : 0.0;
-    final blockH = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = _kTopPad + (usableH - blockH) / 2.0;
+
+    final gap = count > 1
+        ? min(_kRowGap, usableH / (count - 1))
+        : 0.0;
+    final totalSpan = count > 1 ? gap * (count - 1) : 0.0;
+    final topOffset = count > 1
+        ? _kTopPad + (usableH - totalSpan) / 2.0
+        : _kTopPad + usableH / 2.0;
 
     for (int i = 0; i < count; i++) {
-      final cy = count == 1 ? _kTopPad + usableH / 2.0 : topOffset + i * gap;
+      final cy = topOffset + (count == 1 ? 0.0 : i * gap);
       result[members[i].id] = Offset(cx, cy);
     }
   }
@@ -626,13 +617,13 @@ class _NodeCard extends StatelessWidget {
             ? tagColor.withOpacity(0.85)
             : unlocked
                 ? tagColor.withOpacity(0.55)
-                : _kLockBorder;
+                : _kTextMid.withOpacity(0.85);
 
         final bgColor = completed
             ? tagColor.withOpacity(0.10)
             : unlocked
                 ? tagColor.withOpacity(0.05)
-                : _kLockBg;
+                : const Color(0xFF091223);
 
         return Container(
           decoration: BoxDecoration(
@@ -797,16 +788,25 @@ class _UnlockHint extends StatelessWidget {
     }
 
     // Locked — show requirement
-    return Text(
-      _shortHint(),
-      textAlign: TextAlign.center,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: GoogleFonts.sourceCodePro(
-        color: _kTextMid,
-        fontSize: 7,
-        letterSpacing: 0.8,
-        height: 1.4,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF102036),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _kTextMid.withOpacity(0.25)),
+      ),
+      child: Text(
+        _shortHint(),
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.sourceCodePro(
+          color: _kTextLight,
+          fontSize: 7.5,
+          letterSpacing: 0.8,
+          height: 1.4,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -1102,6 +1102,18 @@ class _Legend extends StatelessWidget {
                 _LegendItem(
                   icon: Container(
                     width: 16,
+                    height: 1.5,
+                    decoration: BoxDecoration(
+                      color: _kTextLight,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                  label: 'OR path',
+                  color: _kTextLight,
+                ),
+                _LegendItem(
+                  icon: Container(
+                    width: 16,
                     height: 1,
                     decoration: BoxDecoration(
                       color: _kEdgeDim,
@@ -1217,12 +1229,19 @@ class _EdgePainter extends CustomPainter {
     return [];
   }
 
+  bool _isOrRule(UnlockRule rule) {
+    if (rule is RequireAny) return true;
+    if (rule is RequireExpression) return !rule.isAnd;
+    return false;
+  }
+
   void _drawEdgesFor(Canvas canvas, GameLevel dest) {
     final destPos = positions[dest.id];
     if (destPos == null) return;
 
     final deps = _extractDeps(dest.unlockRule);
     final destCompleted = completed.contains(dest.id);
+    final destIsOr = _isOrRule(dest.unlockRule);
 
     for (final srcId in deps) {
       final srcLevel = kLevelById[srcId];
@@ -1234,59 +1253,54 @@ class _EdgePainter extends CustomPainter {
       final edgeActive = srcCompleted;
       final edgeBright = srcCompleted && destCompleted;
 
-      // Edge colour
       Color edgeColor;
       double strokeW;
       if (edgeBright) {
-        edgeColor = _kEdgeBright.withOpacity(0.55 + pulseValue * 0.25);
-        strokeW = 2.0;
+        edgeColor = _kEdgeBright.withOpacity(0.75 + pulseValue * 0.2);
+        strokeW = 2.2;
       } else if (edgeActive) {
-        edgeColor = _kEdgeActive.withOpacity(0.45 + pulseValue * 0.2);
-        strokeW = 1.5;
+        edgeColor = _kEdgeActive.withOpacity(0.7 + pulseValue * 0.15);
+        strokeW = 1.8;
       } else {
-        edgeColor = _kEdgeDim.withOpacity(0.5);
-        strokeW = 1.0;
+        edgeColor = _kEdgeDim.withOpacity(0.65);
+        strokeW = 1.2;
       }
 
-      // Anchor on the right edge of src card, left edge of dest card
       final src = Offset(srcPos.dx + _kNodeW / 2, srcPos.dy);
       final dst = Offset(destPos.dx - _kNodeW / 2, destPos.dy);
-
       final ctrlDist = (dst.dx - src.dx).abs() * 0.45;
       final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
       final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
-
       final path = Path()
         ..moveTo(src.dx, src.dy)
         ..cubicTo(ctrl1.dx, ctrl1.dy, ctrl2.dx, ctrl2.dy, dst.dx, dst.dy);
 
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = edgeColor
-          ..strokeWidth = strokeW
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round,
-      );
+      final paint = Paint()
+        ..color = edgeColor
+        ..strokeWidth = strokeW
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
 
-      // Animated flow dot on active edges
-      if (edgeActive && entryValue >= 1.0) {
+      if (destIsOr) {
+        canvas.drawPath(_dashPath(path, 8.0, 6.0), paint);
+      } else {
+        canvas.drawPath(path, paint);
+      }
+
+      if (entryValue >= 1.0) {
         final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
         final pt = _cubicPoint(src, ctrl1, ctrl2, dst, t);
         canvas.drawCircle(
           pt,
-          edgeBright ? 3.0 : 2.0,
+          edgeBright ? 3.2 : 2.5,
           Paint()
             ..color = edgeBright
-                ? _kEdgeBright.withOpacity(0.9)
-                : _kEdgeActive.withOpacity(0.8),
+                ? _kEdgeBright.withOpacity(0.95)
+                : _kEdgeActive.withOpacity(0.9),
         );
       }
 
-      // Arrow tip at destination
-      if (edgeActive) {
-        _drawArrow(canvas, ctrl2, dst, edgeColor, strokeW);
-      }
+      _drawArrow(canvas, ctrl2, dst, edgeColor, strokeW);
     }
   }
 
@@ -1323,6 +1337,23 @@ class _EdgePainter extends CustomPainter {
         ..color = color
         ..style = PaintingStyle.fill,
     );
+  }
+
+  Path _dashPath(Path source, double dashLength, double gapLength) {
+    final dashed = Path();
+    for (final metric in source.computeMetrics()) {
+      double distance = 0.0;
+      var draw = true;
+      while (distance < metric.length) {
+        final next = min(distance + (draw ? dashLength : gapLength), metric.length);
+        if (draw) {
+          dashed.addPath(metric.extractPath(distance, next), Offset.zero);
+        }
+        draw = !draw;
+        distance = next;
+      }
+    }
+    return dashed;
   }
 
   @override
