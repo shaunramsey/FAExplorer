@@ -1,3 +1,6 @@
+# June 2nd, 2026
+* Added in game mode to allow the user to solve levels with equivalency check requirements
+
 # June 1st, 2026
 * Fixed blackbox logic to make them import and export properly
 * Fixed more blackbox logic to make them properly end and begin their cursors
