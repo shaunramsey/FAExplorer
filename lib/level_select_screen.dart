@@ -13,6 +13,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'game_level.dart';
 import 'game_progress_store.dart';
 import 'game_puzzle.dart';
+import 'main.dart'
+    show
+        kBg,
+        kSurface,
+        kBorder,
+        kBorderMid,
+        kAccent,
+        kTextDim,
+        kTextMid,
+        kTextLight;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants
@@ -29,19 +39,17 @@ const double _kSidePad     = 120.0;  // left/right canvas padding
 const double _kMinRowPad   = 20.0;  // minimum vertical padding above/below nodes
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Colour palette
+//  Colour palette — screen-local colours (edge animation shades, lock chip)
+//  General UI colours are imported from main.dart above.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _kBg           = Color(0xFF05080F);
-const _kGridLine     = Color(0xFF0D1620);
-const _kEdgeDim      = Color(0xFF0E2030);
-const _kEdgeActive   = Color(0xFF0E4A38);
-const _kEdgeBright   = Color(0xFF1FD99A);
-const _kTextDim      = Color(0xFF8A9BB0);
-const _kTextMid      = Color(0xFFB0BDCC);
-const _kTextLight    = Color(0xFFE8ECF0);
-const _kLockBg       = Color(0xFF080D14);
-const _kLockBorder   = Color(0xFF141E2A);
+// kBg, kSurface, kBorderMid, kTextDim, kTextMid, kTextLight imported from main.dart
+const _kGridLine     = Color(0xFF0D1620);  // subtle dot-grid lines
+const _kEdgeDim      = Color(0xFF0E2030);  // untraversed edge
+const _kEdgeActive   = Color(0xFF0E4A38);  // source completed, dest not yet
+const _kEdgeBright   = Color(0xFF1FD99A);  // both ends completed (kAccentGreen shade)
+const _kLockBg       = Color(0xFF080D14);  // locked-node card background
+const _kLockBorder   = Color(0xFF141E2A);  // locked-node card border
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Level column layout
@@ -314,7 +322,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     final canvasW = _canvasWidthFromPositions(positions);
 
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: kBg,
       body: Stack(
         children: [
           // ── Background grid ────────────────────────────────────────────
@@ -445,7 +453,7 @@ class _ColumnLabels extends StatelessWidget {
                     _names[col] ?? 'LAYER $col',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.orbitron(
-                      color: _kTextDim,
+                      color: kTextDim,
                       fontSize: 7.5,
                       letterSpacing: 2.5,
                       fontWeight: FontWeight.w600,
@@ -490,7 +498,7 @@ class _TopBar extends StatelessWidget {
                 Text(
                   'AUTOMATA',
                   style: GoogleFonts.orbitron(
-                    color: const Color(0xFF00E5FF),
+                    color: kAccent,
                     fontSize: 19,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 4,
@@ -499,7 +507,7 @@ class _TopBar extends StatelessWidget {
                 Text(
                   'LEARNING MAP',
                   style: GoogleFonts.orbitron(
-                    color: _kTextDim,
+                    color: kTextDim,
                     fontSize: 8,
                     letterSpacing: 3.5,
                     fontWeight: FontWeight.w500,
@@ -513,12 +521,12 @@ class _TopBar extends StatelessWidget {
             // Scroll hint
             Row(
               children: [
-                const Icon(Icons.open_with, color: _kTextDim, size: 14),
+                const Icon(Icons.open_with, color: kTextDim, size: 14),
                 const SizedBox(width: 4),
                 Text(
                   'SCROLL',
                   style: GoogleFonts.orbitron(
-                    color: _kTextDim,
+                    color: kTextDim,
                     fontSize: 8,
                     letterSpacing: 2,
                   ),
@@ -534,7 +542,7 @@ class _TopBar extends StatelessWidget {
                 Text(
                   '$completed / $total',
                   style: GoogleFonts.orbitron(
-                    color: _kTextLight,
+                    color: kTextLight,
                     fontSize: 12,
                     letterSpacing: 1,
                   ),
@@ -546,8 +554,8 @@ class _TopBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(3),
                     child: LinearProgressIndicator(
                       value: total > 0 ? completed / total : 0,
-                      backgroundColor: const Color(0xFF0D1620),
-                      valueColor: const AlwaysStoppedAnimation(Color(0xFF00E5FF)),
+                      backgroundColor: _kGridLine,
+                      valueColor: const AlwaysStoppedAnimation(kAccent),
                       minHeight: 5,
                     ),
                   ),
@@ -564,14 +572,14 @@ class _TopBar extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
-                  side: const BorderSide(color: Color(0xFF1A2535), width: 1),
+                  side: const BorderSide(color: kBorderMid, width: 1),
                 ),
-                foregroundColor: _kTextDim,
+                foregroundColor: kTextDim,
               ),
               child: Text(
                 'SANDBOX',
                 style: GoogleFonts.orbitron(
-                  color: _kTextDim,
+                  color: kTextDim,
                   fontSize: 9,
                   letterSpacing: 2,
                 ),
@@ -618,13 +626,13 @@ class _NodeCard extends StatelessWidget {
             ? tagColor.withOpacity(0.85)
             : unlocked
                 ? tagColor.withOpacity(0.55)
-                : _kTextMid.withOpacity(0.85);
+                : kTextMid.withOpacity(0.85);
 
         final bgColor = completed
             ? tagColor.withOpacity(0.10)
             : unlocked
                 ? tagColor.withOpacity(0.05)
-                : const Color(0xFF091223);
+                : kBorder;
 
         return Container(
           decoration: BoxDecoration(
@@ -656,7 +664,7 @@ class _NodeCard extends StatelessWidget {
                       Icon(Icons.radio_button_unchecked,
                           color: tagColor.withOpacity(0.7), size: 11)
                     else
-                      Icon(Icons.lock_outline, color: _kTextDim, size: 11),
+                      Icon(Icons.lock_outline, color: kTextDim, size: 11),
                     const SizedBox(width: 4),
                     // Tag pill
                     Container(
@@ -671,7 +679,7 @@ class _NodeCard extends StatelessWidget {
                         style: GoogleFonts.orbitron(
                           color: unlocked
                               ? tagColor.withOpacity(0.9)
-                              : _kTextDim,
+                              : kTextDim,
                           fontSize: 6.5,
                           letterSpacing: 1.2,
                           fontWeight: FontWeight.w700,
@@ -693,8 +701,8 @@ class _NodeCard extends StatelessWidget {
                     color: completed
                         ? tagColor
                         : unlocked
-                            ? _kTextLight
-                            : _kTextDim,
+                            ? kTextLight
+                            : kTextDim,
                     fontSize: 9.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.4,
@@ -792,9 +800,9 @@ class _UnlockHint extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF102036),
+        color: kBorderMid,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _kTextMid.withOpacity(0.25)),
+        border: Border.all(color: kTextMid.withOpacity(0.25)),
       ),
       child: Text(
         _shortHint(),
@@ -802,7 +810,7 @@ class _UnlockHint extends StatelessWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: GoogleFonts.sourceCodePro(
-          color: _kTextLight,
+          color: kTextLight,
           fontSize: 7.5,
           letterSpacing: 0.8,
           height: 1.4,
@@ -857,9 +865,9 @@ class _LockedSheet extends StatelessWidget {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0F18),
+        color: kSurface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF1A2535), width: 1.5),
+        border: Border.all(color: kBorderMid, width: 1.5),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.6),
@@ -879,7 +887,7 @@ class _LockedSheet extends StatelessWidget {
               height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E2A3A),
+                color: kBorderMid,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -887,13 +895,13 @@ class _LockedSheet extends StatelessWidget {
 
           Row(
             children: [
-              Icon(Icons.lock, color: _kTextDim, size: 18),
+              Icon(Icons.lock, color: kTextDim, size: 18),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   level.title,
                   style: GoogleFonts.orbitron(
-                    color: _kTextLight,
+                    color: kTextLight,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,
@@ -927,7 +935,7 @@ class _LockedSheet extends StatelessWidget {
             Text(
               'This level is always available.',
               style: GoogleFonts.sourceCodePro(
-                  color: _kTextMid, fontSize: 13),
+                  color: kTextMid, fontSize: 13),
             )
           else ...[
             Text(
@@ -937,7 +945,7 @@ class _LockedSheet extends StatelessWidget {
                       ? 'TO UNLOCK, COMPLETE ALL OF:'
                       : 'TO UNLOCK, COMPLETE ANY ONE OF:',
               style: GoogleFonts.orbitron(
-                color: _kTextDim,
+                color: kTextDim,
                 fontSize: 9,
                 letterSpacing: 2,
                 fontWeight: FontWeight.w600,
@@ -961,7 +969,7 @@ class _LockedSheet extends StatelessWidget {
                         child: Text(
                           t,
                           style: GoogleFonts.sourceCodePro(
-                            color: _kTextLight,
+                            color: kTextLight,
                             fontSize: 13,
                           ),
                         ),
@@ -1010,12 +1018,12 @@ class _Legend extends StatelessWidget {
   const _Legend();
 
   static const _tags = [
-    ('intro', Color(0xFF00E5FF), 'Intro'),
-    ('dfa',   Color(0xFF69FF47), 'DFA'),
-    ('nfa',   Color(0xFFFFD740), 'NFA'),
-    ('pda',   Color(0xFFFF6D00), 'PDA'),
-    ('tm',    Color(0xFFE040FB), 'TM'),
-    ('boss',  Color(0xFFFF1744), 'Boss'),
+    ('intro', kAccent,             'Intro'),
+    ('dfa',   Color(0xFF69FF47),   'DFA'),
+    ('nfa',   Color(0xFFFFD740),   'NFA'),
+    ('pda',   Color(0xFFFF6D00),   'PDA'),
+    ('tm',    Color(0xFFE040FB),   'TM'),
+    ('boss',  Color(0xFFFF1744),   'Boss'),
   ];
 
   @override
@@ -1030,7 +1038,7 @@ class _Legend extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0x00050810), Color(0xE6050810)],
+            colors: [Color(0x00050810), Color(0xE6050810)], // transparent → kBg
           ),
         ),
         child: Align(
@@ -1044,22 +1052,22 @@ class _Legend extends StatelessWidget {
               children: [
                 // ── Node state indicators ──────────────────────────────
                 _LegendItem(
-                  icon: const Icon(Icons.check_circle, color: _kTextLight, size: 11),
+                  icon: const Icon(Icons.check_circle, color: kTextLight, size: 11),
                   label: 'Completed',
-                  color: _kTextLight,
+                  color: kTextLight,
                 ),
                 _LegendItem(
-                  icon: const Icon(Icons.radio_button_unchecked, color: _kTextMid, size: 11),
+                  icon: const Icon(Icons.radio_button_unchecked, color: kTextMid, size: 11),
                   label: 'Available',
-                  color: _kTextMid,
+                  color: kTextMid,
                 ),
                 _LegendItem(
-                  icon: const Icon(Icons.lock_outline, color: _kTextDim, size: 11),
+                  icon: const Icon(Icons.lock_outline, color: kTextDim, size: 11),
                   label: 'Locked',
-                  color: _kTextDim,
+                  color: kTextDim,
                 ),
                 // Separator
-                Container(width: 1, height: 14, color: const Color(0xFF1A2535)),
+                Container(width: 1, height: 14, color: kBorderMid),
                 // ── Tag colours ────────────────────────────────────────
                 for (final (_, color, label) in _tags)
                   _LegendItem(
@@ -1075,7 +1083,7 @@ class _Legend extends StatelessWidget {
                     color: color.withOpacity(0.85),
                   ),
                 // ── Edge colours ───────────────────────────────────────
-                Container(width: 1, height: 14, color: const Color(0xFF1A2535)),
+                Container(width: 1, height: 14, color: kBorderMid),
                 _LegendItem(
                   icon: Container(
                     width: 16,
@@ -1105,12 +1113,12 @@ class _Legend extends StatelessWidget {
                     width: 16,
                     height: 1.5,
                     decoration: BoxDecoration(
-                      color: _kTextLight,
+                      color: kTextLight,
                       borderRadius: BorderRadius.circular(1),
                     ),
                   ),
                   label: 'OR path',
-                  color: _kTextLight,
+                  color: kTextLight,
                 ),
                 _LegendItem(
                   icon: Container(

@@ -235,7 +235,7 @@ class _LineWidgetState extends State<LineWidget> {
                 filled: false,
                 hintText: '~',
                 isDense: true,
-                hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.35)),
+                hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
               ),
             ),
           ),

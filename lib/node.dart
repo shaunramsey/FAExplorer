@@ -310,7 +310,7 @@ class _NodeState extends State<Node> {
                         filled: false,
                         isDense: true,
                         hintText: isBlackBox ? 'BLACK BOX' : startText,
-                        hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.35)),
+                        hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
                       ),
                     ),
                   ),
