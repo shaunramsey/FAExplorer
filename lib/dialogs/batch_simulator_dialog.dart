@@ -6,6 +6,17 @@ import '../models.dart';
 import '../simulator.dart';
 import '../tm_simulator.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Theme palette (mirrors main.dart)
+// ─────────────────────────────────────────────────────────────────────────────
+const _kBg        = Color(0xFF05080F);
+const _kSurface   = Color(0xFF0A0F18);
+const _kBorderMid = Color(0xFF1A2535);
+const _kAccent    = Color(0xFF00E5FF);
+const _kTextLight = Color(0xFFCDD5E0);
+const _kTextMid   = Color(0xFF6B7E96);
+const _kTextDim   = Color(0xFF3A4A5E);
+
 Future<void> showBatchSimulatorDialog(
   BuildContext context, {
   required AutomataSimulator simulator,
@@ -27,9 +38,6 @@ Future<void> showBatchSimulatorDialog(
       if (!isComplete || str.isEmpty) continue;
 
       if (tmSimulator != null) {
-        // ── TM path ────────────────────────────────────────────────────────
-        // Save & restore simulator state so stepping in the main view is
-        // unaffected.
         final oldStep  = tmSimulator.step;
         final oldSteps = List<TmStepSnapshot>.from(tmSimulator.steps);
 
@@ -47,7 +55,6 @@ Future<void> showBatchSimulatorDialog(
           ..addAll(oldSteps);
         tmSimulator.step = oldStep;
       } else {
-        // ── FA / PDA path ──────────────────────────────────────────────────
         final oldTokens = List<String>.from(simulator.tokens);
         final oldStates = simulator.states.map(Set<String>.from).toList();
         final oldLines  = simulator.usedLines.map(Set<String>.from).toList();
@@ -91,10 +98,17 @@ Future<void> showBatchSimulatorDialog(
           final totalRun    = acceptCount + rejectCount;
 
           return AlertDialog(
-            backgroundColor: Colors.black,
+            backgroundColor: _kSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: _kBorderMid),
+            ),
             title: Text(
               'Batch String Simulator${tmSimulator != null ? ' (TM)' : ''}',
-              style: GoogleFonts.courierPrime(color: Colors.white),
+              style: GoogleFonts.courierPrime(
+                color: _kTextLight,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             content: SizedBox(
               width: 700,
@@ -107,12 +121,26 @@ Future<void> showBatchSimulatorDialog(
                       expands: true,
                       maxLines: null,
                       minLines: null,
-                      cursorColor: Colors.white,
-                      style: GoogleFonts.courierPrime(color: Colors.white, fontSize: 16),
+                      cursorColor: _kAccent,
+                      style: GoogleFonts.courierPrime(
+                          color: _kTextLight, fontSize: 16),
                       decoration: InputDecoration(
                         hintText: 'One string per line...\nPress enter to simulate.',
-                        hintStyle: GoogleFonts.courierPrime(color: Colors.grey),
-                        border: const OutlineInputBorder(),
+                        hintStyle: GoogleFonts.courierPrime(color: _kTextDim),
+                        filled: true,
+                        fillColor: const Color(0xFF080D14),
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(color: _kBorderMid),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: _kBorderMid),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: _kAccent, width: 1.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                       onChanged: (_) => setLocalState(() {}),
                     ),
@@ -127,12 +155,12 @@ Future<void> showBatchSimulatorDialog(
                         children: [
                           _SummaryChip(
                             label: '$acceptCount accepted',
-                            color: Colors.green.shade400,
+                            color: const Color(0xFF1FD99A),
                           ),
                           const SizedBox(width: 8),
                           _SummaryChip(
                             label: '$rejectCount rejected',
-                            color: Colors.red.shade400,
+                            color: const Color(0xFFFF1744),
                           ),
                         ],
                       ),
@@ -143,19 +171,30 @@ Future<void> showBatchSimulatorDialog(
                     children: [
                       Expanded(
                         child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0D1620),
+                            foregroundColor: _kTextMid,
+                            side: BorderSide(color: _kBorderMid),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
                           onPressed: () async {
                             final result = await FilePicker.platform.pickFiles(
                               type: FileType.custom,
                               allowedExtensions: ['txt'],
                             );
-                            if (result == null || result.files.single.bytes == null) return;
-                            final text = String.fromCharCodes(result.files.single.bytes!);
+                            if (result == null ||
+                                result.files.single.bytes == null) return;
+                            final text = String.fromCharCodes(
+                                result.files.single.bytes!);
                             setLocalState(() {
                               controller.text = text;
                               rebuildResults();
                             });
                           },
-                          child: Text('Import .txt', style: GoogleFonts.courierPrime()),
+                          child: Text('Import .txt',
+                              style: GoogleFonts.courierPrime()),
                         ),
                       ),
                     ],
@@ -187,9 +226,9 @@ class _SummaryChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: color.withOpacity(0.4)),
       ),
       child: Text(
         label,

@@ -10,6 +10,16 @@ import '../svg_export.dart';
 import '../tm_simulator.dart';
 import '../widgets/automata_drawer.dart' show AutomataMode;
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Theme palette (mirrors main.dart)
+// ─────────────────────────────────────────────────────────────────────────────
+const _kSurface   = Color(0xFF0A0F18);
+const _kBorderMid = Color(0xFF1A2535);
+const _kAccent    = Color(0xFF00E5FF);
+const _kTextLight = Color(0xFFCDD5E0);
+const _kTextMid   = Color(0xFF6B7E96);
+const _kTextDim   = Color(0xFF3A4A5E);
+
 void showExportDialog(
   BuildContext context, {
   required String dsl,
@@ -24,7 +34,18 @@ void showExportDialog(
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text('Export', style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold)),
+      backgroundColor: _kSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: _kBorderMid),
+      ),
+      title: Text(
+        'Export',
+        style: GoogleFonts.courierPrime(
+          fontWeight: FontWeight.bold,
+          color: _kTextLight,
+        ),
+      ),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -33,17 +54,33 @@ void showExportDialog(
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(labelText: 'Save Name', border: OutlineInputBorder()),
+              style: GoogleFonts.courierPrime(color: _kTextLight, fontSize: 13),
+              decoration: InputDecoration(
+                labelText: 'Save Name',
+                border: const OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
-            Text('Copied to clipboard.', style: GoogleFonts.courierPrime(fontSize: 13)),
+            Text(
+              'Copied to clipboard.',
+              style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextMid),
+            ),
             const SizedBox(height: 10),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 320),
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  dsl.isEmpty ? '(empty graph)' : dsl,
-                  style: GoogleFonts.courierPrime(fontSize: 13),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF080D14),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _kBorderMid),
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    dsl.isEmpty ? '(empty graph)' : dsl,
+                    style: GoogleFonts.courierPrime(
+                        fontSize: 13, color: _kTextMid),
+                  ),
                 ),
               ),
             ),
@@ -53,13 +90,14 @@ void showExportDialog(
       actions: [
         TextButton(
           onPressed: () async {
-            final svg = SvgExporter.export(nodes: nodes, lines: lines, startArrow: startArrow);
+            final svg = SvgExporter.export(
+                nodes: nodes, lines: lines, startArrow: startArrow);
             await Clipboard.setData(ClipboardData(text: svg));
             if (!context.mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                backgroundColor: Colors.black,
-                content: Text('SVG copied to clipboard', style: GoogleFonts.courierPrime()),
+                content: Text('SVG copied to clipboard',
+                    style: GoogleFonts.courierPrime()),
               ),
             );
             Navigator.pop(ctx);
@@ -69,22 +107,29 @@ void showExportDialog(
         TextButton(
           onPressed: () {
             onSave(
-              nameController.text.trim().isEmpty ? 'Untitled' : nameController.text.trim(),
+              nameController.text.trim().isEmpty
+                  ? 'Untitled'
+                  : nameController.text.trim(),
               dsl,
             );
             Navigator.of(ctx).pop();
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export saved')));
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Export saved')));
           },
           child: const Text('Save'),
         ),
         TextButton(
           onPressed: () {
             Clipboard.setData(ClipboardData(text: dsl));
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Copied to clipboard')));
           },
           child: const Text('Copy'),
         ),
-        TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Close'),
+        ),
       ],
     ),
   );
@@ -114,7 +159,16 @@ void showImportDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setDialogState) => AlertDialog(
-        title: Text('Import', style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold)),
+        backgroundColor: _kSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _kBorderMid),
+        ),
+        title: Text(
+          'Import',
+          style: GoogleFonts.courierPrime(
+              fontWeight: FontWeight.bold, color: _kTextLight),
+        ),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -127,11 +181,14 @@ void showImportDialog(
                   controller: controller,
                   maxLines: null,
                   expands: true,
-                  style: GoogleFonts.courierPrime(fontSize: 13),
+                  style: GoogleFonts.courierPrime(
+                      fontSize: 13, color: _kTextLight),
+                  cursorColor: _kAccent,
                   decoration: InputDecoration(
                     border: const OutlineInputBorder(),
                     hintText: hint,
-                    hintStyle: GoogleFonts.courierPrime(fontSize: 11, color: Colors.black38),
+                    hintStyle: GoogleFonts.courierPrime(
+                        fontSize: 11, color: _kTextDim),
                     errorText: errorText,
                     errorMaxLines: 3,
                   ),
@@ -148,16 +205,21 @@ void showImportDialog(
             },
             child: const Text('Paste'),
           ),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () {
               final text = controller.text.trim();
               final lower = text.toLowerCase();
-              final isSvg = lower.contains('<svg') && lower.contains('</svg>');
+              final isSvg =
+                  lower.contains('<svg') && lower.contains('</svg>');
               final err = onImport(text, isSvg: isSvg);
               if (err == null) {
                 Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import successful')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Import successful')));
               } else {
                 setDialogState(() => errorText = err);
               }
@@ -183,22 +245,41 @@ void showExportHistoryDialog(
       return StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: Text('Saved Exports', style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold)),
+            backgroundColor: _kSurface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: _kBorderMid),
+            ),
+            title: Text(
+              'Saved Exports',
+              style: GoogleFonts.courierPrime(
+                  fontWeight: FontWeight.bold, color: _kTextLight),
+            ),
             content: SizedBox(
               width: double.maxFinite,
               height: 400,
               child: savedExports.isEmpty
-                  ? const Center(child: Text('No saved exports'))
+                  ? Center(
+                      child: Text(
+                        'No saved exports',
+                        style: GoogleFonts.courierPrime(color: _kTextDim),
+                      ),
+                    )
                   : ListView.builder(
                       itemCount: savedExports.length,
                       itemBuilder: (context, index) {
-                        if (index >= savedExports.length) return const SizedBox.shrink();
+                        if (index >= savedExports.length) {
+                          return const SizedBox.shrink();
+                        }
                         final save = savedExports[index];
                         return ListTile(
-                          title: Text(save.name),
+                          title: Text(save.name,
+                              style: TextStyle(color: _kTextLight)),
                           leading: save.isBlackBox
-                              ? const Icon(Icons.inbox_rounded)
-                              : const Icon(Icons.account_tree_outlined),
+                              ? Icon(Icons.inbox_rounded,
+                                  color: _kTextMid)
+                              : Icon(Icons.account_tree_outlined,
+                                  color: _kTextMid),
                           subtitle: Text(
                             save.isBlackBox
                                 ? 'Black box machine'
@@ -207,6 +288,7 @@ void showExportHistoryDialog(
                                     : save.dsl.split('\n').first),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: _kTextDim),
                           ),
                           onTap: () {
                             if (save.isBlackBox) {
@@ -216,87 +298,72 @@ void showExportHistoryDialog(
                             Navigator.of(ctx).pop();
                             final err = onImportDsl(save.dsl);
                             if (err != null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(err)),
-                              );
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(SnackBar(
+                                content: Text('Import error: $err'),
+                              ));
                             }
                           },
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
-                                icon: Icon(
-                                  save.isBlackBox
-                                      ? Icons.add_box_outlined
-                                      : Icons.upload_file_outlined,
-                                ),
-                                tooltip: save.isBlackBox
-                                    ? 'Place on canvas'
-                                    : 'Import to canvas',
-                                onPressed: () {
-                                  if (save.isBlackBox) {
-                                    onInsertBlackBox(save);
-                                  } else {
-                                    final err = onImportDsl(save.dsl);
-                                    if (err != null) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(content: Text(err)),
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                              // For blackbox exports, show an "Import as graph" button.
-                              // For graph exports, show an "Import as black box" button.
                               if (save.isBlackBox)
                                 IconButton(
-                                  icon: const Icon(Icons.account_tree_outlined),
-                                  tooltip: 'Import as graph to canvas',
+                                  icon: Icon(Icons.add_box_outlined,
+                                      color: _kTextMid),
+                                  tooltip: 'Insert as black box',
                                   onPressed: () {
-                                    final err = onImportDsl(save.dsl);
-                                    if (err != null) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text(err)),
-                                      );
-                                    }
+                                    Navigator.of(ctx).pop();
+                                    onInsertBlackBox(save);
                                   },
-                                )
-                              else
+                                ),
+                              if (!save.isBlackBox)
                                 IconButton(
-                                  icon: const Icon(Icons.add_box_outlined),
-                                  tooltip: 'Import as black box to canvas',
+                                  icon: Icon(
+                                      Icons.input_rounded,
+                                      color: _kTextMid),
+                                  tooltip: 'Load',
                                   onPressed: () {
-                                    final nameController = TextEditingController(text: save.name);
                                     showDialog(
                                       context: context,
                                       builder: (_) => AlertDialog(
-                                        title: const Text('Black Box Name'),
-                                        content: SizedBox(
-                                          width: 420,
-                                          child: TextField(
-                                            controller: nameController,
-                                            maxLines: 1,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Name',
-                                              hintText: 'Enter a name for the black box.',
-                                            ),
-                                          ),
+                                        backgroundColor: _kSurface,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          side:
+                                              BorderSide(color: _kBorderMid),
+                                        ),
+                                        title: Text(
+                                          'Load "${save.name}"?',
+                                          style: TextStyle(
+                                              color: _kTextLight),
+                                        ),
+                                        content: Text(
+                                          'This will replace the current graph.',
+                                          style: TextStyle(
+                                              color: _kTextMid),
                                         ),
                                         actions: [
                                           TextButton(
-                                            onPressed: () => Navigator.pop(context),
+                                            onPressed: () =>
+                                                Navigator.pop(context),
                                             child: const Text('Cancel'),
                                           ),
                                           FilledButton(
                                             onPressed: () {
-                                              final newExport = SavedExport(
-                                                name: nameController.text.trim().isEmpty ? save.name : nameController.text.trim(),
-                                                dsl: save.dsl,
-                                                type: SavedExportType.blackBox,
-                                              );
-                                              onInsertBlackBox(newExport);
                                               Navigator.pop(context);
+                                              Navigator.of(ctx).pop();
+                                              final err =
+                                                  onImportDsl(save.dsl);
+                                              if (err != null) {
+                                                ScaffoldMessenger.of(
+                                                        context)
+                                                    .showSnackBar(SnackBar(
+                                                  content: Text(
+                                                      'Import error: $err'),
+                                                ));
+                                              }
                                             },
                                             child: const Text('Import'),
                                           ),
@@ -306,19 +373,38 @@ void showExportHistoryDialog(
                                   },
                                 ),
                               IconButton(
-                                icon: const Icon(Icons.edit),
+                                icon: Icon(Icons.edit, color: _kTextMid),
                                 onPressed: () {
-                                  final controller = TextEditingController(text: save.name);
+                                  final controller =
+                                      TextEditingController(text: save.name);
                                   showDialog(
                                     context: context,
                                     builder: (_) => AlertDialog(
-                                      title: const Text('Rename Export'),
-                                      content: TextField(controller: controller),
+                                      backgroundColor: _kSurface,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        side:
+                                            BorderSide(color: _kBorderMid),
+                                      ),
+                                      title: Text('Rename Export',
+                                          style:
+                                              TextStyle(color: _kTextLight)),
+                                      content: TextField(
+                                        controller: controller,
+                                        style: TextStyle(color: _kTextLight),
+                                        cursorColor: _kAccent,
+                                      ),
                                       actions: [
-                                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          child: const Text('Cancel'),
+                                        ),
                                         FilledButton(
                                           onPressed: () {
-                                            save.name = controller.text.trim();
+                                            save.name =
+                                                controller.text.trim();
                                             onListChanged();
                                             setDialogState(() {});
                                             Navigator.pop(context);
@@ -331,7 +417,8 @@ void showExportHistoryDialog(
                                 },
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete),
+                                icon: const Icon(Icons.delete,
+                                    color: Color(0xFFFF1744)),
                                 onPressed: () {
                                   savedExports.removeAt(index);
                                   onListChanged();
@@ -345,7 +432,10 @@ void showExportHistoryDialog(
                     ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
             ],
           );
         },
@@ -366,9 +456,15 @@ void showBlackBoxRunnerDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setDialogState) => AlertDialog(
+        backgroundColor: _kSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _kBorderMid),
+        ),
         title: Text(
           save.name,
-          style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold),
+          style: GoogleFonts.courierPrime(
+              fontWeight: FontWeight.bold, color: _kTextLight),
         ),
         content: SizedBox(
           width: 700,
@@ -378,14 +474,19 @@ void showBlackBoxRunnerDialog(
             children: [
               Text(
                 'Black box machine',
+                style: TextStyle(color: _kTextMid),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: inputController,
                 maxLines: 8,
+                style: GoogleFonts.courierPrime(
+                    fontSize: 13, color: _kTextLight),
+                cursorColor: _kAccent,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
                   hintText: 'One input string per line',
+                  hintStyle: TextStyle(color: _kTextDim),
                   errorText: errorText,
                 ),
               ),
@@ -395,16 +496,17 @@ void showBlackBoxRunnerDialog(
                 constraints: const BoxConstraints(maxHeight: 220),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black26),
+                  border: Border.all(color: _kBorderMid),
                   borderRadius: BorderRadius.circular(6),
-                  color: Colors.black.withOpacity(0.03),
+                  color: const Color(0xFF080D14),
                 ),
                 child: SingleChildScrollView(
                   child: SelectableText(
                     output.isEmpty
                         ? 'Output will list only accepted strings and changes.'
                         : output,
-                    style: GoogleFonts.courierPrime(fontSize: 13),
+                    style: GoogleFonts.courierPrime(
+                        fontSize: 13, color: _kTextMid),
                   ),
                 ),
               ),
@@ -420,9 +522,7 @@ void showBlackBoxRunnerDialog(
             onPressed: () {
               final results = _runBlackBox(save, inputController.text);
               if (results.error != null) {
-                setDialogState(() {
-                  errorText = results.error;
-                });
+                setDialogState(() => errorText = results.error);
                 return;
               }
               setDialogState(() {
@@ -457,9 +557,7 @@ void showBlackBoxRunnerDialog(
       .where((line) => line.isNotEmpty)
       .toList();
 
-  if (rows.isEmpty) {
-    return (lines: const [], error: null);
-  }
+  if (rows.isEmpty) return (lines: const [], error: null);
 
   final output = <String>[];
   switch (state.automataMode) {
@@ -467,18 +565,14 @@ void showBlackBoxRunnerDialog(
       final sim = AutomataSimulator(nodes: state.nodes, lines: state.lines);
       for (final row in rows) {
         sim.rebuild(row, startArrow: state.startArrow);
-        if (sim.finalResult() == SimResult.accept) {
-          output.add(row);
-        }
+        if (sim.finalResult() == SimResult.accept) output.add(row);
       }
       break;
     case AutomataMode.pda:
       final sim = PdaSimulator(nodes: state.nodes, lines: state.lines);
       for (final row in rows) {
         sim.rebuild(row, startArrow: state.startArrow);
-        if (sim.finalResult() == PdaSimResult.accept) {
-          output.add(row);
-        }
+        if (sim.finalResult() == PdaSimResult.accept) output.add(row);
       }
       break;
     case AutomataMode.tm:
@@ -506,12 +600,8 @@ String _tmOutputString(TmSimulator sim) {
   final cells = tape.cells.map((c) => c == kBlank ? '' : c).toList();
   int start = 0;
   int end = cells.length;
-  while (start < end && cells[start].isEmpty) {
-    start++;
-  }
-  while (end > start && cells[end - 1].isEmpty) {
-    end--;
-  }
+  while (start < end && cells[start].isEmpty) start++;
+  while (end > start && cells[end - 1].isEmpty) end--;
   if (start >= end) return '';
   return cells.sublist(start, end).join();
 }

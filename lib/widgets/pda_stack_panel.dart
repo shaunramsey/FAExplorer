@@ -4,6 +4,16 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models.dart';
 import '../pda_simulator.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Theme palette (mirrors main.dart)
+// ─────────────────────────────────────────────────────────────────────────────
+const _kSurface   = Color(0xFF0A0F18);
+const _kBorderMid = Color(0xFF1A2535);
+const _kTextLight = Color(0xFFCDD5E0);
+const _kTextMid   = Color(0xFF6B7E96);
+const _kTextDim   = Color(0xFF3A4A5E);
+const _kAccent    = Color(0xFF00E5FF);
+
 /// Floating panel: NPDA configurations (state, remaining input, stack) per step.
 class PdaStackPanel extends StatelessWidget {
   final PdaSimulator simulator;
@@ -26,8 +36,8 @@ class PdaStackPanel extends StatelessWidget {
     Color? headerColor;
     if (atEnd && simulator.tokens.isNotEmpty) {
       headerColor = switch (result) {
-        PdaSimResult.accept => Colors.green.shade700,
-        PdaSimResult.reject => Colors.red.shade700,
+        PdaSimResult.accept => const Color(0xFF1FD99A),
+        PdaSimResult.reject => const Color(0xFFFF1744),
       };
     }
 
@@ -38,8 +48,12 @@ class PdaStackPanel extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 300, maxHeight: 480),
           child: Card(
+            color: _kSurface,
             elevation: 6,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: _kBorderMid),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -48,14 +62,15 @@ class PdaStackPanel extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.layers, size: 18, color: headerColor ?? Colors.blueGrey),
+                      Icon(Icons.layers, size: 18,
+                          color: headerColor ?? _kAccent),
                       const SizedBox(width: 6),
                       Text(
                         'PDA (NPDA)',
                         style: GoogleFonts.courierPrime(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: headerColor,
+                          color: headerColor ?? _kTextLight,
                         ),
                       ),
                       const Spacer(),
@@ -80,9 +95,9 @@ class PdaStackPanel extends StatelessWidget {
                         : simulator.step < 0
                             ? 'Before input'
                             : 'After token ${simulator.step} / ${simulator.tokens.length}',
-                    style: GoogleFonts.courierPrime(fontSize: 11, color: Colors.black54),
+                    style: GoogleFonts.courierPrime(fontSize: 11, color: _kTextDim),
                   ),
-                  const Divider(height: 16),
+                  Divider(height: 16, color: _kBorderMid),
                   if (simulator.stackGrowthLoopDetected)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -92,7 +107,7 @@ class PdaStackPanel extends StatelessWidget {
                         'If you want to drain a loop, use ~,symbol|~.',
                         style: GoogleFonts.courierPrime(
                           fontSize: 12,
-                          color: Colors.deepOrange.shade800,
+                          color: const Color(0xFFFF9E40),
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -102,7 +117,8 @@ class PdaStackPanel extends StatelessWidget {
                       simulator.stackGrowthLoopDetected
                           ? 'Simulation aborted'
                           : 'No active configuration',
-                      style: GoogleFonts.courierPrime(fontSize: 13, color: Colors.red),
+                      style: GoogleFonts.courierPrime(
+                          fontSize: 13, color: const Color(0xFFFF1744)),
                     )
                   else
                     Flexible(
@@ -119,7 +135,7 @@ class PdaStackPanel extends StatelessWidget {
                                     style: GoogleFonts.courierPrime(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.black45,
+                                      color: _kTextDim,
                                     ),
                                   ),
                                 ),
@@ -128,7 +144,8 @@ class PdaStackPanel extends StatelessWidget {
                                 remaining: simulator.remainingInputAt(i),
                                 stack: configs[i].stack,
                               ),
-                              if (i < configs.length - 1) const SizedBox(height: 12),
+                              if (i < configs.length - 1)
+                                const SizedBox(height: 12),
                             ],
                           ],
                         ),
@@ -161,17 +178,14 @@ class _ConfigCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: const Color(0xFF080D14),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: _kBorderMid),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _RowLabel(
-            label: 'state',
-            value: stateLabel,
-          ),
+          _RowLabel(label: 'state', value: stateLabel),
           const SizedBox(height: 4),
           _RowLabel(
             label: 'input',
@@ -181,7 +195,7 @@ class _ConfigCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'stack',
-            style: GoogleFonts.courierPrime(fontSize: 10, color: Colors.black45),
+            style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
           ),
           const SizedBox(height: 4),
           _StackView(stack: stack),
@@ -211,7 +225,7 @@ class _RowLabel extends StatelessWidget {
           width: 44,
           child: Text(
             label,
-            style: GoogleFonts.courierPrime(fontSize: 10, color: Colors.black45),
+            style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
           ),
         ),
         Expanded(
@@ -220,7 +234,7 @@ class _RowLabel extends StatelessWidget {
             style: GoogleFonts.courierPrime(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: muted ? Colors.black38 : Colors.black87,
+              color: muted ? _kTextDim : _kTextLight,
             ),
           ),
         ),
@@ -241,13 +255,13 @@ class _StackView extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFF080D14),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(color: _kBorderMid),
         ),
         child: Text(
           '(empty)',
-          style: GoogleFonts.courierPrime(fontSize: 13, color: Colors.black38),
+          style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextDim),
           textAlign: TextAlign.center,
         ),
       );
@@ -291,20 +305,20 @@ class _StackCell extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 1),
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
       decoration: BoxDecoration(
-        color: isTop ? const Color(0xFFE3F2FD) : Colors.white,
+        color: isTop ? const Color(0xFF0A1929) : const Color(0xFF080D14),
         borderRadius: BorderRadius.vertical(
           top: isTop ? const Radius.circular(6) : Radius.zero,
           bottom: isBottom ? const Radius.circular(6) : Radius.zero,
         ),
         border: Border.all(
-          color: isTop ? Colors.blue.shade300 : Colors.grey.shade300,
+          color: isTop ? const Color(0xFF00E5FF) : _kBorderMid,
           width: isTop ? 1.5 : 1,
         ),
       ),
       child: Row(
         children: [
           if (isTop) ...[
-            Icon(Icons.arrow_right, size: 16, color: Colors.blue.shade400),
+            Icon(Icons.arrow_right, size: 16, color: _kAccent),
             const SizedBox(width: 4),
           ] else
             const SizedBox(width: 20),
@@ -314,19 +328,19 @@ class _StackCell extends StatelessWidget {
               style: GoogleFonts.courierPrime(
                 fontSize: 15,
                 fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
-                color: isTop ? Colors.blue.shade800 : Colors.black87,
+                color: isTop ? _kAccent : _kTextMid,
               ),
             ),
           ),
           if (isTop)
             Text(
               'top',
-              style: GoogleFonts.courierPrime(fontSize: 10, color: Colors.blue.shade300),
+              style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
             ),
           if (isBottom && isBottomMarker)
             Text(
               'btm',
-              style: GoogleFonts.courierPrime(fontSize: 10, color: Colors.black38),
+              style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
             ),
         ],
       ),
