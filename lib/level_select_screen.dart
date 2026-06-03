@@ -37,9 +37,9 @@ const _kGridLine     = Color(0xFF0D1620);
 const _kEdgeDim      = Color(0xFF0E2030);
 const _kEdgeActive   = Color(0xFF0E4A38);
 const _kEdgeBright   = Color(0xFF1FD99A);
-const _kTextDim      = Color(0xFF3A4A5E);
-const _kTextMid      = Color(0xFF6B7E96);
-const _kTextLight    = Color(0xFFCDD5E0);
+const _kTextDim      = Color(0xFF8A9BB0);
+const _kTextMid      = Color(0xFFB0BDCC);
+const _kTextLight    = Color(0xFFE8ECF0);
 const _kLockBg       = Color(0xFF080D14);
 const _kLockBorder   = Color(0xFF141E2A);
 
