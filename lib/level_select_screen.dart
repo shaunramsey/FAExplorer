@@ -20,11 +20,13 @@ import 'game_puzzle.dart';
 
 const double _kNodeW       = 148.0; // node card width
 const double _kNodeH       = 88.0;  // node card height
-const double _kColGap      = 180.0; // horizontal gap between column centres
-const double _kRowGap      = 116.0; // vertical gap between row centres
+const double _kColGap      = 220.0; // horizontal gap between column centres
+const double _kRowGap      = 140.0; // vertical gap between row centres
 const double _kTopPad      = 96.0;  // space for the top bar
-const double _kBotPad      = 56.0;
+const double _kBotPad      = 80.0;
+const double _kLegendH     = 52.0;  // height reserved at bottom for legend
 const double _kSidePad     = 120.0;  // left/right canvas padding
+const double _kMinRowPad   = 20.0;  // minimum vertical padding above/below nodes
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
@@ -63,6 +65,10 @@ int _colIndex(double x) {
 }
 
 /// Given all levels, compute absolute Offset(cx, cy) for each level id.
+///
+/// Nodes are distributed evenly within each column so they never overlap,
+/// while still respecting the relative y-order of levels.  The minimum
+/// inter-node distance is [_kNodeH] + [_kMinRowPad].
 Map<String, Offset> _buildPositions(List<GameLevel> levels, double canvasH) {
   // Group by column
   final Map<int, List<GameLevel>> cols = {};
@@ -75,16 +81,27 @@ Map<String, Offset> _buildPositions(List<GameLevel> levels, double canvasH) {
 
   for (final entry in cols.entries) {
     final colIdx = entry.key;
-    final members = entry.value
-      ..sort((a, b) => a.y.compareTo(b.y));
+    final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
 
     final cx = _kSidePad + colIdx * _kColGap;
+    final count = members.length;
 
-    // Distribute rows evenly in the usable vertical space
-    final usableH = canvasH - _kTopPad - _kBotPad;
-    for (int i = 0; i < members.length; i++) {
-      // Use the level's y directly scaled into usable space
-      final cy = _kTopPad + members[i].y * usableH;
+    // Minimum height needed to fit all nodes without overlap
+    final minRequired = count * _kNodeH + (count - 1) * _kMinRowPad;
+    // Usable vertical band (between top bar and bottom padding, minus legend)
+    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
+    // Stretch to whichever is larger so gaps are generous
+    final totalSpan = minRequired > usableH ? minRequired : usableH;
+    // Gap between node *centres*
+    final gap = count > 1 ? totalSpan / (count - 1) : 0.0;
+    // Centre the block vertically
+    final blockH = count > 1 ? gap * (count - 1) : 0.0;
+    final topOffset = _kTopPad + (usableH - blockH) / 2.0;
+
+    for (int i = 0; i < count; i++) {
+      final cy = count == 1
+          ? _kTopPad + usableH / 2.0
+          : topOffset + i * gap;
       result[members[i].id] = Offset(cx, cy);
     }
   }
@@ -99,6 +116,109 @@ double _canvasWidth(List<GameLevel> levels) {
     if (c > maxCol) maxCol = c;
   }
   return _kSidePad * 2 + maxCol * _kColGap + _kNodeW;
+}
+
+/// Minimum canvas height so the tallest column never has overlapping nodes.
+/// Always at least [screenH] so the canvas fills the viewport.
+double _canvasHeight(List<GameLevel> levels, double screenH) {
+  final layerById = _computeLayersFromDeps(levels);
+  final Map<int, int> colCounts = {};
+  for (final layer in layerById.values) {
+    colCounts[layer] = (colCounts[layer] ?? 0) + 1;
+  }
+  final maxCount = colCounts.values.fold(0, (a, b) => a > b ? a : b);
+  final needed = _kTopPad
+      + maxCount * _kNodeH
+      + (maxCount - 1) * (_kRowGap - _kNodeH)
+      + _kBotPad
+      + _kLegendH;
+  return needed > screenH ? needed : screenH;
+}
+
+double _canvasWidthFromPositions(Map<String, Offset> positions) {
+  final maxX = positions.values.fold<double>(0.0, (cur, p) => max(cur, p.dx));
+  return maxX + _kNodeW / 2 + _kSidePad;
+}
+
+Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
+  final Map<String, List<String>> adj = {for (var l in levels) l.id: []};
+  final Map<String, int> indeg = {for (var l in levels) l.id: 0};
+
+  List<String> depsOf(UnlockRule rule) {
+    if (rule is AlwaysUnlocked) return [];
+    if (rule is RequireLevel) return [rule.levelId];
+    if (rule is RequireAll) return rule.levelIds;
+    if (rule is RequireAny) return rule.levelIds;
+    if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
+    return [];
+  }
+
+  for (final l in levels) {
+    final deps = depsOf(l.unlockRule);
+    for (final d in deps) {
+      if (!adj.containsKey(d)) continue;
+      adj[d] = [...adj[d]!, l.id];
+      indeg[l.id] = indeg[l.id]! + 1;
+    }
+  }
+
+  final List<String> q = [];
+  final Map<String, int> layer = {for (var l in levels) l.id: 0};
+  for (final id in indeg.keys) {
+    if (indeg[id] == 0) q.add(id);
+  }
+
+  while (q.isNotEmpty) {
+    final cur = q.removeAt(0);
+    for (final next in adj[cur]!) {
+      layer[next] = max(layer[next]!, layer[cur]! + 1);
+      indeg[next] = indeg[next]! - 1;
+      if (indeg[next] == 0) q.add(next);
+    }
+  }
+
+  int maxAssigned = layer.values.fold(0, (a, b) => a > b ? a : b);
+  for (final id in indeg.keys) {
+    if (indeg[id]! > 0) {
+      maxAssigned += 1;
+      layer[id] = maxAssigned;
+    }
+  }
+
+  return layer;
+}
+
+Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double canvasH) {
+  final layerById = _computeLayersFromDeps(levels);
+
+  final Map<int, List<GameLevel>> cols = {};
+  for (final l in levels) {
+    final c = layerById[l.id] ?? 0;
+    cols.putIfAbsent(c, () => []).add(l);
+  }
+
+  final Map<String, Offset> result = {};
+  for (final entry in cols.entries) {
+    final colIdx = entry.key;
+    final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
+
+    final cx = _kSidePad + colIdx * _kColGap;
+    final count = members.length;
+
+    final minRequired = count * _kNodeH + (count - 1) * _kMinRowPad;
+    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
+    final totalSpan = minRequired > usableH ? minRequired : usableH;
+    final gap = count > 1 ? totalSpan / (count - 1) : 0.0;
+    final blockH = count > 1 ? gap * (count - 1) : 0.0;
+    final topOffset = _kTopPad + (usableH - blockH) / 2.0;
+
+    for (int i = 0; i < count; i++) {
+      final cy = count == 1 ? _kTopPad + usableH / 2.0 : topOffset + i * gap;
+      result[members[i].id] = Offset(cx, cy);
+    }
+  }
+
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -197,8 +317,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
-    final canvasW = _canvasWidth(kAllLevels);
-    final positions = _buildPositions(kAllLevels, screenH);
+    // Ensure the canvas is tall enough to never overlap nodes in any column
+    final canvasH = _canvasHeight(kAllLevels, screenH);
+    final positions = _computePositionsFromDeps(kAllLevels, canvasH);
+    final canvasW = _canvasWidthFromPositions(positions);
 
     return Scaffold(
       backgroundColor: _kBg,
@@ -211,64 +333,56 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
             painter: _GridPainter(),
           ),
 
-          // ── Scrollable canvas ──────────────────────────────────────────
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: SizedBox(
-              width: canvasW,
-              height: screenH,
-              child: AnimatedBuilder(
-                animation: Listenable.merge([_pulseCtrl, _flowCtrl, _entryCtrl]),
-                builder: (context, _) {
-                  return Stack(
-                    clipBehavior: Clip.none,
+          // ── Scrollable canvas (horizontal only) ───────────────────────
+          AnimatedBuilder(
+            animation: Listenable.merge([_pulseCtrl, _flowCtrl, _entryCtrl]),
+            builder: (context, _) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: SizedBox(
+                  width: canvasW,
+                  height: canvasH,
+                  child: Stack(
                     children: [
-                      // ── Edge layer (CustomPaint behind nodes) ──────────
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: _EdgePainter(
-                            levels: kAllLevels,
-                            positions: positions,
-                            completed: _completed,
-                            isUnlocked: _isUnlocked,
-                            flowValue: _flowCtrl.value,
-                            pulseValue: _pulseCtrl.value,
-                            entryValue: CurvedAnimation(
-                              parent: _entryCtrl,
-                              curve: Curves.easeOut,
-                            ).value,
-                          ),
+                      CustomPaint(
+                        size: Size(canvasW, canvasH),
+                        painter: _EdgePainter(
+                          levels: kAllLevels,
+                          positions: positions,
+                          completed: _completed,
+                          isUnlocked: _isUnlocked,
+                          flowValue: _flowCtrl.value,
+                          pulseValue: _pulseCtrl.value,
+                          entryValue: CurvedAnimation(
+                            parent: _entryCtrl,
+                            curve: Curves.easeOut,
+                          ).value,
                         ),
                       ),
 
-                      // ── Node cards ─────────────────────────────────────
-                      ...kAllLevels.map((level) {
-                        final pos = positions[level.id]!;
-                        final unlocked = _isUnlocked(level);
-                        final completed = _isCompleted(level.id);
-
-                        return Positioned(
-                          left: pos.dx - _kNodeW / 2,
-                          top: pos.dy - _kNodeH / 2,
+                      // Node cards
+                      for (final level in kAllLevels)
+                        Positioned(
+                          left: positions[level.id]!.dx - _kNodeW / 2,
+                          top: positions[level.id]!.dy - _kNodeH / 2,
                           width: _kNodeW,
                           height: _kNodeH,
                           child: GestureDetector(
                             onTap: () => _onTap(level),
                             child: _NodeCard(
                               level: level,
-                              unlocked: unlocked,
-                              completed: completed,
+                              unlocked: _isUnlocked(level),
+                              completed: _isCompleted(level.id),
                               pulseAnim: _pulseCtrl,
                             ),
                           ),
-                        );
-                      }),
+                        ),
                     ],
-                  );
-                },
-              ),
-            ),
+                  ),
+                ),
+              );
+            },
           ),
 
           // ── Top bar ────────────────────────────────────────────────────
@@ -280,6 +394,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
 
           // ── Column labels ──────────────────────────────────────────────
           _ColumnLabels(levels: kAllLevels, screenH: screenH),
+
+          // ── Legend ─────────────────────────────────────────────────────
+          const _Legend(),
         ],
       ),
     );
@@ -310,9 +427,10 @@ class _ColumnLabels extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine which columns exist
+    // Determine which columns exist using dependency layout
+    final positions = _computePositionsFromDeps(levels, _canvasHeight(levels, screenH));
     final Set<int> usedCols = {};
-    for (final l in levels) usedCols.add(_colIndex(l.x));
+    for (final p in positions.values) usedCols.add(((p.dx - _kSidePad) / _kColGap).floor());
 
     return Positioned(
       top: 0,
@@ -323,7 +441,7 @@ class _ColumnLabels extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         physics: const NeverScrollableScrollPhysics(),
         child: SizedBox(
-          width: _canvasWidth(levels),
+          width: _canvasWidthFromPositions(positions),
           child: Stack(
             children: [
               for (final col in usedCols)
@@ -403,8 +521,7 @@ class _TopBar extends StatelessWidget {
             // Scroll hint
             Row(
               children: [
-                const Icon(Icons.chevron_left, color: _kTextDim, size: 14),
-                const Icon(Icons.chevron_right, color: _kTextDim, size: 14),
+                const Icon(Icons.open_with, color: _kTextDim, size: 14),
                 const SizedBox(width: 4),
                 Text(
                   'SCROLL',
@@ -449,22 +566,22 @@ class _TopBar extends StatelessWidget {
             const SizedBox(width: 14),
 
             // Sandbox
-            GestureDetector(
-              onTap: onSandbox,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFF1A2535), width: 1),
+            TextButton(
+              onPressed: onSandbox,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
+                  side: const BorderSide(color: Color(0xFF1A2535), width: 1),
                 ),
-                child: Text(
-                  'SANDBOX',
-                  style: GoogleFonts.orbitron(
-                    color: _kTextDim,
-                    fontSize: 9,
-                    letterSpacing: 2,
-                  ),
+                foregroundColor: _kTextDim,
+              ),
+              child: Text(
+                'SANDBOX',
+                style: GoogleFonts.orbitron(
+                  color: _kTextDim,
+                  fontSize: 9,
+                  letterSpacing: 2,
                 ),
               ),
             ),
@@ -880,6 +997,157 @@ class _LockedSheet extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Legend — pinned to the bottom, shows tag colours + node-state icons
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Legend extends StatelessWidget {
+  const _Legend();
+
+  static const _tags = [
+    ('intro', Color(0xFF00E5FF), 'Intro'),
+    ('dfa',   Color(0xFF69FF47), 'DFA'),
+    ('nfa',   Color(0xFFFFD740), 'NFA'),
+    ('pda',   Color(0xFFFF6D00), 'PDA'),
+    ('tm',    Color(0xFFE040FB), 'TM'),
+    ('boss',  Color(0xFFFF1744), 'Boss'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        height: _kLegendH + 8,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x00050810), Color(0xE6050810)],
+          ),
+        ),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 18,
+              runSpacing: 6,
+              children: [
+                // ── Node state indicators ──────────────────────────────
+                _LegendItem(
+                  icon: const Icon(Icons.check_circle, color: _kTextLight, size: 11),
+                  label: 'Completed',
+                  color: _kTextLight,
+                ),
+                _LegendItem(
+                  icon: const Icon(Icons.radio_button_unchecked, color: _kTextMid, size: 11),
+                  label: 'Available',
+                  color: _kTextMid,
+                ),
+                _LegendItem(
+                  icon: const Icon(Icons.lock_outline, color: _kTextDim, size: 11),
+                  label: 'Locked',
+                  color: _kTextDim,
+                ),
+                // Separator
+                Container(width: 1, height: 14, color: const Color(0xFF1A2535)),
+                // ── Tag colours ────────────────────────────────────────
+                for (final (_, color, label) in _tags)
+                  _LegendItem(
+                    icon: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    label: label,
+                    color: color.withOpacity(0.85),
+                  ),
+                // ── Edge colours ───────────────────────────────────────
+                Container(width: 1, height: 14, color: const Color(0xFF1A2535)),
+                _LegendItem(
+                  icon: Container(
+                    width: 16,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: _kEdgeBright,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                  label: 'Both done',
+                  color: _kEdgeBright,
+                ),
+                _LegendItem(
+                  icon: Container(
+                    width: 16,
+                    height: 1.5,
+                    decoration: BoxDecoration(
+                      color: _kEdgeActive,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                  label: 'Prereq done',
+                  color: _kEdgeActive,
+                ),
+                _LegendItem(
+                  icon: Container(
+                    width: 16,
+                    height: 1,
+                    decoration: BoxDecoration(
+                      color: _kEdgeDim,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                  label: 'Locked path',
+                  color: _kEdgeDim,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final Widget icon;
+  final String label;
+  final Color color;
+
+  const _LegendItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        icon,
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: GoogleFonts.orbitron(
+            color: color,
+            fontSize: 7,
+            letterSpacing: 1.2,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }
