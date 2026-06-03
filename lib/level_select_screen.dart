@@ -357,8 +357,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                         Positioned(
                           left: positions[level.id]!.dx - _kNodeW / 2,
                           top: positions[level.id]!.dy - _kNodeH / 2,
+                          child: SizedBox(
                           width: _kNodeW,
-                          height: _kNodeH,
                           child: GestureDetector(
                             onTap: () => _onTap(level),
                             child: _NodeCard(
@@ -368,6 +368,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                               pulseAnim: _pulseCtrl,
                             ),
                           ),
+                        ),
                         ),
                     ],
                   ),
