@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
 import 'models.dart';
+import 'widgets/app_theme.dart';
 import 'token_replacements.dart'; // ← single source of truth
 
 class Node extends StatefulWidget {
@@ -131,18 +134,18 @@ class _NodeState extends State<Node> {
     }
   }
 
-  Color get _borderColor {
+  Color _borderColor(AppThemeNotifier theme) {
     final isDuplicate = widget.isLabelTaken(_controller.text, widget.data.id);
 
     return widget.deleteMode
-        ? Colors.red
+        ? theme.nodeBorderDelete
         : widget.highlighted
-        ? const Color.fromARGB(255, 208, 0, 255)
+        ? theme.nodeBorderHighlight
         : isDuplicate
-        ? Colors.orange
+        ? theme.nodeBorderDuplicate
         : _selected
-        ? Colors.lightBlueAccent
-        : Colors.white;
+        ? theme.nodeBorderSelected
+        : theme.nodeBorder;
   }
 
   // ─────────────────────────────────────────────
@@ -167,6 +170,9 @@ class _NodeState extends State<Node> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final borderColor = _borderColor(theme);
+
     // When locked (e.g. placing the start arrow), do not allow selection/editing.
     final bool textFieldActive = _selected && !widget.lineMode && !widget.interactionLocked;
     final startText = getDisplayId(widget.data.id);
@@ -202,7 +208,7 @@ class _NodeState extends State<Node> {
                   decoration: BoxDecoration(
                     shape: isBlackBox ? BoxShape.rectangle : BoxShape.circle,
                     borderRadius: isBlackBox ? BorderRadius.circular(10) : null,
-                    border: Border.all(color: _borderColor, width: 4),
+                    border: Border.all(color: borderColor, width: 4),
                   ),
                 ),
               ),
@@ -216,7 +222,7 @@ class _NodeState extends State<Node> {
                             height: 78,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: _borderColor, width: 3),
+                              border: Border.all(color: borderColor, width: 3),
                             ),
                           )
                         : Container(
@@ -224,7 +230,7 @@ class _NodeState extends State<Node> {
                             height: 80,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(color: _borderColor, width: 4),
+                              border: Border.all(color: borderColor, width: 4),
                             ),
                           ),
                   ),
@@ -237,8 +243,8 @@ class _NodeState extends State<Node> {
                       width: 56,
                       height: 56,
                       decoration: BoxDecoration(
-                        color: Colors.green,
-                        border: Border.all(color: _borderColor, width: 4),
+                        color: theme.acceptState,
+                        border: Border.all(color: borderColor, width: 4),
                       ),
                     ),
                   ),
@@ -249,7 +255,7 @@ class _NodeState extends State<Node> {
                   child: IgnorePointer(
                     child: CustomPaint(
                       size: const Size(60, 60),
-                      painter: _OctagonPainter(color: Colors.red, borderColor: _borderColor),
+                      painter: _OctagonPainter(color: theme.rejectState, borderColor: borderColor),
                     ),
                   ),
                 ),
@@ -265,7 +271,7 @@ class _NodeState extends State<Node> {
                       style: GoogleFonts.courierPrime(
                         fontWeight: FontWeight.bold,
                         fontSize: isBlackBox ? 20 : 30,
-                        color: _borderColor,
+                        color: borderColor,
                       ),
                       textAlign: TextAlign.center,
                       onEditingComplete: _deselect,
@@ -310,7 +316,11 @@ class _NodeState extends State<Node> {
                         filled: false,
                         isDense: true,
                         hintText: isBlackBox ? 'BLACK BOX' : startText,
-                        hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
+                        hintStyle: TextStyle(
+                          color: widget.deleteMode
+                              ? theme.nodeBorderDelete
+                              : theme.nodeBorder.withOpacity(0.6),
+                        ),
                       ),
                     ),
                   ),

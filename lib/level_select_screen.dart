@@ -26,6 +26,7 @@ import 'game_level.dart';
 import 'game_progress_store.dart';
 import 'game_puzzle.dart';
 import 'widgets/app_theme.dart';
+import 'widgets/app_theme_settings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants
@@ -45,11 +46,6 @@ const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
 //  Colour palette
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _kEdgeDim = Color(0xFF1A2E40); // locked path — slightly brighter than original
-const _kEdgeActive = Color(0xFF1CBD8A); // prereq done, dest available — vibrant teal
-const _kEdgeBright = Color(0xFF1FD99A); // both done — bright teal-green
-const _kEdgeAlmost = Color(0xFFFFAA00); // this prereq done but dest still locked — amber
-const _kEdgeBlocking = Color(0xFFFF6D00); // this is the MISSING prereq — pulsing orange
 // ─────────────────────────────────────────────────────────────────────────────
 //  Position helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -277,7 +273,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   }
 
   void _showLockedSheet(GameLevel level) {
-    final tagColor = levelTagColor(level.tag);
+    final tagColor = AppThemeNotifier.read(context).tagColor(level.tag);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -331,6 +327,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                       CustomPaint(
                         size: Size(canvasW, canvasH),
                         painter: _EdgePainter(
+                          theme: theme.data,
                           levels: kAllLevels,
                           positions: positions,
                           completed: _completed,
@@ -374,7 +371,11 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
             right: 0,
             child: Material(
               color: Colors.transparent,
-              child: _TopBar(completed: _completed.length, total: kAllLevels.length, onSandbox: widget.onGoToSandbox),
+              child: _TopBar(
+                completed: _completed.length,
+                total: kAllLevels.length,
+                onSandbox: widget.onGoToSandbox,
+              ),
             ),
           ),
 
@@ -471,6 +472,12 @@ class _TopBar extends StatelessWidget {
 
             // Sandbox button — previously blocked by the _ColumnLabels overlay;
             // now works correctly since that overlay has been removed.
+            IconButton(
+              tooltip: 'Appearance & colors',
+              icon: Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
+              onPressed: () => showAppThemeSettings(context),
+            ),
+            const SizedBox(width: 4),
             TextButton(
               onPressed: onSandbox,
               style: TextButton.styleFrom(
@@ -505,7 +512,7 @@ class _NodeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final tagColor = levelTagColor(level.tag);
+    final tagColor = theme.tagColor(level.tag);
 
     return AnimatedBuilder(
       animation: pulseAnim,
@@ -645,7 +652,7 @@ class _UnlockHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final tagColor = levelTagColor(level.tag);
+    final tagColor = theme.tagColor(level.tag);
 
     if (completed) {
       return Text(
@@ -867,13 +874,14 @@ class _Legend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
+    final d = theme.data;
     final tags = [
-      ('intro', theme.accent, 'Intro'),
-      ('dfa', Color(0xFF69FF47), 'DFA'),
-      ('nfa', Color(0xFFFFD740), 'NFA'),
-      ('pda', Color(0xFFFF6D00), 'PDA'),
-      ('tm', Color(0xFFE040FB), 'TM'),
-      ('boss', Color(0xFFFF1744), 'Boss'),
+      ('intro', d.tagIntro, 'Intro'),
+      ('dfa', d.tagDfa, 'DFA'),
+      ('nfa', d.tagNfa, 'NFA'),
+      ('pda', d.tagPda, 'PDA'),
+      ('tm', d.tagTm, 'TM'),
+      ('boss', d.tagBoss, 'Boss'),
     ];
     return Positioned(
       left: 0,
@@ -881,11 +889,14 @@ class _Legend extends StatelessWidget {
       bottom: 0,
       child: Container(
         height: _kLegendH + 8,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0x00050810), Color(0xE6050810)],
+            colors: [
+              d.bg.withOpacity(0),
+              d.bg.withOpacity(0.92),
+            ],
           ),
         ),
         child: Align(
@@ -935,42 +946,42 @@ class _Legend extends StatelessWidget {
                   icon: Container(
                     width: 18,
                     height: 3,
-                    decoration: BoxDecoration(color: _kEdgeBright, borderRadius: BorderRadius.circular(1.5)),
+                    decoration: BoxDecoration(color: d.edgeBright, borderRadius: BorderRadius.circular(1.5)),
                   ),
                   label: 'Both done',
-                  color: _kEdgeBright,
+                  color: d.edgeBright,
                 ),
                 _LegendItem(
                   icon: Container(
                     width: 18,
                     height: 2.5,
-                    decoration: BoxDecoration(color: _kEdgeActive, borderRadius: BorderRadius.circular(1.5)),
+                    decoration: BoxDecoration(color: d.edgeActive, borderRadius: BorderRadius.circular(1.5)),
                   ),
                   label: 'Prereq done',
-                  color: _kEdgeActive,
+                  color: d.edgeActive,
                 ),
                 _LegendItem(
                   icon: Container(
                     width: 18,
                     height: 2,
-                    decoration: BoxDecoration(color: _kEdgeAlmost, borderRadius: BorderRadius.circular(1)),
+                    decoration: BoxDecoration(color: d.edgeAlmost, borderRadius: BorderRadius.circular(1)),
                   ),
                   label: 'Partial prereqs',
-                  color: _kEdgeAlmost,
+                  color: d.edgeAlmost,
                 ),
                 _LegendItem(
-                  icon: _DashedLine(color: _kEdgeBlocking, width: 18),
+                  icon: _DashedLine(color: d.edgeBlocking, width: 18),
                   label: 'Missing prereq',
-                  color: _kEdgeBlocking,
+                  color: d.edgeBlocking,
                 ),
                 _LegendItem(
                   icon: Container(
                     width: 18,
                     height: 1.5,
-                    decoration: BoxDecoration(color: _kEdgeDim, borderRadius: BorderRadius.circular(1)),
+                    decoration: BoxDecoration(color: d.edgeDim, borderRadius: BorderRadius.circular(1)),
                   ),
                   label: 'Locked path',
-                  color: _kEdgeDim,
+                  color: d.edgeDim,
                 ),
               ],
             ),
@@ -1094,6 +1105,7 @@ class _PathData {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EdgePainter extends CustomPainter {
+  final AppThemeData theme;
   final List<GameLevel> levels;
   final Map<String, Offset> positions;
   final Set<String> completed;
@@ -1101,9 +1113,10 @@ class _EdgePainter extends CustomPainter {
   final double flowValue;
   final double pulseValue;
   final double entryValue;
-  final double canvasH; // used for routing bounds
+  final double canvasH;
 
   _EdgePainter({
+    required this.theme,
     required this.levels,
     required this.positions,
     required this.completed,
@@ -1177,27 +1190,27 @@ class _EdgePainter extends CustomPainter {
       bool blockingDash; // extra-visible dashes for the "missing prereq" state
 
       if (srcCompleted && destCompleted) {
-        edgeColor = const Color.fromARGB(255, 0, 255, 26).withOpacity(0.90);
+        edgeColor = theme.edgeBright.withOpacity(0.90);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
       } else if (srcCompleted && destUnlocked) {
-        edgeColor = _kEdgeActive.withOpacity(0.95);
+        edgeColor = theme.edgeActive.withOpacity(0.95);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
       } else if (srcCompleted && isAlmostUnlocked) {
-        edgeColor = const Color(0xFFFFD54F);
+        edgeColor = theme.edgeAlmost;
         strokeW = 3.0;
         drawGlow = true;
         blockingDash = false;
       } else if (!srcCompleted && isAlmostUnlocked) {
-        edgeColor = const Color(0xFFFF3B30).withOpacity(0.55 + pulseValue * 0.45);
+        edgeColor = theme.edgeBlocking.withOpacity(0.55 + pulseValue * 0.45);
         strokeW = 4.0;
         drawGlow = true;
         blockingDash = true;
       } else {
-        edgeColor = _kEdgeDim.withOpacity(0.95);
+        edgeColor = theme.edgeDim.withOpacity(0.95);
         strokeW = 3.5;
         drawGlow = false;
         blockingDash = false;
@@ -1471,5 +1484,10 @@ for (final y in candidateYs) {
       old.flowValue != flowValue ||
       old.pulseValue != pulseValue ||
       old.entryValue != entryValue ||
-      old.completed != completed;
+      old.completed != completed ||
+      old.theme.edgeDim != theme.edgeDim ||
+      old.theme.edgeActive != theme.edgeActive ||
+      old.theme.edgeBright != theme.edgeBright ||
+      old.theme.edgeAlmost != theme.edgeAlmost ||
+      old.theme.edgeBlocking != theme.edgeBlocking;
 }

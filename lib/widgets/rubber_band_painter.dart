@@ -4,15 +4,20 @@ import 'package:flutter/material.dart';
 class RubberBandPainter extends CustomPainter {
   final Offset start;
   final Offset end;
+  final Color color;
 
-  const RubberBandPainter({required this.start, required this.end});
+  const RubberBandPainter({
+    required this.start,
+    required this.end,
+    required this.color,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
-      ..color = Colors.lightBlueAccent.withValues(alpha: 0.85);
+      ..color = color.withValues(alpha: 0.85);
 
     canvas.drawLine(start, end, paint);
 
@@ -31,11 +36,12 @@ class RubberBandPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = Colors.lightBlueAccent.withValues(alpha: 0.85)
+        ..color = color.withValues(alpha: 0.85)
         ..style = PaintingStyle.fill,
     );
   }
 
   @override
-  bool shouldRepaint(RubberBandPainter old) => old.start != start || old.end != end;
+  bool shouldRepaint(RubberBandPainter old) =>
+      old.start != start || old.end != end || old.color != color;
 }

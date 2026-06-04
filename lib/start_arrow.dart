@@ -1,8 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:math';
+import 'package:provider/provider.dart';
+
 import 'models.dart';
 import 'token_replacements.dart'; // ← single source of truth
+import 'widgets/app_theme.dart';
 
 class StartArrowWidget extends StatefulWidget {
   final StartArrowData data;
@@ -59,6 +63,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     // ─────────────────────────────────────────────
     // START ARROW GEOMETRY
     // ─────────────────────────────────────────────
@@ -87,7 +92,13 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
         IgnorePointer(
           child: CustomPaint(
             size: Size.infinite,
-            painter: _ArrowPainter(start: start, end: end, angle: arrowAngle, deleteMode: widget.deleteMode),
+            painter: _ArrowPainter(
+              start: start,
+              end: end,
+              angle: arrowAngle,
+              deleteMode: widget.deleteMode,
+              strokeColor: widget.deleteMode ? theme.error : theme.lineColor,
+            ),
           ),
         ),
 
@@ -126,7 +137,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     fontSize: 30,
                     height: 1,
                     fontWeight: FontWeight.bold,
-                    color: widget.deleteMode ? Colors.red : Colors.white,
+                    color: widget.deleteMode ? theme.error : theme.lineColor,
                   ),
 
                   // Use the shared parser from token_replacements.dart
@@ -158,7 +169,11 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     filled: false,
                     hintText: '~',
                     isDense: true,
-                    hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
+                    hintStyle: TextStyle(
+                      color: widget.deleteMode
+                          ? theme.error
+                          : theme.lineColor.withOpacity(0.6),
+                    ),
                   ),
                 ),
               ),
@@ -175,8 +190,15 @@ class _ArrowPainter extends CustomPainter {
   final Offset end;
   final double angle;
   final bool deleteMode;
+  final Color strokeColor;
 
-  const _ArrowPainter({required this.start, required this.end, required this.angle, this.deleteMode = false});
+  const _ArrowPainter({
+    required this.start,
+    required this.end,
+    required this.angle,
+    required this.strokeColor,
+    this.deleteMode = false,
+  });
 
   void _drawArrow(Canvas canvas, Offset tip, double angle) {
     const len = 15;
@@ -194,7 +216,7 @@ class _ArrowPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = deleteMode ? Colors.red : Colors.white
+        ..color = strokeColor
         ..style = PaintingStyle.fill,
     );
   }
@@ -203,7 +225,7 @@ class _ArrowPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..strokeWidth = 4
-      ..color = deleteMode ? Colors.red : Colors.white;
+      ..color = strokeColor;
 
     const double arrowLen = 15;
 

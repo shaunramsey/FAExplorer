@@ -522,7 +522,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           child: Material(
                             color: (hasTokens && !atEnd)
                                 ? (_playing
-                                    ? const Color.fromARGB(255, 208, 0, 255)
+                                    ? theme.panelHighlight
                                     : theme.borderMid)
                                 : theme.bg,
                             borderRadius: BorderRadius.circular(18),
@@ -679,9 +679,9 @@ class _TokenChip extends StatelessWidget {
         builder: (_, child) =>
             Transform.scale(scale: pulseAnim.value, child: child),
         child: _chip(
-          bg: const Color.fromARGB(255, 208, 0, 255),
-          fg: Colors.white,
-          border: const Color.fromARGB(255, 160, 0, 200),
+          bg: theme.panelHighlight,
+          fg: theme.textLight,
+          border: theme.panelHighlight.withOpacity(0.75),
           bold: true,
         ),
       );
@@ -757,10 +757,10 @@ class _TapeCellChip extends StatelessWidget {
           constraints: const BoxConstraints(minWidth: 28),
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
           decoration: BoxDecoration(
-            color: const Color.fromARGB(255, 208, 0, 255),
+            color: theme.panelHighlight,
             borderRadius: BorderRadius.circular(5),
             border: Border.all(
-              color: const Color.fromARGB(255, 160, 0, 200),
+              color: theme.panelHighlight.withOpacity(0.75),
               width: 1.2,
             ),
           ),
