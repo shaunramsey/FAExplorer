@@ -71,9 +71,12 @@ class DslCodec {
   static String _lineRef(LineData line, Map<String, LineData> lines) {
     final label = line.label.trim();
     if (label.isEmpty) return line.id;
-    final dups = lines.values.where((l) => l.label.trim() == label).length;
-    if (dups <= 1) return _escapeDsl(label);
-    return '${line.id}(${_escapeDsl(label)})';
+    final sameLabel = lines.values.where((l) => l.label.trim() == label).toList();
+    if (sameLabel.length <= 1) return _escapeDsl(label);
+    // Use occurrence index (0-based) so the reference survives id re-numbering
+    // on reimport.  Format: ~N(label)  where N is the rank among same-label lines.
+    final rank = sameLabel.indexWhere((l) => l.id == line.id);
+    return '~$rank(${_escapeDsl(label)})';
   }
 
   static String _numberToAlphaLabel(int index) {
@@ -213,7 +216,10 @@ class DslCodec {
     final Map<String, NodeData> newNodes = <String, NodeData>{};
     final labelToId = <String, String>{};
     final newLines = <String, LineData>{};
-    final lineLabelToId = <String, String>{};
+    // Maps label → ordered list of line ids (insertion order = occurrence rank).
+    // Multiple lines may share the same label; we keep all ids so ~N(label)
+    // references can be resolved correctly after a roundtrip.
+    final lineLabelToIds = <String, List<String>>{};
     StartArrowData? newStartArrow;
     int nodeCounter = 0, lineCounter = 0;
     AutomataMode automataMode = AutomataMode.ndfa;
@@ -332,7 +338,7 @@ class DslCodec {
       // ── <line> curve = N ──────────────────────────────────────────────────
       final curveMatch = RegExp(r'^(.+?)\s+curve\s*=\s*(-?[\d.]+)$', caseSensitive: false).firstMatch(line);
       if (curveMatch != null) {
-        final lid = _resolveLineRef(_unescapeDsl(curveMatch.group(1)!.trim()), newLines, lineLabelToId);
+        final lid = _resolveLineRef(_unescapeDsl(curveMatch.group(1)!.trim()), newLines, lineLabelToIds);
         if (lid != null) newLines[lid]!.perpendicularPart = double.parse(curveMatch.group(2)!);
         continue;
       }
@@ -340,7 +346,7 @@ class DslCodec {
       // ── <line> loop angle = N ─────────────────────────────────────────────
       final loopMatch = RegExp(r'^(.+?)\s+loop\s+angle\s*=\s*(-?[\d.]+)$', caseSensitive: false).firstMatch(line);
       if (loopMatch != null) {
-        final lid = _resolveLineRef(_unescapeDsl(loopMatch.group(1)!.trim()), newLines, lineLabelToId);
+        final lid = _resolveLineRef(_unescapeDsl(loopMatch.group(1)!.trim()), newLines, lineLabelToIds);
         if (lid != null) newLines[lid]!.selfLoopAngle = double.parse(loopMatch.group(2)!);
         continue;
       }
@@ -376,7 +382,9 @@ class DslCodec {
           if (lineLabel.isNotEmpty && looksLikePdaTransitionLabel(lineLabel)) {
             if (automataMode == AutomataMode.ndfa) automataMode = AutomataMode.pda;
           }
-          if (lineLabel.isNotEmpty) lineLabelToId[lineLabel] = lid;
+          if (lineLabel.isNotEmpty) {
+            lineLabelToIds.putIfAbsent(lineLabel, () => []).add(lid);
+          }
         }
         continue;
       }
@@ -676,8 +684,18 @@ class DslCodec {
     return _unescapeDsl(encoded);
   }
 
-  static String? _resolveLineRef(String lbl, Map<String, LineData> lines, Map<String, String> labelToId) {
-    final explicit = RegExp(r'^(l\d+)\((.*)\)$').firstMatch(lbl);
+  static String? _resolveLineRef(String lbl, Map<String, LineData> lines, Map<String, List<String>> lineLabelToIds) {
+    // New occurrence-index form:  ~N(label) → Nth line (0-based) with that label
+    final rankMatch = RegExp(r'^~(\d+)\((.*)\)$', dotAll: true).firstMatch(lbl);
+    if (rankMatch != null) {
+      final rank = int.tryParse(rankMatch.group(1)!) ?? 0;
+      final label = _unescapeDsl(rankMatch.group(2)!);
+      final ids = lineLabelToIds[label];
+      if (ids != null && rank < ids.length) return ids[rank];
+      return null;
+    }
+    // Legacy explicit-id form:  lN(label) → kept for backward compat, use id directly
+    final explicit = RegExp(r'^(l\d+)\((.*)\)$', dotAll: true).firstMatch(lbl);
     if (explicit != null) return explicit.group(1);
     if (lines.containsKey(lbl)) return lbl;
     // Accept 1-based numeric line ids in DSL (e.g. "l1") by mapping them
@@ -691,7 +709,9 @@ class DslCodec {
         if (lines.containsKey(candidate)) return candidate;
       }
     }
-    return labelToId[lbl];
+    // Plain label lookup: use the first recorded id for this label
+    final ids = lineLabelToIds[lbl];
+    return ids?.isNotEmpty == true ? ids!.first : null;
   }
 
   static int _findToSeparator(String s) {

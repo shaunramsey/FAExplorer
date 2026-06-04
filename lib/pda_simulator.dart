@@ -248,19 +248,23 @@ class PdaSimulator {
 
   PdaSimResult finalResult() {
     if (steps.isEmpty) return PdaSimResult.reject;
-    final last = steps.last;
 
+    // A haltAccept anywhere in the simulation history means accept.
+    for (final snap in steps) {
+      for (final c in snap.configs) {
+        if (nodes[c.nodeId]?.isHaltAccept == true) return PdaSimResult.accept;
+      }
+    }
+
+    final last = steps.last;
     if (last.configs.isEmpty) return PdaSimResult.reject;
 
     bool anyAccept = false;
-
     for (final c in last.configs) {
       final node = nodes[c.nodeId];
       if (node == null) continue;
-
       if (node.isHaltAccept) return PdaSimResult.accept;
       if (node.isHaltReject) continue;
-
       if (node.isAccept) anyAccept = true;
     }
 
@@ -354,12 +358,13 @@ class PdaSimulator {
         if (node.isHaltReject) continue;
 
         if (node.isHaltAccept) {
+          // A haltAccept state was reached mid-simulation.  Pad remaining
+          // steps with this accepting snapshot and stop — no more tokens.
           final snap = PdaStepSnapshot(
             configs: [_toActive(config)],
             usedLineIds: const {},
           );
           while (steps.length <= tokens.length) steps.add(snap);
-          step = tokens.length;
           return;
         }
 
@@ -403,6 +408,20 @@ class PdaSimulator {
       if (current.isEmpty) break;
     }
 
+    // If the active set after all tokens contains a haltAccept state,
+    // pad remaining step slots with that accepting snapshot.
+    final haltAcceptConfig = current.cast<PdaConfig?>().firstWhere(
+      (c) => nodes[c!.nodeId]?.isHaltAccept == true,
+      orElse: () => null,
+    );
+    if (haltAcceptConfig != null) {
+      final snap = PdaStepSnapshot(
+        configs: [_toActive(haltAcceptConfig)],
+        usedLineIds: const {},
+      );
+      while (steps.length <= tokens.length) steps.add(snap);
+      return;
+    }
     while (steps.length <= tokens.length) {
       steps.add(const PdaStepSnapshot(configs: [], usedLineIds: {}));
     }

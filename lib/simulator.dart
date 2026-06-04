@@ -347,6 +347,8 @@ class AutomataSimulator {
         }
       }
 
+      // Don't follow outgoing transitions from halt states, but do include
+      // them in the active set (already added to visitedConfigs on enqueue).
       if (currentNode.isHaltAccept || currentNode.isHaltReject) continue;
 
       for (final line in lines.values) {
@@ -413,9 +415,16 @@ class AutomataSimulator {
       final nextConfigs = <_SimConfig>{};
       bool consumedAny = false;
 
+      bool hasHaltAccept = false;
       for (final config in current) {
         final node = nodes[config.nodeId];
-        if (node == null || node.isHaltReject || node.isHaltAccept) continue;
+        if (node == null || node.isHaltReject) continue;
+        // haltAccept: the current set already contains this config in
+        // _configsByStep.  Just flag it so we stop after this iteration.
+        if (node.isHaltAccept) {
+          hasHaltAccept = true;
+          continue;
+        }
 
         var effective = config;
         if (node.isBlackBox) {
@@ -478,6 +487,7 @@ class AutomataSimulator {
       }
 
       if (!consumedAny || nextConfigs.isEmpty) break;
+      if (hasHaltAccept) break;
 
       final (closureConfigs, closureLines) = _epsilonClosure(nextConfigs);
       current = closureConfigs;

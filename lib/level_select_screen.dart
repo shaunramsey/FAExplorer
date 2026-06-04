@@ -15,6 +15,8 @@
 //  • Multi-column edges are routed above or below intermediate nodes so they
 //    never visually pass through unrelated level cards.
 //  • Arrowheads are larger and arrows always drawn (not gated by entryValue).
+//  • Scroll slider in the top bar: drag it to pan the canvas horizontally.
+//    The slider also updates as the canvas is scrolled by touch/trackpad.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:math';
@@ -36,7 +38,7 @@ const double _kNodeW = 148.0; // node card width
 const double _kNodeH = 88.0; // node card height
 const double _kColGap = 220.0; // horizontal gap between column centres
 const double _kRowGap = 140.0; // vertical gap between row centres
-const double _kTopPad = 72.0; // space for the top bar (reduced, no column labels)
+const double _kTopPad = 96.0; // space for the top bar + scroll slider row
 const double _kBotPad = 80.0;
 const double _kLegendH = 58.0; // height reserved at bottom for legend
 const double _kSidePad = 120.0; // left/right canvas padding
@@ -235,6 +237,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   late final AnimationController _flowCtrl;
   late final AnimationController _entryCtrl;
 
+  final ScrollController _scrollCtrl = ScrollController();
+  double _scrollFraction = 0.0; // 0..1, drives the top-bar slider
+
   Set<String> _completed = {};
 
   @override
@@ -243,10 +248,18 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     _completed = widget.progressStore.loadCompletedLevels();
 
     _pulseCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
-
     _flowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
-
     _entryCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..forward();
+
+    _scrollCtrl.addListener(() {
+      if (!_scrollCtrl.hasClients) return;
+      final max = _scrollCtrl.position.maxScrollExtent;
+      if (max <= 0) return;
+      final fraction = (_scrollCtrl.offset / max).clamp(0.0, 1.0);
+      if ((fraction - _scrollFraction).abs() > 0.001) {
+        setState(() => _scrollFraction = fraction);
+      }
+    });
   }
 
   @override
@@ -254,6 +267,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     _pulseCtrl.dispose();
     _flowCtrl.dispose();
     _entryCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -291,6 +305,13 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     _reload();
   }
 
+  /// Jumps the canvas to the given fraction (0 = leftmost, 1 = rightmost).
+  void _scrollToFraction(double fraction) {
+    if (!_scrollCtrl.hasClients) return;
+    final max = _scrollCtrl.position.maxScrollExtent;
+    _scrollCtrl.jumpTo((fraction * max).clamp(0.0, max));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
@@ -316,6 +337,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
               final entryVal = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut).value;
 
               return SingleChildScrollView(
+                controller: _scrollCtrl,
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
                 child: SizedBox(
@@ -364,7 +386,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
             },
           ),
 
-          // ── Top bar (no column labels on top of it anymore) ────────────
+          // ── Top bar ────────────────────────────────────────────────────
           Positioned(
             top: 0,
             left: 0,
@@ -375,6 +397,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                 completed: _completed.length,
                 total: kAllLevels.length,
                 onSandbox: widget.onGoToSandbox,
+                scrollFraction: _scrollFraction,
+                onScrollChanged: _scrollToFraction,
               ),
             ),
           ),
@@ -395,103 +419,131 @@ class _TopBar extends StatelessWidget {
   final int completed;
   final int total;
   final VoidCallback onSandbox;
+  final double scrollFraction;
+  final ValueChanged<double> onScrollChanged;
 
-  const _TopBar({required this.completed, required this.total, required this.onSandbox});
+  const _TopBar({
+    required this.completed,
+    required this.total,
+    required this.onSandbox,
+    required this.scrollFraction,
+    required this.onScrollChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Row(
-          children: [
-            // Title
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Row(
               children: [
-                Text(
-                  'AUTOMATA',
-                  style: GoogleFonts.orbitron(
-                    color: theme.accent,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
-                  ),
+                // Title
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AUTOMATA',
+                      style: GoogleFonts.orbitron(
+                        color: theme.accent,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                    Text(
+                      'LEARNING MAP',
+                      style: GoogleFonts.orbitron(
+                        color: theme.textDim,
+                        fontSize: 8,
+                        letterSpacing: 3.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  'LEARNING MAP',
-                  style: GoogleFonts.orbitron(
-                    color: theme.textDim,
-                    fontSize: 8,
-                    letterSpacing: 3.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+
+                const Spacer(),
+
+                // Progress
+                Row(
+                  children: [
+                    Text(
+                      '$completed / $total',
+                      style: GoogleFonts.orbitron(color: theme.textLight, fontSize: 12, letterSpacing: 1),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 70,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: total > 0 ? completed / total : 0,
+                          backgroundColor: theme.gridLine,
+                          valueColor: AlwaysStoppedAnimation(theme.accent),
+                          minHeight: 5,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
 
-            const SizedBox(width: 20),
+                const SizedBox(width: 14),
 
-            // Scroll hint
-            Row(
-              children: [
-                Icon(Icons.open_with, color: theme.textDim, size: 14),
+                IconButton(
+                  tooltip: 'Appearance & colors',
+                  icon: Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
+                  onPressed: () => showAppThemeSettings(context),
+                ),
                 const SizedBox(width: 4),
-                Text('SCROLL', style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 8, letterSpacing: 2)),
+                TextButton(
+                  onPressed: onSandbox,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      side: BorderSide(color: theme.borderMid, width: 1),
+                    ),
+                    foregroundColor: theme.textDim,
+                  ),
+                  child: Text('SANDBOX', style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 9, letterSpacing: 2)),
+                ),
               ],
             ),
+          ),
 
-            const Spacer(),
-
-            // Progress
-            Row(
+          // ── Scroll slider ──────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 4),
+            child: Row(
               children: [
-                Text(
-                  '$completed / $total',
-                  style: GoogleFonts.orbitron(color: theme.textLight, fontSize: 12, letterSpacing: 1),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 70,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: total > 0 ? completed / total : 0,
-                      backgroundColor: theme.gridLine,
-                      valueColor: AlwaysStoppedAnimation(theme.accent),
-                      minHeight: 5,
+                Icon(Icons.chevron_left, color: theme.textDim, size: 16),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                      activeTrackColor: theme.accent.withOpacity(0.7),
+                      inactiveTrackColor: theme.gridLine,
+                      thumbColor: theme.accent,
+                      overlayColor: theme.accent.withOpacity(0.15),
+                    ),
+                    child: Slider(
+                      value: scrollFraction,
+                      onChanged: onScrollChanged,
                     ),
                   ),
                 ),
+                Icon(Icons.chevron_right, color: theme.textDim, size: 16),
               ],
             ),
-
-            const SizedBox(width: 14),
-
-            // Sandbox button — previously blocked by the _ColumnLabels overlay;
-            // now works correctly since that overlay has been removed.
-            IconButton(
-              tooltip: 'Appearance & colors',
-              icon: Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
-              onPressed: () => showAppThemeSettings(context),
-            ),
-            const SizedBox(width: 4),
-            TextButton(
-              onPressed: onSandbox,
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  side: BorderSide(color: theme.borderMid, width: 1),
-                ),
-                foregroundColor: theme.textDim,
-              ),
-              child: Text('SANDBOX', style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 9, letterSpacing: 2)),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -22,6 +22,7 @@ import 'dsl_code.dart';
 import 'fa_equivalence.dart';
 import 'models.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
+import 'widgets/palette_fab.dart';
 import 'node.dart';
 import 'line.dart';
 import 'start_arrow.dart';
@@ -644,7 +645,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _PaletteFab(
+          PaletteFab(
             heroTag: 'gp_start',
             tooltip: 'Set start state',
             icon: Icons.play_arrow,
@@ -654,7 +655,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 setState(() => _placingStartArrow = !_placingStartArrow),
           ),
           const SizedBox(height: 10),
-          _PaletteFab(
+          PaletteFab(
             heroTag: 'gp_delete',
             tooltip: 'Delete mode',
             icon: Icons.delete_outline,
@@ -669,7 +670,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             }),
           ),
           const SizedBox(height: 10),
-          _PaletteFab(
+          PaletteFab(
             heroTag: 'gp_line',
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
             icon: _lineMode ? Icons.timeline : Icons.add_link,
@@ -678,7 +679,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             onPressed: () => setState(() => _lineMode = !_lineMode),
           ),
           const SizedBox(height: 10),
-          _PaletteFab(
+          PaletteFab(
             heroTag: 'gp_reset',
             tooltip: 'Clear canvas',
             icon: Icons.refresh,
@@ -1005,73 +1006,4 @@ class _RubberBandPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RubberBandPainter old) =>
       old.start != start || old.end != end || old.color != color;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  _PaletteFab — matches the sandbox canvas FAB style exactly
-// ─────────────────────────────────────────────────────────────────────────────
-class _PaletteFab extends StatelessWidget {
-  const _PaletteFab({
-    required this.heroTag,
-    required this.tooltip,
-    required this.icon,
-    required this.active,
-    required this.activeColor,
-    required this.onPressed,
-    this.small = false,
-  });
-
-  final Object heroTag;
-  final String tooltip;
-  final IconData icon;
-  final bool active;
-  final Color activeColor;
-  final VoidCallback onPressed;
-  final bool small;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-    final bgIdle = theme.surface;
-    final fgIdle = theme.textDim;
-    final border = theme.borderMid;
-
-    final bg = active ? activeColor.withOpacity(0.14) : bgIdle;
-    final fg = active ? activeColor : fgIdle;
-    final side = active
-        ? BorderSide(color: activeColor.withOpacity(0.7), width: 1.5)
-        : BorderSide(color: border, width: 1);
-
-    final size = small ? 36.0 : 48.0;
-    final iconSize = small ? 18.0 : 22.0;
-
-    return Tooltip(
-      message: tooltip,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(small ? 8 : 12),
-          border: Border.all(color: side.color, width: side.width),
-          boxShadow: active
-              ? [BoxShadow(
-                  color: activeColor.withOpacity(0.3),
-                  blurRadius: 12,
-                  spreadRadius: 0,
-                )]
-              : null,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(small ? 8 : 12),
-            onTap: onPressed,
-            child: Icon(icon, color: fg, size: iconSize),
-          ),
-        ),
-      ),
-    );
-  }
 }

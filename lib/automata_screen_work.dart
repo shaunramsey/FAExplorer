@@ -50,7 +50,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   bool _showHelpOverlay = false;
   bool _showSimulator = true;
-  bool _pdaMode = false;          // ← NEW
+  AutomataMode _automataMode = AutomataMode.ndfa;          // ← NEW
 
   StartArrowData? _startArrow;
 
@@ -110,8 +110,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   /// At the accepted final step, union all nodes/lines from every step to
   /// highlight the complete accepted path. Otherwise show only the current step.
   Set<String> get _simActiveNodes {
-    if (_pdaMode) {
-      return _pdaSimulator.activeNodes;
+    if (_automataMode == AutomataMode.pda) {
+      // Use _simulator.step directly so we never lag one frame behind the
+      // onStepChanged callback that would normally sync _pdaSimulator.step.
+      final idx = _simulator.step + 1;
+      if (idx < 0 || idx >= _pdaSimulator.steps.length) return {};
+      return _pdaSimulator.steps[idx].activeNodeIds;
     }
     if (_isAtAcceptedFinalStep) {
       return _simulator.states.expand((s) => s).toSet();
@@ -120,8 +124,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   Set<String> get _simActiveLines {
-    if (_pdaMode) {
-      return _pdaSimulator.activeLines;
+    if (_automataMode == AutomataMode.pda) {
+      // Use _simulator.step directly — same reason as above.
+      if (_simulator.step < 0) return {};
+      final idx = _simulator.step + 1;
+      if (idx < 0 || idx >= _pdaSimulator.steps.length) return {};
+      return _pdaSimulator.steps[idx].usedLineIds;
     }
     if (_isAtAcceptedFinalStep) {
       return _simulator.usedLines.expand((s) => s).toSet();
@@ -173,7 +181,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _startArrow = state.startArrow;
         _nodeCounter = state.nodeCounter;
         _lineCounter = state.lineCounter;
-        _pdaMode = state.pdaMode;
+        _automataMode =
+    state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
       } catch (_) {
         // Ignore corrupt saved graphs.
       }
@@ -380,7 +389,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _startArrow = state.startArrow;
       _nodeCounter = state.nodeCounter;
       _lineCounter = state.lineCounter;
-      _pdaMode = state.pdaMode;
+      _automataMode =
+    state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
       _draggingNodeId = null;
       _draggingLineId = null;
       _lineSourceNodeId = null;
@@ -793,7 +803,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
-        automataMode: _pdaMode ? AutomataMode.pda : AutomataMode.ndfa,
+        automataMode: _automataMode,
         isGuest: widget.isGuest,
         accountLabel: widget.isGuest
             ? 'Guest (local only)'
@@ -801,15 +811,17 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onShowHelpChanged: _setShowHelpOverlay,
         onShowSimulatorChanged: _setShowSimulator,
         onModeChanged: (mode) {
-          setState(() {
-            _pdaMode = mode == AutomataMode.pda;
-            _simRebuild();
-            if (_pdaMode) {
-              _pdaSimulator.step = _simulator.step;
-            }
-          });
-          _schedulePersist();
-        },
+  setState(() {
+    _automataMode = mode;
+    _simRebuild();
+
+    if (_automataMode == AutomataMode.pda) {
+      _pdaSimulator.step = _simulator.step;
+    }
+  });
+
+  _schedulePersist();
+},
         onBatchSimulator: _openBatchSimulatorDialog,
         onEquivalenceChecker: _showEquivalenceDialog,
         onExport: _showExportDialog,
@@ -1036,7 +1048,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
                 simulator: _simulator,
-                pdaSimulator: _pdaMode ? _pdaSimulator : null,
+                pdaSimulator:
+    _automataMode == AutomataMode.pda
+        ? _pdaSimulator
+        : null,
                 controller: _simController,
                 nodes: _nodes,
                 onClose: () => _setShowSimulator(false),
@@ -1049,14 +1064,16 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   _schedulePersist();
                 },
                 onStepChanged: () {
-                  _pdaSimulator.step = _simulator.step; // keep in sync
-                  setState(() {});
+                  setState(() {
+                    _pdaSimulator.step = _simulator.step; // sync inside setState
+                  });
                   _schedulePersist();
                 },
               ),
 
             // ── PDA Stack Panel ────────────────────────────────────────
-            if (_showSimulator && _pdaMode)
+            if (_showSimulator &&
+    _automataMode == AutomataMode.pda)
               PdaStackPanel(simulator: _pdaSimulator, nodes: _nodes),
           ],
         ),
