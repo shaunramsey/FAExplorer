@@ -1231,8 +1231,8 @@ class _EdgePainter extends CustomPainter {
   /// Returns all node positions whose centre X lies strictly between
   /// [srcX] and [dstX], i.e. intermediate nodes that an edge might cross.
   List<Offset> _getIntermediatePositions(String srcId, String destId, double srcX, double dstX) {
-    // Adjacent-column edges (gap ≤ one column) have no intermediates.
-    if (dstX - srcX <= _kColGap) return const [];
+    // Adjacent-column edges (gap ≤ one column + tolerance) have no intermediates.
+    if (dstX - srcX <= _kColGap + 10) return const [];
 
     final result = <Offset>[];
     for (final entry in positions.entries) {
@@ -1248,41 +1248,49 @@ class _EdgePainter extends CustomPainter {
 
   /// Builds a bezier path from [src] to [dst].
   ///
-  /// For direct (no-conflict) edges: a standard S-curve cubic bezier.
-  /// For edges that would visually pass through intermediate nodes: a
-  /// two-segment cubic that routes above or below those nodes.
+  /// For adjacent-column edges: a standard S-curve cubic bezier.
+  /// For multi-column edges: a two-segment cubic that arcs through a
+  /// horizontal lane chosen to avoid all intermediate node cards.
   _PathData _buildEdgePath(Offset src, Offset dst, List<Offset> intermediate) {
     final ctrlDist = (dst.dx - src.dx) * 0.45;
 
-    bool pathHitsNodes(List<Offset> pts) {
+    // ── Bezier sampler ──────────────────────────────────────────────────────
+    // Approximate a cubic bezier with [steps] sample points.
+    List<Offset> _sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 30}) {
+      final pts = <Offset>[];
+      for (int i = 0; i <= steps; i++) {
+        final t = i / steps;
+        pts.add(_cubicPoint(p0, p1, p2, p3, t));
+      }
+      return pts;
+    }
+
+    // ── Node-avoidance check ─────────────────────────────────────────────────
+    // Returns true if any sample point in [pts] falls inside a node card
+    // (with padding), ignoring the src and dst nodes themselves.
+    final srcNodeCenter = Offset(src.dx - _kNodeW / 2, src.dy);
+    final dstNodeCenter = Offset(dst.dx + _kNodeW / 2, dst.dy);
+
+    bool samplesHitNodes(List<Offset> pts) {
       for (final entry in positions.entries) {
         final p = entry.value;
-
-        // Ignore source/destination nodes.
-        if ((p - Offset(src.dx - _kNodeW / 2, src.dy)).distance < 5 ||
-            (p - Offset(dst.dx + _kNodeW / 2, dst.dy)).distance < 5) {
-          continue;
-        }
-
-        final rect = Rect.fromCenter(center: p, width: _kNodeW + 50, height: _kNodeH + 50);
-
-        for (int i = 0; i < pts.length - 1; i++) {
-          final seg = Rect.fromPoints(pts[i], pts[i + 1]).inflate(20);
-
-          if (rect.overlaps(seg)) {
-            return true;
-          }
+        if ((p - srcNodeCenter).distance < 8 || (p - dstNodeCenter).distance < 8) continue;
+        final rect = Rect.fromCenter(
+          center: p,
+          width: _kNodeW + 40,
+          height: _kNodeH + 40,
+        );
+        for (final pt in pts) {
+          if (rect.contains(pt)) return true;
         }
       }
-
       return false;
     }
 
-    // Simple adjacent-column connection.
-    if (dst.dx - src.dx <= _kColGap) {
+    // ── Adjacent-column: simple S-curve ─────────────────────────────────────
+    if (dst.dx - src.dx <= _kColGap + 10) {
       final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
       final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
-
       return _PathData(
         path: Path()
           ..moveTo(src.dx, src.dy)
@@ -1294,36 +1302,66 @@ class _EdgePainter extends CustomPainter {
       );
     }
 
+    // ── Multi-column: arc through a horizontal bypass lane ──────────────────
+    // Build a rich candidate list: fixed lanes + per-node offsets.
+    final usableBottom = canvasH - _kBotPad - _kLegendH;
     final candidateYs = <double>[
-      _kTopPad + 30,
-      _kTopPad + 120,
-      canvasH * 0.25,
-      canvasH * 0.75,
-      canvasH - _kBotPad - _kLegendH - 120,
-      canvasH - _kBotPad - _kLegendH - 30,
+      _kTopPad + 18,
+      _kTopPad + 50,
+      _kTopPad + 90,
+      canvasH * 0.18,
+      canvasH * 0.28,
+      canvasH * 0.72,
+      canvasH * 0.82,
+      usableBottom - 90,
+      usableBottom - 50,
+      usableBottom - 18,
     ];
 
-    double chosenY = candidateYs.first;
-
-    for (final y in candidateYs) {
-      final test = [src, Offset(src.dx, y), Offset(dst.dx, y), dst];
-
-      if (!pathHitsNodes(test)) {
-        chosenY = y;
-        break;
-      }
+    // Also offer lanes that sit just above/below each intermediate node.
+    for (final p in intermediate) {
+      candidateYs.add(p.dy - _kNodeH / 2 - 36);
+      candidateYs.add(p.dy + _kNodeH / 2 + 36);
     }
+
+    // Sort by distance from the midpoint of src/dst so we prefer lanes that
+    // stay close to the natural straight line when possible.
+    final midY = (src.dy + dst.dy) / 2;
+    candidateYs.sort((a, b) => (a - midY).abs().compareTo((b - midY).abs()));
 
     final midX = (src.dx + dst.dx) / 2;
     final halfCtrl = ctrlDist * 0.7;
-
     final arrowFrom = Offset(dst.dx - halfCtrl, dst.dy);
 
+    for (final y in candidateYs) {
+      // Two cubic bezier segments meeting at (midX, y).
+      final c1 = Offset(src.dx + halfCtrl, src.dy);
+      final c2 = Offset(midX - 20, y);
+      final c3 = Offset(midX + 20, y);
+      final c4 = arrowFrom;
+
+      final seg1 = _sampleCubic(src, c1, c2, Offset(midX, y));
+      final seg2 = _sampleCubic(Offset(midX, y), c3, c4, dst);
+
+      if (!samplesHitNodes([...seg1, ...seg2])) {
+        return _PathData(
+          path: Path()
+            ..moveTo(src.dx, src.dy)
+            ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, midX, y)
+            ..cubicTo(c3.dx, c3.dy, c4.dx, c4.dy, dst.dx, dst.dy),
+          isSimple: false,
+          arrowFrom: arrowFrom,
+        );
+      }
+    }
+
+    // Absolute fallback: route hard above all nodes.
+    final fallbackY = _kTopPad + 12;
     return _PathData(
       path: Path()
         ..moveTo(src.dx, src.dy)
-        ..cubicTo(src.dx + halfCtrl, src.dy, midX - 20, chosenY, midX, chosenY)
-        ..cubicTo(midX + 20, chosenY, arrowFrom.dx, arrowFrom.dy, dst.dx, dst.dy),
+        ..cubicTo(src.dx + halfCtrl, src.dy, midX - 20, fallbackY, midX, fallbackY)
+        ..cubicTo(midX + 20, fallbackY, arrowFrom.dx, arrowFrom.dy, dst.dx, dst.dy),
       isSimple: false,
       arrowFrom: arrowFrom,
     );

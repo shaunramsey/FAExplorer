@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'widgets/app_theme.dart';
 import 'game_gate.dart';
 import 'auth/auth_service.dart';
 import 'firebase_options.dart';
@@ -48,11 +49,13 @@ Future<void> main() async {
     }
   }
 
-  final authService = AuthService(firebaseEnabled: firebaseEnabled);
+  final authService   = AuthService(firebaseEnabled: firebaseEnabled);
+  final themeNotifier = await AppThemeNotifier.load();
 
   runApp(MyApp(
     authService: authService,
     firebaseEnabled: firebaseEnabled,
+    themeNotifier: themeNotifier,
   ));
 }
 
@@ -61,68 +64,76 @@ class MyApp extends StatelessWidget {
     super.key,
     required this.authService,
     required this.firebaseEnabled,
+    required this.themeNotifier,
   });
 
   final AuthService authService;
   final bool firebaseEnabled;
+  final AppThemeNotifier themeNotifier;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Automata Designer',
-      debugShowCheckedModeBanner: false,
-      theme: _buildTheme(),
-      home: AppGate(
-        authService: authService,
-        firebaseEnabled: firebaseEnabled,
+    return AppThemeScope(
+      notifier: themeNotifier,
+      child: ListenableBuilder(
+        listenable: themeNotifier,
+        builder: (context, _) => MaterialApp(
+          title: 'Automata Designer',
+          debugShowCheckedModeBanner: false,
+          theme: _buildTheme(themeNotifier.data),
+          home: AppGate(
+            authService: authService,
+            firebaseEnabled: firebaseEnabled,
+          ),
+        ),
       ),
     );
   }
 
-  ThemeData _buildTheme() {
+  ThemeData _buildTheme(AppThemeData c) {
     final base = ThemeData.dark();
 
     return base.copyWith(
-      scaffoldBackgroundColor: kBg,
-      canvasColor: kSurface,
-      cardColor: kSurface,
+      scaffoldBackgroundColor: c.bg,
+      canvasColor: c.surface,
+      cardColor: c.surface,
 
-      colorScheme: const ColorScheme.dark(
-        primary:          kAccent,
-        onPrimary:        kBg,
-        secondary:        kAccentGreen,
-        onSecondary:      kBg,
-        surface:          kSurface,
-        onSurface:        kTextLight,
-        error:            Color(0xFFFF1744),
-        onError:          kBg,
-        outline:          kBorderMid,
+      colorScheme: ColorScheme.dark(
+        primary:          c.accent,
+        onPrimary:        c.bg,
+        secondary:        c.accentGreen,
+        onSecondary:      c.bg,
+        surface:          c.surface,
+        onSurface:        c.textLight,
+        error:            const Color(0xFFFF1744),
+        onError:          c.bg,
+        outline:          c.borderMid,
       ),
 
       // AppBar
       appBarTheme: AppBarTheme(
-        backgroundColor: kSurface,
-        foregroundColor: kTextLight,
+        backgroundColor: c.surface,
+        foregroundColor: c.textLight,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: GoogleFonts.orbitron(
-          color: kAccent,
+          color: c.accent,
           fontSize: 15,
           fontWeight: FontWeight.w700,
           letterSpacing: 3,
         ),
-        iconTheme: const IconThemeData(color: kTextMid),
+        iconTheme: IconThemeData(color: c.textMid),
         systemOverlayStyle: SystemUiOverlayStyle.light,
       ),
 
       // Drawer
-      drawerTheme: const DrawerThemeData(
-        backgroundColor: kSurface,
+      drawerTheme: DrawerThemeData(
+        backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
       ),
 
       // Dividers
-      dividerTheme: const DividerThemeData(color: kBorderMid, thickness: 1),
+      dividerTheme: DividerThemeData(color: c.borderMid, thickness: 1),
 
       // Input fields
       inputDecorationTheme: InputDecorationTheme(
@@ -130,27 +141,27 @@ class MyApp extends StatelessWidget {
         fillColor: const Color(0xFF080D14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: kBorderMid),
+          borderSide: BorderSide(color: c.borderMid),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: kBorderMid),
+          borderSide: BorderSide(color: c.borderMid),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: kAccent, width: 1.5),
+          borderSide: BorderSide(color: c.accent, width: 1.5),
         ),
-        labelStyle: GoogleFonts.orbitron(color: kTextMid, fontSize: 12, letterSpacing: 1),
-        hintStyle: GoogleFonts.sourceCodePro(color: kTextDim, fontSize: 13),
+        labelStyle: GoogleFonts.orbitron(color: c.textMid, fontSize: 12, letterSpacing: 1),
+        hintStyle: GoogleFonts.sourceCodePro(color: c.textDim, fontSize: 13),
         errorStyle: GoogleFonts.sourceCodePro(color: const Color(0xFFFF1744), fontSize: 11),
       ),
 
       // Filled / elevated buttons
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: kAccent.withOpacity(0.12),
-          foregroundColor: kAccent,
-          side: const BorderSide(color: kAccent, width: 1),
+          backgroundColor: c.accent.withOpacity(0.12),
+          foregroundColor: c.accent,
+          side: BorderSide(color: c.accent, width: 1),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
           textStyle: GoogleFonts.orbitron(
@@ -164,8 +175,8 @@ class MyApp extends StatelessWidget {
       // Outlined buttons
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: kTextMid,
-          side: const BorderSide(color: kBorderMid),
+          foregroundColor: c.textMid,
+          side: BorderSide(color: c.borderMid),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
           textStyle: GoogleFonts.orbitron(
@@ -179,41 +190,41 @@ class MyApp extends StatelessWidget {
       // Text buttons
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: kTextMid,
+          foregroundColor: c.textMid,
           textStyle: GoogleFonts.orbitron(fontSize: 10, letterSpacing: 1.5),
         ),
       ),
 
       // Floating action buttons
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: kSurface,
-        foregroundColor: kTextLight,
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: c.surface,
+        foregroundColor: c.textLight,
         elevation: 4,
         highlightElevation: 8,
       ),
 
       // Chips
       chipTheme: ChipThemeData(
-        backgroundColor: kSurface,
-        labelStyle: GoogleFonts.orbitron(color: kTextMid, fontSize: 9, letterSpacing: 1.5),
-        side: const BorderSide(color: kBorderMid),
+        backgroundColor: c.surface,
+        labelStyle: GoogleFonts.orbitron(color: c.textMid, fontSize: 9, letterSpacing: 1.5),
+        side: BorderSide(color: c.borderMid),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       ),
 
       // Progress indicators
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: kAccent,
-        linearTrackColor: kGridLine,
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: c.accent,
+        linearTrackColor: c.gridLine,
       ),
 
       // Snackbars
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: kSurface,
-        contentTextStyle: GoogleFonts.sourceCodePro(color: kTextLight, fontSize: 13),
+        backgroundColor: c.surface,
+        contentTextStyle: GoogleFonts.sourceCodePro(color: c.textLight, fontSize: 13),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: kBorderMid),
+          side: BorderSide(color: c.borderMid),
         ),
         behavior: SnackBarBehavior.floating,
       ),
@@ -224,20 +235,20 @@ class MyApp extends StatelessWidget {
         surfaceTintColor: Colors.transparent,
       ),
 
-      // Text theme — Orbitron for display, Source Code Pro for body/mono
+      // Text theme
       textTheme: GoogleFonts.orbitronTextTheme(base.textTheme).copyWith(
-        bodyLarge:   GoogleFonts.sourceCodePro(color: kTextLight, fontSize: 14),
-        bodyMedium:  GoogleFonts.sourceCodePro(color: kTextMid,   fontSize: 13),
-        bodySmall:   GoogleFonts.sourceCodePro(color: kTextDim,   fontSize: 11),
-        labelLarge:  GoogleFonts.orbitron(color: kTextLight, fontSize: 12, letterSpacing: 1.5, fontWeight: FontWeight.w700),
-        labelMedium: GoogleFonts.orbitron(color: kTextMid,   fontSize: 10, letterSpacing: 1.2),
-        labelSmall:  GoogleFonts.orbitron(color: kTextDim,   fontSize: 8,  letterSpacing: 1.0),
+        bodyLarge:   GoogleFonts.sourceCodePro(color: c.textLight, fontSize: 14),
+        bodyMedium:  GoogleFonts.sourceCodePro(color: c.textMid,   fontSize: 13),
+        bodySmall:   GoogleFonts.sourceCodePro(color: c.textDim,   fontSize: 11),
+        labelLarge:  GoogleFonts.orbitron(color: c.textLight, fontSize: 12, letterSpacing: 1.5, fontWeight: FontWeight.w700),
+        labelMedium: GoogleFonts.orbitron(color: c.textMid,   fontSize: 10, letterSpacing: 1.2),
+        labelSmall:  GoogleFonts.orbitron(color: c.textDim,   fontSize: 8,  letterSpacing: 1.0),
       ),
       primaryTextTheme: GoogleFonts.orbitronTextTheme(base.primaryTextTheme),
 
       // Icons
-      iconTheme: const IconThemeData(color: kTextMid, size: 22),
-      primaryIconTheme: const IconThemeData(color: kAccent),
+      iconTheme: IconThemeData(color: c.textMid, size: 22),
+      primaryIconTheme: IconThemeData(color: c.accent),
     );
   }
 }
