@@ -126,7 +126,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     fontSize: 30,
                     height: 1,
                     fontWeight: FontWeight.bold,
-                    color: widget.deleteMode ? Colors.red : Colors.black,
+                    color: widget.deleteMode ? Colors.red : Colors.white,
                   ),
 
                   // Use the shared parser from token_replacements.dart
@@ -155,9 +155,10 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
+                    filled: false,
                     hintText: '~',
                     isDense: true,
-                    hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
+                    hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
                   ),
                 ),
               ),
@@ -193,7 +194,7 @@ class _ArrowPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = deleteMode ? Colors.red : Colors.black
+        ..color = deleteMode ? Colors.red : Colors.white
         ..style = PaintingStyle.fill,
     );
   }
@@ -202,7 +203,7 @@ class _ArrowPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..strokeWidth = 4
-      ..color = deleteMode ? Colors.red : Colors.black;
+      ..color = deleteMode ? Colors.red : Colors.white;
 
     const double arrowLen = 15;
 

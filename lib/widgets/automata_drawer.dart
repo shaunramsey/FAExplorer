@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../markdown_file_screen.dart';
+import 'app_theme_settings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  AutomataMode  — the three simulation modes
@@ -321,6 +322,16 @@ class AutomataDrawer extends StatelessWidget {
                   ),
                 );
               },
+            ),
+
+            const Divider(),
+
+            // ── Settings ──────────────────────────────────────────────────
+            _HoverTile(
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('Color Settings'),
+              subtitle: 'Customize the accent, background, text, and border colors.',
+              onTap: () => showAppThemeSettings(context),
             ),
 
             const Divider(),

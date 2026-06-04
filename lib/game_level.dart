@@ -1258,7 +1258,7 @@ const List<GameLevel> kAllLevels = [
       ],
     ),
     x: 0.55,
-    y: 0.93,
+    y: 0.90,
     tag: 'boss',
   ),
 
@@ -1317,8 +1317,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_binary_mod3'),
-    x: 0.55,
-    y: 0.06,  // placed at top of col 7, doesn't visually cluster with others
+    x: 0.57,  // shifted right into its own sub-column to avoid clustering
+    y: 0.06,
     tag: 'boss',
   ),
 
@@ -1349,8 +1349,8 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_ends_two_same_dfa'),
-    x: 0.55,
-    y: 0.96,
+    x: 0.56,  // slight x offset keeps it visually distinct from boss_palindrome
+    y: 0.97,
     tag: 'dfa',
   ),
 
@@ -1408,7 +1408,7 @@ const List<GameLevel> kAllLevels = [
     ''',
     automataMode: AutomataMode.ndfa,
     unlockRule: RequireLevel('dsl_binary_mod7'),
-    x: 0.55,
+    x: 0.57,  // same sub-column as dsl_binary_mod7
     y: 0.15,
     tag: 'boss',
   ),

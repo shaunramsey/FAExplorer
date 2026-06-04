@@ -1,3 +1,7 @@
+# June 3rd, 2026
+* Added in more levels and made the level select screen more linear
+* Changed a lot of the colors to make everything have a more central theme
+
 # June 2nd, 2026
 * Added in game mode to allow the user to solve levels with equivalency check requirements
 

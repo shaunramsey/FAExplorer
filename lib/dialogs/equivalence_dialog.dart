@@ -1,12 +1,5 @@
 // A dialog that lets the user paste or type two DSL strings and checks whether
 // the two finite automata they describe accept exactly the same language.
-//
-// Usage (from AutomataScreen or anywhere you have a BuildContext):
-//
-//   await showEquivalenceDialog(
-//     context,
-//     initialDsl: DslCodec.exportToDsl(_graphState), // pre-fill slot A
-//   );
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -14,6 +7,17 @@ import 'package:google_fonts/google_fonts.dart';
 import '../dsl_code.dart';
 import '../fa_equivalence.dart';
 import '../widgets/automata_drawer.dart' show AutomataMode;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Theme palette (mirrors main.dart)
+// ─────────────────────────────────────────────────────────────────────────────
+const _kBg        = Color(0xFF05080F);
+const _kSurface   = Color(0xFF0A0F18);
+const _kBorderMid = Color(0xFF1A2535);
+const _kAccent    = Color(0xFF00E5FF);
+const _kTextLight = Color(0xFFCDD5E0);
+const _kTextMid   = Color(0xFF6B7E96);
+const _kTextDim   = Color(0xFF3A4A5E);
 
 Future<void> showEquivalenceDialog(
   BuildContext context, {
@@ -72,7 +76,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
       _checking = true;
     });
 
-    // Parse both DSLs.
     late final GraphState g1, g2;
     try {
       g1 = DslCodec.importFromDsl(_ctrlA.text);
@@ -106,32 +109,20 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
     switch (g1.automataMode) {
       case AutomataMode.ndfa:
         result = checkEquivalence(
-          nodes1: g1.nodes,
-          lines1: g1.lines,
-          startArrow1: g1.startArrow,
-          nodes2: g2.nodes,
-          lines2: g2.lines,
-          startArrow2: g2.startArrow,
+          nodes1: g1.nodes, lines1: g1.lines, startArrow1: g1.startArrow,
+          nodes2: g2.nodes, lines2: g2.lines, startArrow2: g2.startArrow,
         );
         break;
       case AutomataMode.pda:
         result = checkPdaEquivalence(
-          nodes1: g1.nodes,
-          lines1: g1.lines,
-          startArrow1: g1.startArrow,
-          nodes2: g2.nodes,
-          lines2: g2.lines,
-          startArrow2: g2.startArrow,
+          nodes1: g1.nodes, lines1: g1.lines, startArrow1: g1.startArrow,
+          nodes2: g2.nodes, lines2: g2.lines, startArrow2: g2.startArrow,
         );
         break;
       case AutomataMode.tm:
         result = checkTmEquivalence(
-          nodes1: g1.nodes,
-          lines1: g1.lines,
-          startArrow1: g1.startArrow,
-          nodes2: g2.nodes,
-          lines2: g2.lines,
-          startArrow2: g2.startArrow,
+          nodes1: g1.nodes, lines1: g1.lines, startArrow1: g1.startArrow,
+          nodes2: g2.nodes, lines2: g2.lines, startArrow2: g2.startArrow,
         );
         break;
     }
@@ -154,31 +145,40 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
       children: [
         Text(
           label,
-          style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold, fontSize: 14),
+          style: GoogleFonts.courierPrime(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: _kTextLight,
+          ),
         ),
         const SizedBox(height: 6),
         Container(
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
+            color: const Color(0xFF080D14),
             border: Border.all(
-              color: error != null ? Colors.red : Colors.grey.shade400,
+              color: error != null ? const Color(0xFFFF1744) : _kBorderMid,
             ),
             borderRadius: BorderRadius.circular(6),
           ),
           child: TextField(
             controller: ctrl,
             maxLines: 14,
-            style: GoogleFonts.courierPrime(fontSize: 13),
-            decoration: const InputDecoration(
-              contentPadding: EdgeInsets.all(10),
+            style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextLight),
+            cursorColor: _kAccent,
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.all(10),
               border: InputBorder.none,
               hintText: 'Paste DSL here…',
+              hintStyle: GoogleFonts.courierPrime(color: _kTextDim, fontSize: 13),
             ),
           ),
         ),
         if (error != null) ...[
           const SizedBox(height: 4),
-          Text(error, style: const TextStyle(color: Colors.red, fontSize: 12)),
+          Text(
+            error,
+            style: const TextStyle(color: Color(0xFFFF1744), fontSize: 12),
+          ),
         ],
       ],
     );
@@ -198,10 +198,10 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
     switch (r.status) {
       case EquivalenceStatus.equivalent:
         return _Banner(
-          color: Colors.green.shade50,
-          borderColor: Colors.green.shade600,
+          color: const Color(0xFF051A10),
+          borderColor: const Color(0xFF1FD99A),
           icon: Icons.check_circle_outline,
-          iconColor: Colors.green.shade700,
+          iconColor: const Color(0xFF1FD99A),
           title: 'Equivalent',
           body: 'Both automata accept exactly the same language.',
         );
@@ -212,10 +212,10 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
         final other = r.acceptedByMachine == 1 ? 'B' : 'A';
         final accepted = r.acceptedByMachine == 1 ? 'A' : 'B';
         return _Banner(
-          color: Colors.orange.shade50,
-          borderColor: Colors.orange.shade600,
+          color: const Color(0xFF1A0D00),
+          borderColor: const Color(0xFFFF6D00),
           icon: Icons.highlight_off,
-          iconColor: Colors.orange.shade800,
+          iconColor: const Color(0xFFFF9E40),
           title: 'Not Equivalent',
           body: 'Distinguishing witness: $wDisplay\n'
               'Automaton $accepted accepts this string, automaton $other does not.',
@@ -223,23 +223,22 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.unknownCapReached:
         return _Banner(
-          color: Colors.green.shade50,
-          borderColor: Colors.green.shade400,
+          color: const Color(0xFF051A10),
+          borderColor: const Color(0xFF1FD99A),
           icon: Icons.check,
-          iconColor: Colors.green.shade700,
+          iconColor: const Color(0xFF1FD99A),
           title: 'Likely Equivalent',
           body: 'No distinguishing string was found within the checked bounds. '
               'For NFA/DFA, this means the algorithm could not prove inequivalence. '
-              'For PDA/TM, the search is intentionally bounded, so absence of a witness '
-              'does not guarantee equivalence.',
+              'For PDA/TM, the search is intentionally bounded.',
         );
 
       case EquivalenceStatus.noStartState:
         return _Banner(
-          color: Colors.red.shade50,
-          borderColor: Colors.red.shade400,
+          color: const Color(0xFF1A0005),
+          borderColor: const Color(0xFFFF1744),
           icon: Icons.warning_amber_outlined,
-          iconColor: Colors.red.shade700,
+          iconColor: const Color(0xFFFF1744),
           title: 'Missing start state',
           body: 'One or both automata have no start state defined. '
               'Add a start arrow (▶) and try again.',
@@ -250,6 +249,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      backgroundColor: _kSurface,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 720, maxHeight: 800),
@@ -262,23 +262,25 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
               padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
               child: Row(
                 children: [
-                  const Icon(Icons.compare_arrows),
+                  Icon(Icons.compare_arrows, color: _kAccent),
                   const SizedBox(width: 8),
                   Text(
                     'Compare Automata',
                     style: GoogleFonts.courierPrime(
-                        fontSize: 18, fontWeight: FontWeight.bold),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _kTextLight),
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: Icon(Icons.close, color: _kTextMid),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
             ),
 
-            const Divider(height: 16),
+            Divider(height: 16, color: _kBorderMid),
 
             Expanded(
               child: SingleChildScrollView(
@@ -290,33 +292,30 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
+                        color: const Color(0xFF080D14),
                         borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: _kBorderMid),
                       ),
                       child: Text(
                         'Paste the DSL for two automata. For NFA/DFA, the checker can prove equivalence exactly. '
                         'For PDA/TM, it performs a bounded search for a distinguishing input string. '
                         'If no counterexample is found within the search bound, equivalence remains unknown.',
-                        style: GoogleFonts.courierPrime(fontSize: 12, color: Colors.black87),
+                        style: GoogleFonts.courierPrime(fontSize: 12, color: _kTextMid),
                       ),
                     ),
 
                     const SizedBox(height: 16),
 
-                    // ── Two-column layout on wide screens, stacked on narrow ──
+                    // ── Two-column layout on wide screens ──
                     LayoutBuilder(builder: (context, constraints) {
                       final wide = constraints.maxWidth > 500;
                       if (wide) {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: _dslEditor(_ctrlA, 'Automaton A', _errorA),
-                            ),
+                            Expanded(child: _dslEditor(_ctrlA, 'Automaton A', _errorA)),
                             const SizedBox(width: 16),
-                            Expanded(
-                              child: _dslEditor(_ctrlB, 'Automaton B', _errorB),
-                            ),
+                            Expanded(child: _dslEditor(_ctrlB, 'Automaton B', _errorB)),
                           ],
                         );
                       }
@@ -330,17 +329,14 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                     }),
 
                     const SizedBox(height: 20),
-
-                    // ── Result ───────────────────────────────────────────────
                     _resultBanner(),
-
                     const SizedBox(height: 8),
                   ],
                 ),
               ),
             ),
 
-            const Divider(height: 1),
+            Divider(height: 1, color: _kBorderMid),
 
             // ── Actions ─────────────────────────────────────────────────────
             Padding(
@@ -350,6 +346,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(foregroundColor: _kTextMid),
                     child: const Text('Close'),
                   ),
                   const SizedBox(width: 8),
@@ -418,7 +415,7 @@ class _Banner extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   body,
-                  style: GoogleFonts.courierPrime(fontSize: 13),
+                  style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextMid),
                 ),
               ],
             ),

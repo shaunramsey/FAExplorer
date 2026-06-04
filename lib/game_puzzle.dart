@@ -22,6 +22,17 @@ import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'node.dart';
 import 'line.dart';
 import 'start_arrow.dart';
+import 'main.dart'
+    show
+        kBg,
+        kSurface,
+        kBorder,
+        kBorderMid,
+        kAccent,
+        kAccentGreen,
+        kTextDim,
+        kTextMid,
+        kTextLight;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -242,11 +253,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         final a = _nodes[line.nodeAId]!, b = _nodes[line.nodeBId]!;
         if (line.nodeAId == line.nodeBId) {
           final center = a.center;
-          final prev = _lastPanPosition ?? center;
-          final oldA = atan2(prev.dy - center.dy, prev.dx - center.dx);
-          final newA = atan2(d.localPosition.dy - center.dy,
-              d.localPosition.dx - center.dx);
-          line.selfLoopAngle += newA - oldA;
+          final mouse = d.localPosition;
+          final previous = mouse - d.delta;
+          final oldA = atan2(previous.dy - center.dy, previous.dx - center.dx);
+          final newA = atan2(mouse.dy - center.dy, mouse.dx - center.dx);
+          // Clamp to avoid wrap-around jumps when crossing the atan2 branch cut
+          var delta = newA - oldA;
+          if (delta > pi) delta -= 2 * pi;
+          if (delta < -pi) delta += 2 * pi;
+          line.selfLoopAngle += delta;
         } else {
           final dx = b.center.dx - a.center.dx;
           final dy = b.center.dy - a.center.dy;
@@ -261,8 +276,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   }
 
   void _onPanUpdateTracking(DragUpdateDetails d) {
-    _lastPanPosition = d.localPosition;
     _onPanUpdate(d);
+    _lastPanPosition = d.localPosition;
     if (_lineSourceNodeId != null && _lineMode) {
       setState(() => _rubberBandEnd = d.localPosition);
     } else {
@@ -461,7 +476,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: kBg,
       appBar: AppBar(
         title: Text(widget.level.title,
             style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
@@ -489,8 +504,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         fontWeight: FontWeight.w700, fontSize: 13)),
                 style: FilledButton.styleFrom(
                   backgroundColor: _isCorrect
-                      ? Colors.green
-                      : Theme.of(context).colorScheme.primary,
+                      ? kAccentGreen
+                      : kAccent,
+                  foregroundColor: kBg,
                 ),
               ),
             ),
@@ -635,19 +651,22 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FloatingActionButton(
+          _PaletteFab(
             heroTag: 'gp_start',
             tooltip: 'Set start state',
-            backgroundColor: _placingStartArrow ? Colors.orange : null,
+            icon: Icons.play_arrow,
+            active: _placingStartArrow,
+            activeColor: const Color(0xFFFF6D00),
             onPressed: () =>
                 setState(() => _placingStartArrow = !_placingStartArrow),
-            child: const Icon(Icons.play_arrow),
           ),
           const SizedBox(height: 10),
-          FloatingActionButton(
+          _PaletteFab(
             heroTag: 'gp_delete',
             tooltip: 'Delete mode',
-            backgroundColor: _deleteMode ? Colors.red : null,
+            icon: Icons.delete_outline,
+            active: _deleteMode,
+            activeColor: Theme.of(context).colorScheme.error,
             onPressed: () => setState(() {
               _deleteMode = !_deleteMode;
               if (_deleteMode) {
@@ -655,29 +674,57 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 _placingStartArrow = false;
               }
             }),
-            child: const Icon(Icons.delete),
           ),
           const SizedBox(height: 10),
-          FloatingActionButton(
+          _PaletteFab(
             heroTag: 'gp_line',
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-            backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
+            icon: _lineMode ? Icons.timeline : Icons.add_link,
+            active: _lineMode,
+            activeColor: kAccent,
             onPressed: () => setState(() => _lineMode = !_lineMode),
-            child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
           ),
           const SizedBox(height: 10),
-          FloatingActionButton.small(
+          _PaletteFab(
             heroTag: 'gp_reset',
             tooltip: 'Clear canvas',
+            icon: Icons.refresh,
+            active: false,
+            activeColor: kAccent,
+            small: true,
             onPressed: () => showDialog(
               context: context,
               builder: (_) => AlertDialog(
-                title: const Text('Clear canvas?'),
-                content: const Text('This will delete all your work on this puzzle.'),
+                backgroundColor: kSurface,
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: kBorderMid),
+                ),
+                title: Text(
+                  'Clear canvas?',
+                  style: GoogleFonts.orbitron(
+                    color: kTextLight,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
+                content: Text(
+                  'This will delete all your work on this puzzle.',
+                  style: GoogleFonts.sourceCodePro(
+                    color: kTextMid,
+                    fontSize: 13,
+                  ),
+                ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: kTextDim,
+                    ),
+                    child: Text('Cancel',
+                        style: GoogleFonts.orbitron(fontSize: 11, letterSpacing: 1)),
                   ),
                   FilledButton(
                     onPressed: () {
@@ -692,12 +739,16 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         _isCorrect = false;
                       });
                     },
-                    child: const Text('Clear'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text('Clear',
+                        style: GoogleFonts.orbitron(fontSize: 11, letterSpacing: 1)),
                   ),
                 ],
               ),
             ),
-            child: const Icon(Icons.refresh, size: 18),
           ),
         ],
       ),
@@ -726,7 +777,7 @@ class _GoalBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: const Color(0xFFF8F9FA),
+      color: kSurface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -736,14 +787,14 @@ class _GoalBanner extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(
                 left: BorderSide(color: tagColor, width: 4),
-                bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+                bottom: const BorderSide(color: kBorderMid),
               ),
             ),
             child: Text(
               description,
               style: GoogleFonts.sourceCodePro(
                 fontSize: 13,
-                color: const Color(0xFF2D3748),
+                color: kTextMid,
                 height: 1.5,
               ),
             ),
@@ -755,15 +806,15 @@ class _GoalBanner extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: isCorrect
-                  ? const Color(0xFFE6FFFA)
-                  : const Color(0xFFFFF5F5),
+                  ? const Color(0xFF0D2A1F)   // tinted from kAccentGreen
+                  : const Color(0xFF1F0D0D),  // tinted from error
               child: Text(
                 checkResult!,
                 style: GoogleFonts.sourceCodePro(
                   fontSize: 12,
                   color: isCorrect
-                      ? const Color(0xFF276749)
-                      : const Color(0xFF9B2C2C),
+                      ? kAccentGreen
+                      : const Color(0xFFFF6B6B),
                   height: 1.5,
                 ),
               ),
@@ -813,7 +864,7 @@ class _SuccessDialogState extends State<_SuccessDialog>
     final tagColor = levelTagColor(widget.level.tag);
 
     return Dialog(
-      backgroundColor: const Color(0xFF07080F),
+      backgroundColor: kBg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: tagColor.withOpacity(0.8), width: 2),
@@ -893,7 +944,7 @@ class _SuccessDialogState extends State<_SuccessDialog>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Simple rubber-band painter (reused from main screen)
+//  Rubber-band painter — line + arrowhead, matches the sandbox canvas style
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RubberBandPainter extends CustomPainter {
@@ -904,18 +955,120 @@ class _RubberBandPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    const color = Color.fromARGB(255, 0, 229, 255); // kAccent — matches the rest of the canvas
+    const strokeWidth = 2.5;
+    const arrowLen = 14.0;
+    const arrowWing = 8.0;
+
+    final dx = end.dx - start.dx;
+    final dy = end.dy - start.dy;
+    final dist = sqrt(dx * dx + dy * dy);
+    if (dist < 1) return;
+
+    final angle = atan2(dy, dx);
+    final shortenedEnd = Offset(
+      end.dx - cos(angle) * arrowLen,
+      end.dy - sin(angle) * arrowLen,
+    );
+
+    // Line
     canvas.drawLine(
       start,
-      end,
+      shortenedEnd,
       Paint()
-        ..color = Colors.blue.withOpacity(0.5)
-        ..strokeWidth = 2
+        ..color = color.withOpacity(0.7)
+        ..strokeWidth = strokeWidth
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round,
+    );
+
+    // Arrowhead
+    final cdx = cos(angle);
+    final cdy = sin(angle);
+    final path = Path()
+      ..moveTo(end.dx, end.dy)
+      ..lineTo(end.dx - arrowLen * cdx + arrowWing * cdy,
+               end.dy - arrowLen * cdy - arrowWing * cdx)
+      ..lineTo(end.dx - arrowLen * cdx - arrowWing * cdy,
+               end.dy - arrowLen * cdy + arrowWing * cdx)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withOpacity(0.7)
+        ..style = PaintingStyle.fill,
     );
   }
 
   @override
   bool shouldRepaint(_RubberBandPainter old) =>
       old.start != start || old.end != end;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _PaletteFab — matches the sandbox canvas FAB style exactly
+// ─────────────────────────────────────────────────────────────────────────────
+class _PaletteFab extends StatelessWidget {
+  const _PaletteFab({
+    required this.heroTag,
+    required this.tooltip,
+    required this.icon,
+    required this.active,
+    required this.activeColor,
+    required this.onPressed,
+    this.small = false,
+  });
+
+  final Object heroTag;
+  final String tooltip;
+  final IconData icon;
+  final bool active;
+  final Color activeColor;
+  final VoidCallback onPressed;
+  final bool small;
+
+  @override
+  Widget build(BuildContext context) {
+    const bgIdle = kSurface;
+    const fgIdle = kTextDim;
+    const border = kBorderMid;
+
+    final bg = active ? activeColor.withOpacity(0.14) : bgIdle;
+    final fg = active ? activeColor : fgIdle;
+    final side = active
+        ? BorderSide(color: activeColor.withOpacity(0.7), width: 1.5)
+        : const BorderSide(color: border, width: 1);
+
+    final size = small ? 36.0 : 48.0;
+    final iconSize = small ? 18.0 : 22.0;
+
+    return Tooltip(
+      message: tooltip,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(small ? 8 : 12),
+          border: Border.all(color: side.color, width: side.width),
+          boxShadow: active
+              ? [BoxShadow(
+                  color: activeColor.withOpacity(0.3),
+                  blurRadius: 12,
+                  spreadRadius: 0,
+                )]
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(small ? 8 : 12),
+            onTap: onPressed,
+            child: Icon(icon, color: fg, size: iconSize),
+          ),
+        ),
+      ),
+    );
+  }
 }

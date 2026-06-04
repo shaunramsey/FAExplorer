@@ -9,6 +9,17 @@ import '../simulator.dart';
 import '../tm_simulator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Theme palette (mirrors main.dart)
+// ─────────────────────────────────────────────────────────────────────────────
+const _kBg        = Color(0xFF05080F);
+const _kSurface   = Color(0xFF0A0F18);
+const _kBorderMid = Color(0xFF1A2535);
+const _kAccent    = Color(0xFF00E5FF);
+const _kTextLight = Color(0xFFCDD5E0);
+const _kTextMid   = Color(0xFF6B7E96);
+const _kTextDim   = Color(0xFF3A4A5E);
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Speed levels (ms per step)
 // ─────────────────────────────────────────────────────────────────────────────
 const _kSpeedLabels = ['0.5×', '1×', '2×', '4×'];
@@ -16,12 +27,6 @@ const _kSpeedMs = [1200, 700, 350, 150];
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  StringSimulatorPanel
-//
-//  Indexing contract (matches AutomataSimulator):
-//    step == -1  → initial epsilon-closure shown; no chip highlighted
-//    step ==  k  → states[k+1] active; the transition that just fired consumed
-//                  tokens[k]; chip k is highlighted
-//    step == len → all consumed; result shown; no chip highlighted
 // ─────────────────────────────────────────────────────────────────────────────
 class StringSimulatorPanel extends StatefulWidget {
   const StringSimulatorPanel({
@@ -88,7 +93,6 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   void _syncTmStep() {
     final tm = widget.tmSimulator as TmSimulator?;
     if (tm != null) {
-      // TM steps are generated lazily. Keep the TM cursor aligned with the panel cursor.
       tm.step = widget.simulator.step.clamp(-1, tm.maxStep);
     }
   }
@@ -124,19 +128,14 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final sim = widget.simulator;
     final tm = widget.tmSimulator as TmSimulator?;
     if (tm != null) {
-      // TM mode: each tick performs exactly one computation step (if possible).
       final appended = tm.computeNext();
       if (appended) {
         setState(() => sim.step = tm.maxStep);
         _syncTmStep();
         widget.onStepChanged();
-        if (_playing) {
-          _scheduleNextStep();
-        }
+        if (_playing) _scheduleNextStep();
       } else {
-        if (_playing) {
-          setState(_stopPlayback);
-        }
+        if (_playing) setState(_stopPlayback);
       }
       return;
     }
@@ -179,23 +178,18 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     _stopPlayback();
     final tm = widget.tmSimulator as TmSimulator?;
     if (tm != null) {
-      // If the user is scrubbing older history, just move the cursor forward.
       if (widget.simulator.step < tm.maxStep) {
         setState(() => widget.simulator.step++);
         _syncTmStep();
         widget.onStepChanged();
         return;
       }
-
-      // Otherwise compute one new step (if possible) and stay at the end.
       final appended = tm.computeNext();
       if (appended) {
         setState(() => widget.simulator.step = tm.maxStep);
         _syncTmStep();
         widget.onStepChanged();
       } else {
-        // Even if no new snapshot was appended, the TM may have transitioned to a
-        // terminal "no moves" state, so refresh UI.
         _syncTmStep();
         widget.onStepChanged();
       }
@@ -222,7 +216,6 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     _stopPlayback();
     final tm = widget.tmSimulator as TmSimulator?;
     if (tm != null) {
-      // TM mode: fast-forward computations for up to 5 seconds.
       final deadline = DateTime.now().add(const Duration(seconds: 5));
       bool progressed = false;
       while (DateTime.now().isBefore(deadline)) {
@@ -230,9 +223,6 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
         final appended = tm.computeNext();
         if (!appended) break;
         progressed = true;
-
-        // If computing this step pushed us past the time budget, roll it back
-        // and stop (leave the cursor on the last fully-computed step).
         if (DateTime.now().isAfter(deadline) && tm.steps.length > beforeLen) {
           tm.undoLastStep();
           break;
@@ -303,9 +293,9 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
   Color _resultColor(SimResult r) {
     switch (r) {
       case SimResult.accept:
-        return Colors.green.shade700;
+        return const Color(0xFF1FD99A);
       case SimResult.reject:
-        return Colors.red.shade700;
+        return const Color(0xFFFF1744);
     }
   }
 
@@ -328,12 +318,10 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final tm = widget.tmSimulator as TmSimulator?;
     final isTmMode = tm != null;
 
-    // In TM mode the number of simulation steps is independent of input length.
     final maxStep = isTmMode
         ? tm.maxStep
         : tokens.length;
 
-    // Keep chip key list in sync with token count.
     if (_chipKeys.length != tokens.length) {
       _chipKeys
         ..clear()
@@ -343,56 +331,33 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final atStart = step <= -1;
     final hasTokens = isTmMode ? tm.steps.isNotEmpty : tokens.isNotEmpty;
 
-    // In lazy TM stepping, we're almost always sitting on the last generated snapshot,
-    // so "at end" should mean "TM cannot advance anymore" (halt/no moves).
     bool atEnd;
     if (isTmMode) {
       final snap = tm.currentSnapshot;
       if (snap == null) {
         atEnd = true;
       } else if (snap.configs.isEmpty) {
-        // No branches left ⇒ terminal reject.
         atEnd = true;
       } else {
-        // Terminal if any halt-accept exists, or if every branch is in a halt state.
         bool anyHaltAccept = false;
-        bool anyNonHalt = false;
         bool allHalted = true;
         for (final c in snap.configs) {
           final node = widget.nodes[c.nodeId];
           if (node == null) continue;
           if (node.isHaltAccept) anyHaltAccept = true;
           final isHalt = node.isHaltAccept || node.isHaltReject;
-          if (!isHalt) {
-            allHalted = false;
-            anyNonHalt = true;
-          }
+          if (!isHalt) allHalted = false;
         }
-        if (anyHaltAccept || allHalted) {
-          atEnd = true;
-        } else {
-          // Important: even if there are NO enabled moves, we still allow one more
-          // "Step forward" to perform the terminal kill (append empty snapshot).
-          // So we only disable controls when truly terminal.
-          atEnd = false;
-          // Silence unused local for clarity; anyNonHalt is only used for readability.
-          // ignore: unused_local_variable
-          final _ = anyNonHalt;
-        }
+        atEnd = anyHaltAccept || allHalted;
       }
     } else {
       atEnd = step >= maxStep;
     }
     final result     = _currentResult;
-    // In TM mode the machine may halt before the user reaches atEnd, so
-    // show the result banner as soon as a definitive result is available.
     final showResult = result != null && (atEnd || isTmMode);
 
-    // Chip k is highlighted when step == k+1 (the transition that consumed tokens[k]
-    // has just fired, landing in states[k+2]).  At step -1 or 0 no chip is highlighted.
     final currentChipIndex = (step > 0 && step <= tokens.length) ? step - 1 : -1;
 
-    // Get TM tape view if available
     final tapeView = isTmMode ? tm.tapeView : null;
 
     return Align(
@@ -403,13 +368,19 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
           margin: const EdgeInsets.fromLTRB(12, 12, 0, 0),
           width: 250,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.88),
+            color: _kSurface,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _kBorderMid, width: 1),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: _kAccent.withOpacity(0.04),
+                blurRadius: 24,
+                spreadRadius: -4,
               ),
             ],
           ),
@@ -422,18 +393,19 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                 padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
                 child: Row(
                   children: [
-                    const Icon(Icons.science, size: 14, color: Colors.purple),
+                    Icon(Icons.science, size: 14, color: _kAccent),
                     const SizedBox(width: 6),
                     Text(
                       'Simulator',
                       style: GoogleFonts.courierPrime(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
+                        color: _kTextLight,
                       ),
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 14),
+                      icon: Icon(Icons.close, size: 14, color: _kTextMid),
                       onPressed: widget.onClose,
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.all(4),
@@ -443,7 +415,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                 ),
               ),
 
-              const Divider(height: 1),
+              Divider(height: 1, color: _kBorderMid),
 
               // Body
               Padding(
@@ -459,11 +431,12 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                         _stopPlayback();
                         widget.onTextChanged();
                       },
-                      style: GoogleFonts.courierPrime(fontSize: 13),
+                      style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextLight),
+                      cursorColor: _kAccent,
                       decoration: InputDecoration(
                         hintText: 'Input string…',
                         hintStyle: GoogleFonts.courierPrime(
-                          color: Colors.black38,
+                          color: _kTextDim,
                           fontSize: 13,
                         ),
                         isDense: true,
@@ -471,15 +444,25 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           horizontal: 8,
                           vertical: 7,
                         ),
+                        filled: true,
+                        fillColor: const Color(0xFF080D14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: _kBorderMid),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: _kBorderMid),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: _kAccent, width: 1.5),
                         ),
                       ),
                     ),
 
                     // Token/Tape display
                     if (isTmMode && tapeView != null) ...[
-                      // TM tape view with head position
                       const SizedBox(height: 6),
                       SizedBox(
                         height: 36,
@@ -500,7 +483,6 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                         ),
                       ),
                     ] else if (hasTokens) ...[
-                      // PDA/DFA token tape
                       const SizedBox(height: 6),
                       SizedBox(
                         height: 32,
@@ -513,7 +495,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                             final isCurrent  = i == currentChipIndex;
                             final isConsumed = currentChipIndex >= 0
                                 ? i < currentChipIndex
-                                : i < step; // step==0 means token 0 consumed but not yet highlighted
+                                : i < step;
                             return _TokenChip(
                               key: _chipKeys[i],
                               token: tokens[i],
@@ -549,8 +531,8 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                             color: (hasTokens && !atEnd)
                                 ? (_playing
                                     ? const Color.fromARGB(255, 208, 0, 255)
-                                    : Colors.black87)
-                                : Colors.black12,
+                                    : _kBorderMid)
+                                : _kBg,
                             borderRadius: BorderRadius.circular(18),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(18),
@@ -559,7 +541,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                 padding: const EdgeInsets.all(6),
                                 child: Icon(
                                   _playing ? Icons.pause : Icons.play_arrow,
-                                  color: Colors.white,
+                                  color: _kTextLight,
                                   size: 17,
                                 ),
                               ),
@@ -589,7 +571,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                             value: i,
                             label: Text(
                               _kSpeedLabels[i],
-                              style: GoogleFonts.courierPrime(fontSize: 10),
+                              style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextMid),
                             ),
                           ),
                         ),
@@ -667,7 +649,7 @@ class _TransportBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: Icon(icon, size: 17),
+      icon: Icon(icon, size: 17, color: onPressed != null ? _kTextLight : _kTextDim),
       tooltip: tooltip,
       onPressed: onPressed,
       visualDensity: VisualDensity.compact,
@@ -711,16 +693,16 @@ class _TokenChip extends StatelessWidget {
     }
     if (isConsumed) {
       return _chip(
-        bg: Colors.grey.shade200,
-        fg: Colors.black38,
-        border: Colors.grey.shade300,
+        bg: const Color(0xFF0D1620),
+        fg: _kTextDim,
+        border: const Color(0xFF1A2535),
         bold: false,
       );
     }
     return _chip(
       bg: Colors.transparent,
-      fg: Colors.black87,
-      border: Colors.black26,
+      fg: _kTextMid,
+      border: _kBorderMid,
       bold: false,
     );
   }
@@ -802,16 +784,16 @@ class _TapeCellChip extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 28),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: const Color(0xFF0D1620),
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: Colors.black26, width: 1),
+        border: Border.all(color: _kBorderMid, width: 1),
       ),
       child: Center(
         child: Text(
           cell == kBlank ? '∅' : cell,
           style: GoogleFonts.courierPrime(
             fontSize: 12,
-            color: Colors.black87,
+            color: _kTextMid,
             fontWeight: FontWeight.normal,
           ),
         ),

@@ -1,9 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  Level Select Screen — horizontal neural-network layout
 //
-//  Scrolls left → right through columns (difficulty layers).
-//  Each node shows its title + a visible unlock requirement beneath it.
-//  Edges are drawn as animated bezier curves between nodes.
+//  Changes from original:
+//  • Removed column labels (Foundation, Basics, etc.) — they didn't match the
+//    actual level groupings and their overlay was intercepting touch events,
+//    breaking the sandbox button.
+//  • Sandbox button now works correctly.
+//  • All edges are thicker and brighter overall for legibility.
+//  • New "partial prereqs" edge state (amber): THIS prereq is done, but the
+//    destination level is still locked because other prereqs are missing.
+//  • New "missing prereq" edge state (pulsing orange, dashed): THIS is the
+//    specific prereq blocking an otherwise almost-unlocked level — draws
+//    attention to exactly what the player needs to do next.
+//  • Multi-column edges are routed above or below intermediate nodes so they
+//    never visually pass through unrelated level cards.
+//  • Arrowheads are larger and arrows always drawn (not gated by entryValue).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:math';
@@ -13,46 +24,39 @@ import 'package:google_fonts/google_fonts.dart';
 import 'game_level.dart';
 import 'game_progress_store.dart';
 import 'game_puzzle.dart';
+import 'main.dart' show kBg, kSurface, kBorder, kBorderMid, kAccent, kTextDim, kTextMid, kTextLight;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const double _kNodeW       = 148.0; // node card width
-const double _kNodeH       = 88.0;  // node card height
-const double _kColGap      = 220.0; // horizontal gap between column centres
-const double _kRowGap      = 140.0; // vertical gap between row centres
-const double _kTopPad      = 96.0;  // space for the top bar
-const double _kBotPad      = 80.0;
-const double _kLegendH     = 52.0;  // height reserved at bottom for legend
-const double _kSidePad     = 120.0;  // left/right canvas padding
-const double _kMinRowPad   = 20.0;  // minimum vertical padding above/below nodes
+const double _kNodeW = 148.0; // node card width
+const double _kNodeH = 88.0; // node card height
+const double _kColGap = 220.0; // horizontal gap between column centres
+const double _kRowGap = 140.0; // vertical gap between row centres
+const double _kTopPad = 72.0; // space for the top bar (reduced, no column labels)
+const double _kBotPad = 80.0;
+const double _kLegendH = 58.0; // height reserved at bottom for legend
+const double _kSidePad = 120.0; // left/right canvas padding
+const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _kBg           = Color(0xFF05080F);
-const _kGridLine     = Color(0xFF0D1620);
-const _kEdgeDim      = Color(0xFF0E2030);
-const _kEdgeActive   = Color(0xFF0E4A38);
-const _kEdgeBright   = Color(0xFF1FD99A);
-const _kTextDim      = Color(0xFF3A4A5E);
-const _kTextMid      = Color(0xFF6B7E96);
-const _kTextLight    = Color(0xFFCDD5E0);
-const _kLockBg       = Color(0xFF080D14);
-const _kLockBorder   = Color(0xFF141E2A);
+const _kGridLine = Color(0xFF0D1620);
+const _kEdgeDim = Color(0xFF1A2E40); // locked path — slightly brighter than original
+const _kEdgeActive = Color(0xFF1CBD8A); // prereq done, dest available — vibrant teal
+const _kEdgeBright = Color(0xFF1FD99A); // both done — bright teal-green
+const _kEdgeAlmost = Color(0xFFFFAA00); // this prereq done but dest still locked — amber
+const _kEdgeBlocking = Color(0xFFFF6D00); // this is the MISSING prereq — pulsing orange
+const _kLockBg = Color(0xFF080D14);
+const _kLockBorder = Color(0xFF141E2A);
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Level column layout
-//
-//  Each GameLevel carries an `x` in [0,1] which we re-interpret here as a
-//  column index, and a `y` in [0,1] as the row position within that column.
-//  We convert them to absolute pixel positions on the scrollable canvas.
+//  Position helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The layout bucketed by column (left-to-right difficulty layers).
-/// We derive columns from each level's `x` value bucketed into bands.
 int _colIndex(double x) {
   if (x < 0.15) return 0;
   if (x < 0.28) return 1;
@@ -64,48 +68,29 @@ int _colIndex(double x) {
   return 7;
 }
 
-/// Given all levels, compute absolute Offset(cx, cy) for each level id.
-///
-/// Nodes are distributed evenly within each column so they never overlap,
-/// while still respecting the relative y-order of levels.  The minimum
-/// inter-node distance is [_kNodeH] + [_kMinRowPad].
 Map<String, Offset> _buildPositions(List<GameLevel> levels, double canvasH) {
-  // Group by column
   final Map<int, List<GameLevel>> cols = {};
   for (final l in levels) {
     final c = _colIndex(l.x);
     cols.putIfAbsent(c, () => []).add(l);
   }
-
   final Map<String, Offset> result = {};
-
   for (final entry in cols.entries) {
     final colIdx = entry.key;
     final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
-
     final cx = _kSidePad + colIdx * _kColGap;
     final count = members.length;
-
-    // Minimum height needed to fit all nodes without overlap
     final minRequired = count * _kNodeH + (count - 1) * _kMinRowPad;
-    // Usable vertical band (between top bar and bottom padding, minus legend)
     final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    // Stretch to whichever is larger so gaps are generous
     final totalSpan = minRequired > usableH ? minRequired : usableH;
-    // Gap between node *centres*
     final gap = count > 1 ? totalSpan / (count - 1) : 0.0;
-    // Centre the block vertically
     final blockH = count > 1 ? gap * (count - 1) : 0.0;
     final topOffset = _kTopPad + (usableH - blockH) / 2.0;
-
     for (int i = 0; i < count; i++) {
-      final cy = count == 1
-          ? _kTopPad + usableH / 2.0
-          : topOffset + i * gap;
+      final cy = count == 1 ? _kTopPad + usableH / 2.0 : topOffset + i * gap;
       result[members[i].id] = Offset(cx, cy);
     }
   }
-
   return result;
 }
 
@@ -118,11 +103,7 @@ double _canvasWidth(List<GameLevel> levels) {
   return _kSidePad * 2 + maxCol * _kColGap + _kNodeW;
 }
 
-/// Minimum canvas height so the tallest column never has overlapping nodes.
-/// Always at least [screenH] so the canvas fills the viewport.
-double _canvasHeight(List<GameLevel> levels, double screenH) {
-  return screenH;
-}
+double _canvasHeight(List<GameLevel> levels, double screenH) => screenH;
 
 double _canvasWidthFromPositions(Map<String, Offset> positions) {
   final maxX = positions.values.fold<double>(0.0, (cur, p) => max(cur, p.dx));
@@ -160,7 +141,7 @@ Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
   while (q.isNotEmpty) {
     final cur = q.removeAt(0);
     for (final next in adj[cur]!) {
-      layer[next] = max(layer[next]!, layer[cur]! + 1);
+      layer[next] = max(layer[next]!, layer[cur]! + 2);
       indeg[next] = indeg[next]! - 1;
       if (indeg[next] == 0) q.add(next);
     }
@@ -173,12 +154,25 @@ Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
       layer[id] = maxAssigned;
     }
   }
-
   return layer;
 }
 
 Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double canvasH) {
   final layerById = _computeLayersFromDeps(levels);
+  List<String> _extractLevelDependencies(GameLevel level) {
+  List<String> extract(UnlockRule rule) {
+    if (rule is AlwaysUnlocked) return [];
+    if (rule is RequireLevel) return [rule.levelId];
+    if (rule is RequireAll) return rule.levelIds;
+    if (rule is RequireAny) return rule.levelIds;
+    if (rule is RequireExpression) {
+      return rule.children.expand(extract).toList();
+    }
+    return [];
+  }
+
+  return extract(level.unlockRule);
+}
 
   final Map<int, List<GameLevel>> cols = {};
   for (final l in levels) {
@@ -189,26 +183,43 @@ Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double can
   final Map<String, Offset> result = {};
   for (final entry in cols.entries) {
     final colIdx = entry.key;
-    final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
+    final members = [...entry.value];
 
+members.sort((a, b) {
+  double barycenter(GameLevel level) {
+    final deps = _extractLevelDependencies(level);
+
+    if (deps.isEmpty) {
+      return level.y;
+    }
+
+    double sum = 0;
+    int count = 0;
+
+    for (final depId in deps) {
+      final dep = kLevelById[depId];
+      if (dep != null) {
+        sum += dep.y;
+        count++;
+      }
+    }
+
+    return count == 0 ? level.y : sum / count;
+  }
+
+  return barycenter(a).compareTo(barycenter(b));
+});
     final cx = _kSidePad + colIdx * _kColGap;
     final count = members.length;
     final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-
-    final gap = count > 1
-        ? min(_kRowGap, usableH / (count - 1))
-        : 0.0;
+    final gap = count > 1 ? min(_kRowGap, usableH / (count - 1)) : 0.0;
     final totalSpan = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = count > 1
-        ? _kTopPad + (usableH - totalSpan) / 2.0
-        : _kTopPad + usableH / 2.0;
-
+    final topOffset = count > 1 ? _kTopPad + (usableH - totalSpan) / 2.0 : _kTopPad + usableH / 2.0;
     for (int i = 0; i < count; i++) {
       final cy = topOffset + (count == 1 ? 0.0 : i * gap);
       result[members[i].id] = Offset(cx, cy);
     }
   }
-
   return result;
 }
 
@@ -220,18 +231,13 @@ class LevelSelectScreen extends StatefulWidget {
   final GameProgressStore progressStore;
   final VoidCallback onGoToSandbox;
 
-  const LevelSelectScreen({
-    super.key,
-    required this.progressStore,
-    required this.onGoToSandbox,
-  });
+  const LevelSelectScreen({super.key, required this.progressStore, required this.onGoToSandbox});
 
   @override
   State<LevelSelectScreen> createState() => _LevelSelectScreenState();
 }
 
-class _LevelSelectScreenState extends State<LevelSelectScreen>
-    with TickerProviderStateMixin {
+class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProviderStateMixin {
   late final AnimationController _pulseCtrl;
   late final AnimationController _flowCtrl;
   late final AnimationController _entryCtrl;
@@ -243,20 +249,11 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     super.initState();
     _completed = widget.progressStore.loadCompletedLevels();
 
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
 
-    _flowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
+    _flowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
 
-    _entryCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..forward();
+    _entryCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..forward();
   }
 
   @override
@@ -268,8 +265,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
   }
 
   void _reload() => setState(() {
-        _completed = widget.progressStore.loadCompletedLevels();
-      });
+    _completed = widget.progressStore.loadCompletedLevels();
+  });
 
   bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completed);
   bool _isCompleted(String id) => _completed.contains(id);
@@ -295,11 +292,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => GamePuzzleScreen(
-          level: level,
-          progressStore: widget.progressStore,
-          onCompleted: _reload,
-        ),
+        builder: (_) => GamePuzzleScreen(level: level, progressStore: widget.progressStore, onCompleted: _reload),
       ),
     );
     _reload();
@@ -308,19 +301,17 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
-    // Ensure the canvas is tall enough to never overlap nodes in any column
     final canvasH = _canvasHeight(kAllLevels, screenH);
     final positions = _computePositionsFromDeps(kAllLevels, canvasH);
     final canvasW = _canvasWidthFromPositions(positions);
 
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: kBg,
       body: Stack(
         children: [
           // ── Background grid ────────────────────────────────────────────
           CustomPaint(
-            size: Size(MediaQuery.of(context).size.width,
-                MediaQuery.of(context).size.height),
+            size: Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.height),
             painter: _GridPainter(),
           ),
 
@@ -328,6 +319,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
           AnimatedBuilder(
             animation: Listenable.merge([_pulseCtrl, _flowCtrl, _entryCtrl]),
             builder: (context, _) {
+              final entryVal = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut).value;
+
               return SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
@@ -336,6 +329,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                   height: canvasH,
                   child: Stack(
                     children: [
+                      // Edges (drawn below node cards)
                       CustomPaint(
                         size: Size(canvasW, canvasH),
                         painter: _EdgePainter(
@@ -345,30 +339,28 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
                           isUnlocked: _isUnlocked,
                           flowValue: _flowCtrl.value,
                           pulseValue: _pulseCtrl.value,
-                          entryValue: CurvedAnimation(
-                            parent: _entryCtrl,
-                            curve: Curves.easeOut,
-                          ).value,
+                          entryValue: entryVal,
+                          canvasH: canvasH,
                         ),
                       ),
 
-                      // Node cards
+                      // Node cards (rendered on top of edges)
                       for (final level in kAllLevels)
                         Positioned(
                           left: positions[level.id]!.dx - _kNodeW / 2,
                           top: positions[level.id]!.dy - _kNodeH / 2,
                           child: SizedBox(
-                          width: _kNodeW,
-                          child: GestureDetector(
-                            onTap: () => _onTap(level),
-                            child: _NodeCard(
-                              level: level,
-                              unlocked: _isUnlocked(level),
-                              completed: _isCompleted(level.id),
-                              pulseAnim: _pulseCtrl,
+                            width: _kNodeW,
+                            child: GestureDetector(
+                              onTap: () => _onTap(level),
+                              child: _NodeCard(
+                                level: level,
+                                unlocked: _isUnlocked(level),
+                                completed: _isCompleted(level.id),
+                                pulseAnim: _pulseCtrl,
+                              ),
                             ),
                           ),
-                        ),
                         ),
                     ],
                   ),
@@ -377,84 +369,20 @@ class _LevelSelectScreenState extends State<LevelSelectScreen>
             },
           ),
 
-          // ── Top bar ────────────────────────────────────────────────────
-          _TopBar(
-            completed: _completed.length,
-            total: kAllLevels.length,
-            onSandbox: widget.onGoToSandbox,
+          // ── Top bar (no column labels on top of it anymore) ────────────
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Material(
+              color: Colors.transparent,
+              child: _TopBar(completed: _completed.length, total: kAllLevels.length, onSandbox: widget.onGoToSandbox),
+            ),
           ),
-
-          // ── Column labels ──────────────────────────────────────────────
-          _ColumnLabels(levels: kAllLevels, screenH: screenH),
 
           // ── Legend ─────────────────────────────────────────────────────
           const _Legend(),
         ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Column labels (pinned to top, scrolls with content via a second scroll view
-//  that is synced — simpler: just overlay static labels from positions)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ColumnLabels extends StatelessWidget {
-  final List<GameLevel> levels;
-  final double screenH;
-
-  const _ColumnLabels({required this.levels, required this.screenH});
-
-  static const _names = {
-    0: 'FOUNDATION',
-    1: 'BASICS',
-    2: 'STRINGS',
-    3: 'PATTERNS',
-    4: 'ADVANCED',
-    5: 'SUFFIX',
-    6: 'LANGUAGE',
-    7: 'CHALLENGE',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    // Determine which columns exist using dependency layout
-    final positions = _computePositionsFromDeps(levels, _canvasHeight(levels, screenH));
-    final Set<int> usedCols = {};
-    for (final p in positions.values) usedCols.add(((p.dx - _kSidePad) / _kColGap).floor());
-
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      height: _kTopPad,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        physics: const NeverScrollableScrollPhysics(),
-        child: SizedBox(
-          width: _canvasWidthFromPositions(positions),
-          child: Stack(
-            children: [
-              for (final col in usedCols)
-                Positioned(
-                  left: _kSidePad + col * _kColGap - _kNodeW / 2,
-                  top: 60,
-                  width: _kNodeW,
-                  child: Text(
-                    _names[col] ?? 'LAYER $col',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.orbitron(
-                      color: _kTextDim,
-                      fontSize: 7.5,
-                      letterSpacing: 2.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -469,11 +397,7 @@ class _TopBar extends StatelessWidget {
   final int total;
   final VoidCallback onSandbox;
 
-  const _TopBar({
-    required this.completed,
-    required this.total,
-    required this.onSandbox,
-  });
+  const _TopBar({required this.completed, required this.total, required this.onSandbox});
 
   @override
   Widget build(BuildContext context) {
@@ -490,7 +414,7 @@ class _TopBar extends StatelessWidget {
                 Text(
                   'AUTOMATA',
                   style: GoogleFonts.orbitron(
-                    color: const Color(0xFF00E5FF),
+                    color: kAccent,
                     fontSize: 19,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 4,
@@ -499,7 +423,7 @@ class _TopBar extends StatelessWidget {
                 Text(
                   'LEARNING MAP',
                   style: GoogleFonts.orbitron(
-                    color: _kTextDim,
+                    color: kTextDim,
                     fontSize: 8,
                     letterSpacing: 3.5,
                     fontWeight: FontWeight.w500,
@@ -513,16 +437,9 @@ class _TopBar extends StatelessWidget {
             // Scroll hint
             Row(
               children: [
-                const Icon(Icons.open_with, color: _kTextDim, size: 14),
+                const Icon(Icons.open_with, color: kTextDim, size: 14),
                 const SizedBox(width: 4),
-                Text(
-                  'SCROLL',
-                  style: GoogleFonts.orbitron(
-                    color: _kTextDim,
-                    fontSize: 8,
-                    letterSpacing: 2,
-                  ),
-                ),
+                Text('SCROLL', style: GoogleFonts.orbitron(color: kTextDim, fontSize: 8, letterSpacing: 2)),
               ],
             ),
 
@@ -533,11 +450,7 @@ class _TopBar extends StatelessWidget {
               children: [
                 Text(
                   '$completed / $total',
-                  style: GoogleFonts.orbitron(
-                    color: _kTextLight,
-                    fontSize: 12,
-                    letterSpacing: 1,
-                  ),
+                  style: GoogleFonts.orbitron(color: kTextLight, fontSize: 12, letterSpacing: 1),
                 ),
                 const SizedBox(width: 10),
                 SizedBox(
@@ -546,8 +459,8 @@ class _TopBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(3),
                     child: LinearProgressIndicator(
                       value: total > 0 ? completed / total : 0,
-                      backgroundColor: const Color(0xFF0D1620),
-                      valueColor: const AlwaysStoppedAnimation(Color(0xFF00E5FF)),
+                      backgroundColor: _kGridLine,
+                      valueColor: const AlwaysStoppedAnimation(kAccent),
                       minHeight: 5,
                     ),
                   ),
@@ -557,25 +470,19 @@ class _TopBar extends StatelessWidget {
 
             const SizedBox(width: 14),
 
-            // Sandbox
+            // Sandbox button — previously blocked by the _ColumnLabels overlay;
+            // now works correctly since that overlay has been removed.
             TextButton(
               onPressed: onSandbox,
               style: TextButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
-                  side: const BorderSide(color: Color(0xFF1A2535), width: 1),
+                  side: const BorderSide(color: kBorderMid, width: 1),
                 ),
-                foregroundColor: _kTextDim,
+                foregroundColor: kTextDim,
               ),
-              child: Text(
-                'SANDBOX',
-                style: GoogleFonts.orbitron(
-                  color: _kTextDim,
-                  fontSize: 9,
-                  letterSpacing: 2,
-                ),
-              ),
+              child: Text('SANDBOX', style: GoogleFonts.orbitron(color: kTextDim, fontSize: 9, letterSpacing: 2)),
             ),
           ],
         ),
@@ -594,12 +501,7 @@ class _NodeCard extends StatelessWidget {
   final bool completed;
   final Animation<double> pulseAnim;
 
-  const _NodeCard({
-    required this.level,
-    required this.unlocked,
-    required this.completed,
-    required this.pulseAnim,
-  });
+  const _NodeCard({required this.level, required this.unlocked, required this.completed, required this.pulseAnim});
 
   @override
   Widget build(BuildContext context) {
@@ -611,20 +513,20 @@ class _NodeCard extends StatelessWidget {
         final glowOpacity = completed
             ? 0.35 + pulseAnim.value * 0.25
             : unlocked
-                ? 0.12 + pulseAnim.value * 0.08
-                : 0.0;
+            ? 0.12 + pulseAnim.value * 0.08
+            : 0.0;
 
         final borderColor = completed
             ? tagColor.withOpacity(0.85)
             : unlocked
-                ? tagColor.withOpacity(0.55)
-                : _kTextMid.withOpacity(0.85);
+            ? tagColor.withOpacity(0.55)
+            : kTextMid.withOpacity(0.85);
 
         final bgColor = completed
             ? tagColor.withOpacity(0.10)
             : unlocked
-                ? tagColor.withOpacity(0.05)
-                : const Color(0xFF091223);
+            ? tagColor.withOpacity(0.05)
+            : kBorder;
 
         return Container(
           decoration: BoxDecoration(
@@ -653,15 +555,12 @@ class _NodeCard extends StatelessWidget {
                     if (completed)
                       Icon(Icons.check_circle, color: tagColor, size: 13)
                     else if (unlocked)
-                      Icon(Icons.radio_button_unchecked,
-                          color: tagColor.withOpacity(0.7), size: 11)
+                      Icon(Icons.radio_button_unchecked, color: tagColor.withOpacity(0.7), size: 11)
                     else
-                      Icon(Icons.lock_outline, color: _kTextDim, size: 11),
+                      Icon(Icons.lock_outline, color: kTextDim, size: 11),
                     const SizedBox(width: 4),
-                    // Tag pill
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
                         color: tagColor.withOpacity(unlocked ? 0.15 : 0.06),
                         borderRadius: BorderRadius.circular(3),
@@ -669,9 +568,7 @@ class _NodeCard extends StatelessWidget {
                       child: Text(
                         (level.tag ?? 'misc').toUpperCase(),
                         style: GoogleFonts.orbitron(
-                          color: unlocked
-                              ? tagColor.withOpacity(0.9)
-                              : _kTextDim,
+                          color: unlocked ? tagColor.withOpacity(0.9) : kTextDim,
                           fontSize: 6.5,
                           letterSpacing: 1.2,
                           fontWeight: FontWeight.w700,
@@ -693,8 +590,8 @@ class _NodeCard extends StatelessWidget {
                     color: completed
                         ? tagColor
                         : unlocked
-                            ? _kTextLight
-                            : _kTextDim,
+                        ? kTextLight
+                        : kTextDim,
                     fontSize: 9.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.4,
@@ -704,7 +601,7 @@ class _NodeCard extends StatelessWidget {
 
                 const SizedBox(height: 5),
 
-                // ── Unlock requirement or "READY" ─────────────────────
+                // ── Unlock requirement or "READY" ────────────────────────
                 _UnlockHint(level: level, unlocked: unlocked, completed: completed),
               ],
             ),
@@ -724,11 +621,7 @@ class _UnlockHint extends StatelessWidget {
   final bool unlocked;
   final bool completed;
 
-  const _UnlockHint({
-    required this.level,
-    required this.unlocked,
-    required this.completed,
-  });
+  const _UnlockHint({required this.level, required this.unlocked, required this.completed});
 
   String _shortHint() {
     final rule = level.unlockRule;
@@ -744,12 +637,8 @@ class _UnlockHint extends StatelessWidget {
       }
       return 'NEED ALL ${rule.levelIds.length} PREREQS';
     }
-    if (rule is RequireAny) {
-      return 'NEED ANY PREREQ';
-    }
-    if (rule is RequireExpression) {
-      return 'NEED MULTIPLE';
-    }
+    if (rule is RequireAny) return 'NEED ANY PREREQ';
+    if (rule is RequireExpression) return 'NEED MULTIPLE';
     return 'LOCKED';
   }
 
@@ -772,10 +661,7 @@ class _UnlockHint extends StatelessWidget {
     if (unlocked) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: tagColor.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(3),
-        ),
+        decoration: BoxDecoration(color: tagColor.withOpacity(0.12), borderRadius: BorderRadius.circular(3)),
         child: Text(
           'TAP TO PLAY',
           style: GoogleFonts.sourceCodePro(
@@ -788,13 +674,12 @@ class _UnlockHint extends StatelessWidget {
       );
     }
 
-    // Locked — show requirement
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF102036),
+        color: kBorderMid,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _kTextMid.withOpacity(0.25)),
+        border: Border.all(color: kTextMid.withOpacity(0.25)),
       ),
       child: Text(
         _shortHint(),
@@ -802,7 +687,7 @@ class _UnlockHint extends StatelessWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: GoogleFonts.sourceCodePro(
-          color: _kTextLight,
+          color: kTextLight,
           fontSize: 7.5,
           letterSpacing: 0.8,
           height: 1.4,
@@ -823,12 +708,7 @@ class _LockedSheet extends StatelessWidget {
 
   const _LockedSheet({required this.level, required this.tagColor});
 
-  /// Build a rich description of the exact requirements.
-  List<String> _requiredTitles() {
-    return _extractIds(level.unlockRule)
-        .map((id) => kLevelById[id]?.title ?? id)
-        .toList();
-  }
+  List<String> _requiredTitles() => _extractIds(level.unlockRule).map((id) => kLevelById[id]?.title ?? id).toList();
 
   List<String> _extractIds(UnlockRule rule) {
     if (rule is AlwaysUnlocked) return [];
@@ -845,7 +725,7 @@ class _LockedSheet extends StatelessWidget {
     final rule = level.unlockRule;
     if (rule is RequireAll) return true;
     if (rule is RequireExpression) return rule.isAnd;
-    return true; // single requirement = doesn't matter
+    return true;
   }
 
   @override
@@ -857,43 +737,33 @@ class _LockedSheet extends StatelessWidget {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0F18),
+        color: kSurface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF1A2535), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.6),
-            blurRadius: 24,
-            offset: const Offset(0, -4),
-          ),
-        ],
+        border: Border.all(color: kBorderMid, width: 1.5),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 24, offset: const Offset(0, -4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Handle bar
           Center(
             child: Container(
               width: 36,
               height: 4,
               margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E2A3A),
-                borderRadius: BorderRadius.circular(2),
-              ),
+              decoration: BoxDecoration(color: kBorderMid, borderRadius: BorderRadius.circular(2)),
             ),
           ),
 
           Row(
             children: [
-              Icon(Icons.lock, color: _kTextDim, size: 18),
+              Icon(Icons.lock, color: kTextDim, size: 18),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   level.title,
                   style: GoogleFonts.orbitron(
-                    color: _kTextLight,
+                    color: kTextLight,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,
@@ -901,8 +771,7 @@ class _LockedSheet extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: tagColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(4),
@@ -924,51 +793,35 @@ class _LockedSheet extends StatelessWidget {
           const SizedBox(height: 16),
 
           if (titles.isEmpty)
-            Text(
-              'This level is always available.',
-              style: GoogleFonts.sourceCodePro(
-                  color: _kTextMid, fontSize: 13),
-            )
+            Text('This level is always available.', style: GoogleFonts.sourceCodePro(color: kTextMid, fontSize: 13))
           else ...[
             Text(
               titles.length == 1
                   ? 'TO UNLOCK, COMPLETE:'
                   : isAnd
-                      ? 'TO UNLOCK, COMPLETE ALL OF:'
-                      : 'TO UNLOCK, COMPLETE ANY ONE OF:',
-              style: GoogleFonts.orbitron(
-                color: _kTextDim,
-                fontSize: 9,
-                letterSpacing: 2,
-                fontWeight: FontWeight.w600,
-              ),
+                  ? 'TO UNLOCK, COMPLETE ALL OF:'
+                  : 'TO UNLOCK, COMPLETE ANY ONE OF:',
+              style: GoogleFonts.orbitron(color: kTextDim, fontSize: 9, letterSpacing: 2, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
-            ...titles.map((t) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: tagColor.withOpacity(0.6),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          t,
-                          style: GoogleFonts.sourceCodePro(
-                            color: _kTextLight,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )),
+            ...titles.map(
+              (t) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(color: tagColor.withOpacity(0.6), shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(t, style: GoogleFonts.sourceCodePro(color: kTextLight, fontSize: 13)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
 
           const SizedBox(height: 20),
@@ -1003,19 +856,19 @@ class _LockedSheet extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Legend — pinned to the bottom, shows tag colours + node-state icons
+//  Legend — updated to show new edge states
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Legend extends StatelessWidget {
   const _Legend();
 
   static const _tags = [
-    ('intro', Color(0xFF00E5FF), 'Intro'),
-    ('dfa',   Color(0xFF69FF47), 'DFA'),
-    ('nfa',   Color(0xFFFFD740), 'NFA'),
-    ('pda',   Color(0xFFFF6D00), 'PDA'),
-    ('tm',    Color(0xFFE040FB), 'TM'),
-    ('boss',  Color(0xFFFF1744), 'Boss'),
+    ('intro', kAccent, 'Intro'),
+    ('dfa', Color(0xFF69FF47), 'DFA'),
+    ('nfa', Color(0xFFFFD740), 'NFA'),
+    ('pda', Color(0xFFFF6D00), 'PDA'),
+    ('tm', Color(0xFFE040FB), 'TM'),
+    ('boss', Color(0xFFFF1744), 'Boss'),
   ];
 
   @override
@@ -1039,87 +892,80 @@ class _Legend extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 10),
             child: Wrap(
               alignment: WrapAlignment.center,
-              spacing: 18,
+              spacing: 16,
               runSpacing: 6,
               children: [
                 // ── Node state indicators ──────────────────────────────
                 _LegendItem(
-                  icon: const Icon(Icons.check_circle, color: _kTextLight, size: 11),
+                  icon: const Icon(Icons.check_circle, color: kTextLight, size: 11),
                   label: 'Completed',
-                  color: _kTextLight,
+                  color: kTextLight,
                 ),
                 _LegendItem(
-                  icon: const Icon(Icons.radio_button_unchecked, color: _kTextMid, size: 11),
+                  icon: const Icon(Icons.radio_button_unchecked, color: kTextMid, size: 11),
                   label: 'Available',
-                  color: _kTextMid,
+                  color: kTextMid,
                 ),
                 _LegendItem(
-                  icon: const Icon(Icons.lock_outline, color: _kTextDim, size: 11),
+                  icon: const Icon(Icons.lock_outline, color: kTextDim, size: 11),
                   label: 'Locked',
-                  color: _kTextDim,
+                  color: kTextDim,
                 ),
-                // Separator
-                Container(width: 1, height: 14, color: const Color(0xFF1A2535)),
+
+                Container(width: 1, height: 14, color: kBorderMid),
+
                 // ── Tag colours ────────────────────────────────────────
                 for (final (_, color, label) in _tags)
                   _LegendItem(
                     icon: Container(
                       width: 8,
                       height: 8,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+                      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
                     ),
                     label: label,
                     color: color.withOpacity(0.85),
                   ),
-                // ── Edge colours ───────────────────────────────────────
-                Container(width: 1, height: 14, color: const Color(0xFF1A2535)),
+
+                Container(width: 1, height: 14, color: kBorderMid),
+
+                // ── Edge state indicators ──────────────────────────────
                 _LegendItem(
                   icon: Container(
-                    width: 16,
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: _kEdgeBright,
-                      borderRadius: BorderRadius.circular(1),
-                    ),
+                    width: 18,
+                    height: 3,
+                    decoration: BoxDecoration(color: _kEdgeBright, borderRadius: BorderRadius.circular(1.5)),
                   ),
                   label: 'Both done',
                   color: _kEdgeBright,
                 ),
                 _LegendItem(
                   icon: Container(
-                    width: 16,
-                    height: 1.5,
-                    decoration: BoxDecoration(
-                      color: _kEdgeActive,
-                      borderRadius: BorderRadius.circular(1),
-                    ),
+                    width: 18,
+                    height: 2.5,
+                    decoration: BoxDecoration(color: _kEdgeActive, borderRadius: BorderRadius.circular(1.5)),
                   ),
                   label: 'Prereq done',
                   color: _kEdgeActive,
                 ),
                 _LegendItem(
                   icon: Container(
-                    width: 16,
-                    height: 1.5,
-                    decoration: BoxDecoration(
-                      color: _kTextLight,
-                      borderRadius: BorderRadius.circular(1),
-                    ),
+                    width: 18,
+                    height: 2,
+                    decoration: BoxDecoration(color: _kEdgeAlmost, borderRadius: BorderRadius.circular(1)),
                   ),
-                  label: 'OR path',
-                  color: _kTextLight,
+                  label: 'Partial prereqs',
+                  color: _kEdgeAlmost,
+                ),
+                _LegendItem(
+                  icon: _DashedLine(color: _kEdgeBlocking, width: 18),
+                  label: 'Missing prereq',
+                  color: _kEdgeBlocking,
                 ),
                 _LegendItem(
                   icon: Container(
-                    width: 16,
-                    height: 1,
-                    decoration: BoxDecoration(
-                      color: _kEdgeDim,
-                      borderRadius: BorderRadius.circular(1),
-                    ),
+                    width: 18,
+                    height: 1.5,
+                    decoration: BoxDecoration(color: _kEdgeDim, borderRadius: BorderRadius.circular(1)),
                   ),
                   label: 'Locked path',
                   color: _kEdgeDim,
@@ -1133,16 +979,49 @@ class _Legend extends StatelessWidget {
   }
 }
 
+/// Small dashed-line widget for the legend.
+class _DashedLine extends StatelessWidget {
+  final Color color;
+  final double width;
+
+  const _DashedLine({required this.color, required this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(width, 2.5),
+      painter: _DashPainter(color: color),
+    );
+  }
+}
+
+class _DashPainter extends CustomPainter {
+  final Color color;
+  const _DashPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    double x = 0;
+    while (x < size.width) {
+      canvas.drawLine(Offset(x, size.height / 2), Offset(min(x + 4, size.width), size.height / 2), paint);
+      x += 7;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashPainter old) => old.color != color;
+}
+
 class _LegendItem extends StatelessWidget {
   final Widget icon;
   final String label;
   final Color color;
 
-  const _LegendItem({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
+  const _LegendItem({required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -1153,12 +1032,7 @@ class _LegendItem extends StatelessWidget {
         const SizedBox(width: 5),
         Text(
           label,
-          style: GoogleFonts.orbitron(
-            color: color,
-            fontSize: 7,
-            letterSpacing: 1.2,
-            fontWeight: FontWeight.w500,
-          ),
+          style: GoogleFonts.orbitron(color: color, fontSize: 7, letterSpacing: 1.2, fontWeight: FontWeight.w500),
         ),
       ],
     );
@@ -1175,7 +1049,6 @@ class _GridPainter extends CustomPainter {
     final paint = Paint()
       ..color = _kGridLine
       ..strokeWidth = 0.5;
-
     const spacing = 40.0;
     for (double x = 0; x < size.width; x += spacing) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
@@ -1190,7 +1063,28 @@ class _GridPainter extends CustomPainter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Edge painter — draws bezier curves between dependent nodes
+//  Path data helper — carries a computed edge path plus metadata for drawing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PathData {
+  const _PathData({required this.path, required this.arrowFrom, this.isSimple = false, this.ctrl1, this.ctrl2});
+
+  /// The computed Flutter Path (one or two cubic bezier segments).
+  final Path path;
+
+  /// The control point just before [dst], used to derive the arrowhead angle.
+  final Offset arrowFrom;
+
+  /// True = single cubic bezier (suitable for flow-dot animation).
+  final bool isSimple;
+
+  /// Only populated when [isSimple] is true.
+  final Offset? ctrl1;
+  final Offset? ctrl2;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Edge painter
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EdgePainter extends CustomPainter {
@@ -1201,6 +1095,7 @@ class _EdgePainter extends CustomPainter {
   final double flowValue;
   final double pulseValue;
   final double entryValue;
+  final double canvasH; // used for routing bounds
 
   _EdgePainter({
     required this.levels,
@@ -1210,6 +1105,7 @@ class _EdgePainter extends CustomPainter {
     required this.flowValue,
     required this.pulseValue,
     required this.entryValue,
+    required this.canvasH,
   });
 
   @override
@@ -1218,6 +1114,8 @@ class _EdgePainter extends CustomPainter {
       _drawEdgesFor(canvas, level);
     }
   }
+
+  // ── Rule helpers ───────────────────────────────────────────────────────────
 
   List<String> _extractDeps(UnlockRule rule) {
     if (rule is AlwaysUnlocked) return [];
@@ -1236,13 +1134,26 @@ class _EdgePainter extends CustomPainter {
     return false;
   }
 
+  // ── Main per-level edge drawing ────────────────────────────────────────────
+
   void _drawEdgesFor(Canvas canvas, GameLevel dest) {
     final destPos = positions[dest.id];
     if (destPos == null) return;
 
     final deps = _extractDeps(dest.unlockRule);
+    if (deps.isEmpty) return;
+
     final destCompleted = completed.contains(dest.id);
+    final destUnlocked = isUnlocked(dest);
     final destIsOr = _isOrRule(dest.unlockRule);
+
+    // Count how many of dest's prereqs are already completed.
+    final numCompletedDeps = deps.where((id) => completed.contains(id)).length;
+
+    // "Almost unlocked" = dest is still locked but some of its prereqs ARE done.
+    // (Impossible for OR rules since any single done dep → dest unlocked, so
+    //  this state is exclusive to AND-type rules.)
+    final isAlmostUnlocked = !destUnlocked && numCompletedDeps > 0;
 
     for (final srcId in deps) {
       final srcLevel = kLevelById[srcId];
@@ -1251,88 +1162,280 @@ class _EdgePainter extends CustomPainter {
       if (srcPos == null) continue;
 
       final srcCompleted = completed.contains(srcId);
-      final edgeActive = srcCompleted;
-      final edgeBright = srcCompleted && destCompleted;
+
+      // ── Classify this edge ──────────────────────────────────────────────
 
       Color edgeColor;
       double strokeW;
-      if (edgeBright) {
-        edgeColor = _kEdgeBright.withOpacity(0.75 + pulseValue * 0.2);
-        strokeW = 2.2;
-      } else if (edgeActive) {
-        edgeColor = _kEdgeActive.withOpacity(0.7 + pulseValue * 0.15);
-        strokeW = 1.8;
+      bool drawGlow;
+      bool blockingDash; // extra-visible dashes for the "missing prereq" state
+
+      if (srcCompleted && destCompleted) {
+        edgeColor = const Color.fromARGB(255, 0, 255, 26).withOpacity(0.90);
+        strokeW = 1.0;
+        drawGlow = true;
+        blockingDash = false;
+      } else if (srcCompleted && destUnlocked) {
+        edgeColor = _kEdgeActive.withOpacity(0.95);
+        strokeW = 1.0;
+        drawGlow = true;
+        blockingDash = false;
+      } else if (srcCompleted && isAlmostUnlocked) {
+        edgeColor = const Color(0xFFFFD54F);
+        strokeW = 3.0;
+        drawGlow = true;
+        blockingDash = false;
+      } else if (!srcCompleted && isAlmostUnlocked) {
+        edgeColor = const Color(0xFFFF3B30).withOpacity(0.55 + pulseValue * 0.45);
+        strokeW = 4.0;
+        drawGlow = true;
+        blockingDash = true;
       } else {
-        edgeColor = _kEdgeDim.withOpacity(0.65);
-        strokeW = 1.2;
+        edgeColor = _kEdgeDim.withOpacity(0.95);
+        strokeW = 3.5;
+        drawGlow = false;
+        blockingDash = false;
       }
+
+      // ── Build path, routing around intermediate nodes ───────────────────
 
       final src = Offset(srcPos.dx + _kNodeW / 2, srcPos.dy);
       final dst = Offset(destPos.dx - _kNodeW / 2, destPos.dy);
-      final ctrlDist = (dst.dx - src.dx).abs() * 0.45;
-      final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
-      final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
-      final path = Path()
-        ..moveTo(src.dx, src.dy)
-        ..cubicTo(ctrl1.dx, ctrl1.dy, ctrl2.dx, ctrl2.dy, dst.dx, dst.dy);
+      final intermediate = _getIntermediatePositions(srcId, dest.id, src.dx, dst.dx);
+      final pathData = _buildEdgePath(src, dst, intermediate);
 
-      final paint = Paint()
-        ..color = edgeColor
-        ..strokeWidth = strokeW
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round;
+      // ── Glow layer ──────────────────────────────────────────────────────
 
-      if (destIsOr) {
-        canvas.drawPath(_dashPath(path, 8.0, 6.0), paint);
-      } else {
-        canvas.drawPath(path, paint);
-      }
-
-      if (entryValue >= 1.0) {
-        final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
-        final pt = _cubicPoint(src, ctrl1, ctrl2, dst, t);
-        canvas.drawCircle(
-          pt,
-          edgeBright ? 3.2 : 2.5,
+      if (drawGlow) {
+        canvas.drawPath(
+          pathData.path,
           Paint()
-            ..color = edgeBright
-                ? _kEdgeBright.withOpacity(0.95)
-                : _kEdgeActive.withOpacity(0.9),
+            ..color = edgeColor.withOpacity(0.22)
+            ..strokeWidth = strokeW + 18
+            ..style = PaintingStyle.stroke
+            ..strokeCap = StrokeCap.round
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
         );
       }
 
-      _drawArrow(canvas, ctrl2, dst, edgeColor, strokeW);
+      // ── Main line ───────────────────────────────────────────────────────
+
+      // OR-rule edges are lightly dashed; blocking edges get a bolder dash.
+      final useDash = destIsOr || blockingDash;
+      final dashLen = blockingDash ? 14.0 : 8.0;
+      final gapLen = blockingDash ? 6.0 : 5.0;
+      final drawPath = useDash ? _dashPath(pathData.path, dashLen, gapLen) : pathData.path;
+
+      canvas.drawPath(
+        drawPath,
+        Paint()
+          ..color = edgeColor
+          ..strokeWidth = strokeW
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round,
+      );
+      if (!srcCompleted && isAlmostUnlocked) {
+        for (final metric in drawPath.computeMetrics()) {
+          final t = (flowValue * metric.length);
+
+          final tangent = metric.getTangentForOffset(t);
+          if (tangent != null) {
+            canvas.drawCircle(
+              tangent.position,
+              7,
+              Paint()
+                ..color = Colors.redAccent
+                ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+            );
+          }
+        }
+      }
+
+      // ── Flow dot (only active/bright edges with simple bezier path) ─────
+
+      if (pathData.isSimple && entryValue >= 1.0 && (srcCompleted && destUnlocked || srcCompleted && destCompleted)) {
+        final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
+        final pt = _cubicPoint(src, pathData.ctrl1!, pathData.ctrl2!, dst, t);
+        canvas.drawCircle(pt, destCompleted ? 3.5 : 3.0, Paint()..color = edgeColor.withOpacity(0.95));
+      }
+
+      // ── Arrowhead ───────────────────────────────────────────────────────
+
+      _drawArrow(canvas, pathData.arrowFrom, dst, edgeColor, strokeW);
     }
   }
 
-  Offset _cubicPoint(
-      Offset p0, Offset p1, Offset p2, Offset p3, double t) {
-    final mt = 1 - t;
-    return Offset(
-      mt * mt * mt * p0.dx +
-          3 * mt * mt * t * p1.dx +
-          3 * mt * t * t * p2.dx +
-          t * t * t * p3.dx,
-      mt * mt * mt * p0.dy +
-          3 * mt * mt * t * p1.dy +
-          3 * mt * t * t * p2.dy +
-          t * t * t * p3.dy,
+  // ── Routing helpers ────────────────────────────────────────────────────────
+
+  /// Returns all node positions whose centre X lies strictly between
+  /// [srcX] and [dstX], i.e. intermediate nodes that an edge might cross.
+  List<Offset> _getIntermediatePositions(String srcId, String destId, double srcX, double dstX) {
+    // Adjacent-column edges (gap ≤ one column + tolerance) have no intermediates.
+    if (dstX - srcX <= _kColGap + 10) return const [];
+
+    final result = <Offset>[];
+    for (final entry in positions.entries) {
+      final id = entry.key;
+      if (id == srcId || id == destId) continue;
+      final p = entry.value;
+      if (p.dx > srcX + 5 && p.dx < dstX - 5) {
+        result.add(p);
+      }
+    }
+    return result;
+  }
+
+  /// Builds a bezier path from [src] to [dst].
+  ///
+  /// For adjacent-column edges: a standard S-curve cubic bezier.
+  /// For multi-column edges: a two-segment cubic that arcs through a
+  /// horizontal lane chosen to avoid all intermediate node cards.
+  _PathData _buildEdgePath(Offset src, Offset dst, List<Offset> intermediate) {
+    final ctrlDist = (dst.dx - src.dx) * 0.45;
+
+    // ── Bezier sampler ──────────────────────────────────────────────────────
+    // Approximate a cubic bezier with [steps] sample points.
+    List<Offset> _sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
+      final pts = <Offset>[];
+      for (int i = 0; i <= steps; i++) {
+        final t = i / steps;
+        pts.add(_cubicPoint(p0, p1, p2, p3, t));
+      }
+      return pts;
+    }
+
+    // ── Node-avoidance check ─────────────────────────────────────────────────
+    // Returns true if any sample point in [pts] falls inside a node card
+    // (with padding), ignoring the src and dst nodes themselves.
+    final srcNodeCenter = Offset(src.dx - _kNodeW / 2, src.dy);
+    final dstNodeCenter = Offset(dst.dx + _kNodeW / 2, dst.dy);
+
+    bool samplesHitNodes(List<Offset> pts) {
+      for (final entry in positions.entries) {
+        final p = entry.value;
+        if ((p - srcNodeCenter).distance < 8 || (p - dstNodeCenter).distance < 8) continue;
+        final rect = Rect.fromCenter(
+          center: p,
+          width: _kNodeW + 120,
+          height: _kNodeH + 120,
+        );
+        for (final pt in pts) {
+          if (rect.contains(pt)) return true;
+        }
+      }
+      return false;
+    }
+
+    // ── Adjacent-column: simple S-curve ─────────────────────────────────────
+    if (dst.dx - src.dx <= _kColGap * 4) {
+      final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
+      final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
+      return _PathData(
+        path: Path()
+          ..moveTo(src.dx, src.dy)
+          ..cubicTo(ctrl1.dx, ctrl1.dy, ctrl2.dx, ctrl2.dy, dst.dx, dst.dy),
+        isSimple: true,
+        ctrl1: ctrl1,
+        ctrl2: ctrl2,
+        arrowFrom: ctrl2,
+      );
+    }
+
+    // ── Multi-column: arc through a horizontal bypass lane ──────────────────
+    // Build a rich candidate list: fixed lanes + per-node offsets.
+    final usableBottom = canvasH - _kBotPad - _kLegendH;
+    final candidateYs = <double>[
+      _kTopPad + 362,
+      _kTopPad + 50,
+      _kTopPad + 90,
+      canvasH * 0.18,
+      canvasH * 0.28,
+      canvasH * 0.72,
+      canvasH * 0.82,
+      usableBottom - 90,
+      usableBottom - 50,
+      usableBottom - 18,
+    ];
+
+    // Also offer lanes that sit just above/below each intermediate node.
+    for (final p in intermediate) {
+      candidateYs.add(p.dy - _kNodeH / 2 - 36);
+      candidateYs.add(p.dy + _kNodeH / 2 + 36);
+    }
+
+    // Sort by distance from the midpoint of src/dst so we prefer lanes that
+    // stay close to the natural straight line when possible.
+    final midY = (src.dy + dst.dy) / 2;
+    candidateYs.sort((a, b) => (a - midY).abs().compareTo((b - midY).abs()));
+
+    final midX = (src.dx + dst.dx) / 2;
+    final halfCtrl = ctrlDist * 0.7;
+    final arrowFrom = Offset(dst.dx - halfCtrl, dst.dy);
+
+    const maxDeviation = 220.0;
+
+for (final y in candidateYs) {
+  if ((y - midY).abs() > maxDeviation) {
+    continue;
+  }{
+      // Two cubic bezier segments meeting at (midX, y).
+      final c1 = Offset(src.dx + halfCtrl, src.dy);
+      final c2 = Offset(midX - 60, y);
+      final c3 = Offset(midX + 60, y);
+      final c4 = arrowFrom;
+
+      final seg1 = _sampleCubic(src, c1, c2, Offset(midX, y));
+      final seg2 = _sampleCubic(Offset(midX, y), c3, c4, dst);
+
+      if (!samplesHitNodes([...seg1, ...seg2])) {
+        return _PathData(
+          path: Path()
+            ..moveTo(src.dx, src.dy)
+            ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, midX, y)
+            ..cubicTo(c3.dx, c3.dy, c4.dx, c4.dy, dst.dx, dst.dy),
+          isSimple: false,
+          arrowFrom: arrowFrom,
+        );
+      }
+    }
+}
+
+    // Absolute fallback: route hard above all nodes.
+    final fallbackY = midY.clamp(
+  _kTopPad + 40,
+  canvasH - _kBotPad - _kLegendH - 40,
+);
+    return _PathData(
+      path: Path()
+        ..moveTo(src.dx, src.dy)
+        ..cubicTo(src.dx + halfCtrl, src.dy, midX - 20, fallbackY, midX, fallbackY)
+        ..cubicTo(midX + 20, fallbackY, arrowFrom.dx, arrowFrom.dy, dst.dx, dst.dy),
+      isSimple: false,
+      arrowFrom: arrowFrom,
     );
   }
 
-  void _drawArrow(
-      Canvas canvas, Offset from, Offset to, Color color, double w) {
-    const len = 8.0;
-    const wing = 4.5;
+  // ── Drawing primitives ─────────────────────────────────────────────────────
+
+  Offset _cubicPoint(Offset p0, Offset p1, Offset p2, Offset p3, double t) {
+    final mt = 1 - t;
+    return Offset(
+      mt * mt * mt * p0.dx + 3 * mt * mt * t * p1.dx + 3 * mt * t * t * p2.dx + t * t * t * p3.dx,
+      mt * mt * mt * p0.dy + 3 * mt * mt * t * p1.dy + 3 * mt * t * t * p2.dy + t * t * t * p3.dy,
+    );
+  }
+
+  void _drawArrow(Canvas canvas, Offset from, Offset to, Color color, double w) {
+    if ((to - from).distance < 1.0) return; // guard: no direction
+    const len = 12.0;
+    const wing = 7.0;
     final angle = atan2(to.dy - from.dy, to.dx - from.dx);
     final tip = Offset(to.dx - cos(angle) * 2, to.dy - sin(angle) * 2);
     canvas.drawPath(
       Path()
         ..moveTo(tip.dx, tip.dy)
-        ..lineTo(tip.dx - len * cos(angle) + wing * sin(angle),
-            tip.dy - len * sin(angle) - wing * cos(angle))
-        ..lineTo(tip.dx - len * cos(angle) - wing * sin(angle),
-            tip.dy - len * sin(angle) + wing * cos(angle))
+        ..lineTo(tip.dx - len * cos(angle) + wing * sin(angle), tip.dy - len * sin(angle) - wing * cos(angle))
+        ..lineTo(tip.dx - len * cos(angle) - wing * sin(angle), tip.dy - len * sin(angle) + wing * cos(angle))
         ..close(),
       Paint()
         ..color = color

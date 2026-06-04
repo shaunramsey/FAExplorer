@@ -4,6 +4,16 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models.dart';
 import '../tm_simulator.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Theme palette (mirrors main.dart)
+// ─────────────────────────────────────────────────────────────────────────────
+const _kSurface   = Color(0xFF0A0F18);
+const _kBorderMid = Color(0xFF1A2535);
+const _kAccent    = Color(0xFF00E5FF);
+const _kTextLight = Color(0xFFCDD5E0);
+const _kTextMid   = Color(0xFF6B7E96);
+const _kTextDim   = Color(0xFF3A4A5E);
+
 /// Floating panel: NTM configurations (state, head position, tape) per step.
 class TmConfigPanel extends StatelessWidget {
   final TmSimulator simulator;
@@ -26,8 +36,8 @@ class TmConfigPanel extends StatelessWidget {
     Color? headerColor;
     if (isDone) {
       headerColor = switch (result) {
-        TmResult.accept  => Colors.green.shade700,
-        TmResult.reject  => Colors.red.shade700,
+        TmResult.accept  => const Color(0xFF1FD99A),
+        TmResult.reject  => const Color(0xFFFF1744),
         TmResult.running => null,
       };
     }
@@ -39,8 +49,12 @@ class TmConfigPanel extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 340, maxHeight: 520),
           child: Card(
+            color: _kSurface,
             elevation: 6,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: _kBorderMid),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -50,14 +64,15 @@ class TmConfigPanel extends StatelessWidget {
                   // ── Header ───────────────────────────────────────────
                   Row(
                     children: [
-                      Icon(Icons.memory, size: 18, color: headerColor ?? Colors.blueGrey),
+                      Icon(Icons.memory, size: 18,
+                          color: headerColor ?? _kAccent),
                       const SizedBox(width: 6),
                       Text(
                         'TM (NTM)',
                         style: GoogleFonts.courierPrime(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: headerColor,
+                          color: headerColor ?? _kTextLight,
                         ),
                       ),
                       const Spacer(),
@@ -82,15 +97,16 @@ class TmConfigPanel extends StatelessWidget {
                   Text(
                     'Step ${simulator.step < 0 ? 0 : simulator.step + 1} '
                     '/ ${simulator.steps.isEmpty ? 0 : simulator.steps.length - 1}',
-                    style: GoogleFonts.courierPrime(fontSize: 11, color: Colors.black54),
+                    style: GoogleFonts.courierPrime(fontSize: 11, color: _kTextDim),
                   ),
-                  const Divider(height: 16),
+                  Divider(height: 16, color: _kBorderMid),
 
                   // ── Configs list ─────────────────────────────────────
                   if (configs.isEmpty)
                     Text(
                       'No active configuration',
-                      style: GoogleFonts.courierPrime(fontSize: 13, color: Colors.red),
+                      style: GoogleFonts.courierPrime(
+                          fontSize: 13, color: const Color(0xFFFF1744)),
                     )
                   else
                     Flexible(
@@ -107,7 +123,7 @@ class TmConfigPanel extends StatelessWidget {
                                     style: GoogleFonts.courierPrime(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.black45,
+                                      color: _kTextDim,
                                     ),
                                   ),
                                 ),
@@ -117,9 +133,6 @@ class TmConfigPanel extends StatelessWidget {
                                 tape: configs[i].tape,
                                 isAccepted: () {
                                   final node = nodes[configs[i].nodeId];
-                                  // A configuration is only "accepting" when it is explicitly
-                                  // in a halt-accept state (not merely a normal accept state,
-                                  // since the machine may still have computations to perform).
                                   return node != null && node.isHaltAccept;
                                 }(),
                                 isRejected: () {
@@ -127,7 +140,8 @@ class TmConfigPanel extends StatelessWidget {
                                   return node != null && node.isHaltReject;
                                 }(),
                               ),
-                              if (i < configs.length - 1) const SizedBox(height: 12),
+                              if (i < configs.length - 1)
+                                const SizedBox(height: 12),
                             ],
                           ],
                         ),
@@ -165,16 +179,22 @@ class _TmConfigCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final borderColor = isAccepted
-        ? Colors.green.shade300
+        ? const Color(0xFF1FD99A)
         : isRejected
-            ? Colors.red.shade300
-            : Colors.grey.shade300;
+            ? const Color(0xFFFF1744)
+            : _kBorderMid;
 
     final bgColor = isAccepted
-        ? Colors.green.shade50
+        ? const Color(0xFF051A10)
         : isRejected
-            ? Colors.red.shade50
-            : Colors.grey.shade50;
+            ? const Color(0xFF1A0005)
+            : const Color(0xFF080D14);
+
+    final stateTextColor = isAccepted
+        ? const Color(0xFF1FD99A)
+        : isRejected
+            ? const Color(0xFFFF1744)
+            : _kTextLight;
 
     return Container(
       width: double.infinity,
@@ -195,7 +215,7 @@ class _TmConfigCard extends StatelessWidget {
                 width: 44,
                 child: Text(
                   'state',
-                  style: GoogleFonts.courierPrime(fontSize: 10, color: Colors.black45),
+                  style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
                 ),
               ),
               Expanded(
@@ -204,11 +224,7 @@ class _TmConfigCard extends StatelessWidget {
                   style: GoogleFonts.courierPrime(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: isAccepted
-                        ? Colors.green.shade800
-                        : isRejected
-                            ? Colors.red.shade800
-                            : Colors.black87,
+                    color: stateTextColor,
                   ),
                 ),
               ),
@@ -218,7 +234,7 @@ class _TmConfigCard extends StatelessWidget {
                   style: GoogleFonts.courierPrime(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700,
+                    color: const Color(0xFF1FD99A),
                   ),
                 ),
               if (isRejected)
@@ -227,21 +243,19 @@ class _TmConfigCard extends StatelessWidget {
                   style: GoogleFonts.courierPrime(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: Colors.red.shade700,
+                    color: const Color(0xFFFF1744),
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 8),
 
-          // Tape row label
           Text(
             'tape',
-            style: GoogleFonts.courierPrime(fontSize: 10, color: Colors.black45),
+            style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
           ),
           const SizedBox(height: 4),
 
-          // Tape strip
           _TapeStrip(tape: tape, headPos: headPos),
         ],
       ),
@@ -250,20 +264,19 @@ class _TmConfigCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Tape strip  — horizontal scrollable row of cells
+//  Tape strip — horizontal scrollable row of cells
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TapeStrip extends StatelessWidget {
   final TmTape tape;
-  final int headPos; // absolute
+  final int headPos;
 
   const _TapeStrip({required this.tape, required this.headPos});
 
   @override
   Widget build(BuildContext context) {
-    // Build a window: 3 blanks before first cell, the cells, 3 blanks after.
     const pad = 3;
-    final startAbs = -pad;                              // relative to origin (headOffset=0)
+    final startAbs = -pad;
     final endAbs   = tape.cells.length - tape.headOffset + pad;
 
     final items = <({String symbol, bool isHead})>[];
@@ -298,10 +311,10 @@ class _TapeCell extends StatelessWidget {
       height: 32,
       margin: const EdgeInsets.symmetric(horizontal: 1),
       decoration: BoxDecoration(
-        color: isHead ? const Color(0xFFE3F2FD) : Colors.white,
+        color: isHead ? const Color(0xFF0A1929) : const Color(0xFF080D14),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: isHead ? Colors.blue.shade400 : Colors.grey.shade300,
+          color: isHead ? _kAccent : _kBorderMid,
           width: isHead ? 2 : 1,
         ),
       ),
@@ -313,7 +326,7 @@ class _TapeCell extends StatelessWidget {
               style: GoogleFonts.courierPrime(
                 fontSize: 14,
                 fontWeight: isHead ? FontWeight.bold : FontWeight.normal,
-                color: isHead ? Colors.blue.shade800 : Colors.black87,
+                color: isHead ? _kAccent : _kTextMid,
               ),
             ),
           ),
@@ -325,7 +338,7 @@ class _TapeCell extends StatelessWidget {
               child: Center(
                 child: Text(
                   '▲',
-                  style: TextStyle(fontSize: 7, color: Colors.blue.shade400),
+                  style: TextStyle(fontSize: 7, color: _kAccent.withOpacity(0.7)),
                 ),
               ),
             ),

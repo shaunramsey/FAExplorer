@@ -142,7 +142,7 @@ class _NodeState extends State<Node> {
         ? Colors.orange
         : _selected
         ? Colors.lightBlueAccent
-        : Colors.black;
+        : Colors.white;
   }
 
   // ─────────────────────────────────────────────
@@ -307,9 +307,10 @@ class _NodeState extends State<Node> {
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
+                        filled: false,
                         isDense: true,
                         hintText: isBlackBox ? 'BLACK BOX' : startText,
-                        hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
+                        hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
                       ),
                     ),
                   ),

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'models.dart';
 import 'data/automata_session_store.dart';
 import 'preferences_store.dart';
@@ -23,6 +24,20 @@ import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
 import 'widgets/tm_config_panel.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Palette — mirrors level_select_screen.dart
+// ─────────────────────────────────────────────────────────────────────────────
+const _kBg        = Color(0xFF05080F);
+const _kSurface   = Color(0xFF0A0F18);
+const _kBorderMid = Color(0xFF1A2535);
+const _kAccent    = Color(0xFF00E5FF);   // cyan
+const _kGreen     = Color(0xFF1FD99A);   // teal / accept
+const _kRed       = Color(0xFFFF1744);   // delete
+const _kOrange    = Color(0xFFFF6D00);   // start arrow active
+const _kTextDim   = Color(0xFF3A4A5E);
+const _kTextMid   = Color(0xFF6B7E96);
+const _kTextLight = Color(0xFFCDD5E0);
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -505,6 +520,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     if (!isShift) return;
 
+    // Don't intercept shift while the user is typing in any text field.
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus != _focusNode && focus != null) return;
+
     if (event is KeyDownEvent) {
       setState(() {
         _lineMode = !_lineMode;
@@ -825,12 +844,19 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   @override
   Widget build(BuildContext context) {
     if (_loadingPrefs) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: _kBg,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: _kAccent,
+            strokeWidth: 2,
+          ),
+        ),
       );
     }
 
     return Scaffold(
+      backgroundColor: _kBg,
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
@@ -864,14 +890,43 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       ),
 
       appBar: AppBar(
-        title: const Text('Automata Designer'),
+        backgroundColor: _kSurface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: _kTextMid),
+        title: Text(
+          'AUTOMATA DESIGNER',
+          style: GoogleFonts.orbitron(
+            color: _kAccent,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 3,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: _kBorderMid),
+        ),
         actions: [
           if (widget.isGuest)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: Chip(
-                label: Text('Guest'),
-                visualDensity: VisualDensity.compact,
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _kTextDim.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: _kBorderMid),
+                ),
+                child: Text(
+                  'GUEST',
+                  style: GoogleFonts.orbitron(
+                    color: _kTextDim,
+                    fontSize: 8,
+                    letterSpacing: 2,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
         ],
@@ -880,55 +935,59 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FloatingActionButton(
+          // Start arrow — orange when active
+          _PaletteFab(
             heroTag: 'startArrow',
             tooltip: 'Set start state',
-            backgroundColor: _placingStartArrow ? Colors.orange : null,
-            onPressed: () {
-              setState(() {
-                _placingStartArrow = !_placingStartArrow;
-              });
-            },
-            child: const Icon(Icons.play_arrow),
+            icon: Icons.play_arrow,
+            active: _placingStartArrow,
+            activeColor: _kOrange,
+            onPressed: () => setState(() => _placingStartArrow = !_placingStartArrow),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          FloatingActionButton(
+          // Delete — red when active
+          _PaletteFab(
             heroTag: 'deleteMode',
             tooltip: 'Delete mode',
-            backgroundColor: _deleteMode ? Colors.red : null,
+            icon: Icons.delete_outline,
+            active: _deleteMode,
+            activeColor: _kRed,
             onPressed: () {
               setState(() {
                 _deleteMode = !_deleteMode;
-
                 if (_deleteMode) {
                   _lineMode = false;
                   _placingStartArrow = false;
                 }
               });
             },
-            child: const Icon(Icons.delete),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          FloatingActionButton(
+          // Line mode — cyan when active
+          _PaletteFab(
             heroTag: 'lineMode',
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-            backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
+            icon: _lineMode ? Icons.timeline : Icons.add_link,
+            active: _lineMode,
+            activeColor: _kAccent,
             onPressed: () => _setLineMode(!_lineMode),
-            child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          FloatingActionButton.small(
+          // Simulator toggle — green when shown (small)
+          _PaletteFab(
             heroTag: 'toggleSim',
             tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
-            backgroundColor: _showSimulator ? Colors.purple.shade100 : null,
+            icon: Icons.science_outlined,
+            active: _showSimulator,
+            activeColor: _kGreen,
+            small: true,
             onPressed: () => _setShowSimulator(!_showSimulator),
-            child: const Icon(Icons.science, size: 20),
           ),
         ],
       ),
@@ -1112,6 +1171,71 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             if (_showSimulator && _automataMode == AutomataMode.tm)
               TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _PaletteFab — FAB styled to the dark cyberpunk palette.
+//  When [active] the button glows with [activeColor]; otherwise it sits dim.
+// ─────────────────────────────────────────────────────────────────────────────
+class _PaletteFab extends StatelessWidget {
+  const _PaletteFab({
+    required this.heroTag,
+    required this.tooltip,
+    required this.icon,
+    required this.active,
+    required this.activeColor,
+    required this.onPressed,
+    this.small = false,
+  });
+
+  final Object heroTag;
+  final String tooltip;
+  final IconData icon;
+  final bool active;
+  final Color activeColor;
+  final VoidCallback onPressed;
+  final bool small;
+
+  @override
+  Widget build(BuildContext context) {
+    const bgIdle   = Color(0xFF0A0F18);
+    const fgIdle   = Color(0xFF6B7E96);
+    const border   = Color(0xFF1A2535);
+
+    final bg = active ? activeColor.withOpacity(0.14) : bgIdle;
+    final fg = active ? activeColor : fgIdle;
+    final side = active
+        ? BorderSide(color: activeColor.withOpacity(0.7), width: 1.5)
+        : const BorderSide(color: border, width: 1);
+
+    final size = small ? 36.0 : 48.0;
+    final iconSize = small ? 18.0 : 22.0;
+
+    return Tooltip(
+      message: tooltip,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(small ? 8 : 12),
+          border: Border.all(color: side.color, width: side.width),
+          boxShadow: active
+              ? [BoxShadow(color: activeColor.withOpacity(0.3), blurRadius: 12, spreadRadius: 0)]
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(small ? 8 : 12),
+            onTap: onPressed,
+            child: Icon(icon, color: fg, size: iconSize),
+          ),
         ),
       ),
     );

@@ -31,7 +31,7 @@ class LinePainter extends CustomPainter {
             ? Colors.red
             : highlighted
             ? const Color.fromARGB(255, 208, 0, 255)
-            : Colors.black
+            : Colors.white
         ..style = PaintingStyle.fill,
     );
   }
@@ -40,7 +40,7 @@ class LinePainter extends CustomPainter {
       ? Colors.red
       : highlighted
       ? const Color.fromARGB(255, 208, 0, 255)
-      : Colors.black;
+      : Colors.white;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -207,7 +207,7 @@ class _LineWidgetState extends State<LineWidget> {
                     ? Colors.red
                     : widget.highlighted
                     ? const Color.fromARGB(255, 208, 0, 255)
-                    : Colors.black,
+                    : Colors.white,
               ),
 
               // Use the shared parser from token_replacements.dart
@@ -232,9 +232,10 @@ class _LineWidgetState extends State<LineWidget> {
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
+                filled: false,
                 hintText: '~',
                 isDense: true,
-                hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.black.withOpacity(0.7)),
+                hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
               ),
             ),
           ),
