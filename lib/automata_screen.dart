@@ -29,12 +29,14 @@ class AutomataScreen extends StatefulWidget {
     this.isGuest = false,
     this.userEmail,
     this.onSignOut,
+    this.onGoToGame,
   });
 
   final AutomataSessionStore sessionStore;
   final bool isGuest;
   final String? userEmail;
   final Future<void> Function()? onSignOut;
+  final VoidCallback? onGoToGame;
 
   @override
   State<AutomataScreen> createState() => _AutomataScreenState();
@@ -816,6 +818,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onExportHistory: _showExportHistory,
         onReset: _reset,
         onSignOut: widget.onSignOut,
+        onGoToGame: widget.onGoToGame,
       ),
 
       appBar: AppBar(

@@ -956,7 +956,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
-                      painter: RubberBandPainter(start: _nodes[_lineSourceNodeId!]!.center, end: _rubberBandEnd!),
+                      painter: RubberBandPainter(start: _nodes[_lineSourceNodeId!]!.center, end: _rubberBandEnd!, color:Colors.lightBlueAccent),
                     ),
                   ),
                 ),

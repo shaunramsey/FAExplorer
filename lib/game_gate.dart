@@ -147,6 +147,7 @@ class _AppGateState extends State<AppGate> {
         isGuest: widget.authService.isGuest,
         userEmail: widget.authService.user?.email,
         onSignOut: _handleSignOut,
+        onGoToGame: () => setState(() => _mode = _AppMode.game),
       );
     }
 
