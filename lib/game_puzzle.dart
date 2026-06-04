@@ -509,7 +509,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           // ── Goal banner ──────────────────────────────────────────────
           _GoalBanner(
             description: widget.level.description,
-            tagColor: levelTagColor(widget.level.tag),
+            tagColor: context.watch<AppThemeNotifier>().tagColor(widget.level.tag),
             checkResult: _checkResult,
             isCorrect: _isCorrect,
           ),
@@ -859,7 +859,7 @@ class _SuccessDialogState extends State<_SuccessDialog>
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final tagColor = levelTagColor(widget.level.tag);
+    final tagColor = context.watch<AppThemeNotifier>().tagColor(widget.level.tag);
 
     return Dialog(
       backgroundColor: theme.bg,

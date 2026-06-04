@@ -331,7 +331,7 @@ class AutomataDrawer extends StatelessWidget {
               leading: const Icon(Icons.palette_outlined),
               title: const Text('Color Settings'),
               subtitle: 'Customize the accent, background, text, and border colors.',
-              onTap: () => showAppThemeSettings(context),
+              onTap: () => showAppThemeSettings(context, popRoute: true),
             ),
 
             const Divider(),

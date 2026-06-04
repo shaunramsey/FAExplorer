@@ -3,10 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
-
-import 'widgets/app_theme.dart';
 import 'models.dart';
 import 'data/automata_session_store.dart';
 import 'preferences_store.dart';
@@ -16,7 +12,6 @@ import 'start_arrow.dart';
 import 'dsl_code.dart';
 import 'simulator.dart';
 import 'pda_simulator.dart';
-import 'tm_simulator.dart';
 import 'saved_export.dart';
 import 'dialogs/automata_dialogs.dart';
 import 'dialogs/batch_simulator_dialog.dart';
@@ -26,10 +21,6 @@ import 'widgets/help_overlay.dart';
 import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
-import 'widgets/tm_config_panel.dart';
-
-const _kRed    = Color(0xFFFF1744);   // delete
-const _kOrange = Color(0xFFFF6D00);   // start arrow active
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -37,14 +28,12 @@ class AutomataScreen extends StatefulWidget {
     required this.sessionStore,
     this.isGuest = false,
     this.userEmail,
-    this.onGoToGame,
     this.onSignOut,
   });
 
   final AutomataSessionStore sessionStore;
   final bool isGuest;
   final String? userEmail;
-  final VoidCallback? onGoToGame;
   final Future<void> Function()? onSignOut;
 
   @override
@@ -61,7 +50,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   bool _showHelpOverlay = false;
   bool _showSimulator = true;
-  AutomataMode _automataMode = AutomataMode.ndfa;
+  bool _pdaMode = false;          // ← NEW
 
   StartArrowData? _startArrow;
 
@@ -87,7 +76,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   late final AutomataSimulator _simulator;
   late final PdaSimulator _pdaSimulator;     // ← NEW
-  late final TmSimulator _tmSimulator;       // ← TM
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
   Timer? _persistTimer;
   bool _persistenceReady = false;
@@ -96,7 +84,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Future<void> _openBatchSimulatorDialog() => showBatchSimulatorDialog(
         context,
         simulator: _simulator,
-        tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
         startArrow: _startArrow,
       );
 
@@ -106,12 +93,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         startArrow: _startArrow,
         nodeCounter: _nodeCounter,
         lineCounter: _lineCounter,
-        automataMode: _automataMode,
       );
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ────────────────────────────────────────────────────────────────────────
   // STRING SIMULATION (delegates to AutomataSimulator)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ────────────────────────────────────────────────────────────────────────
   final TextEditingController _simController = TextEditingController();
 
   /// Whether we are at the final step and the result is accepted.
@@ -124,11 +110,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   /// At the accepted final step, union all nodes/lines from every step to
   /// highlight the complete accepted path. Otherwise show only the current step.
   Set<String> get _simActiveNodes {
-    if (_automataMode == AutomataMode.pda) {
+    if (_pdaMode) {
       return _pdaSimulator.activeNodes;
-    }
-    if (_automataMode == AutomataMode.tm) {
-      return _tmSimulator.activeNodes;
     }
     if (_isAtAcceptedFinalStep) {
       return _simulator.states.expand((s) => s).toSet();
@@ -137,11 +120,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   Set<String> get _simActiveLines {
-    if (_automataMode == AutomataMode.pda) {
+    if (_pdaMode) {
       return _pdaSimulator.activeLines;
-    }
-    if (_automataMode == AutomataMode.tm) {
-      return _tmSimulator.activeLines;
     }
     if (_isAtAcceptedFinalStep) {
       return _simulator.usedLines.expand((s) => s).toSet();
@@ -150,11 +130,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   void _refreshSimulation() {
-    // Even with an empty input string, PDA/TM simulations still need to rebuild
-    // so that blank (`∅`) / `~` transitions and graph edits take effect.
-    if (_automataMode == AutomataMode.ndfa &&
-        _simController.text.isEmpty &&
-        _simulator.states.isEmpty) {
+    if (_simController.text.isEmpty && _simulator.states.isEmpty) {
       return;
     }
     _simRebuild();
@@ -197,7 +173,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _startArrow = state.startArrow;
         _nodeCounter = state.nodeCounter;
         _lineCounter = state.lineCounter;
-        _automataMode = state.automataMode;
+        _pdaMode = state.pdaMode;
       } catch (_) {
         // Ignore corrupt saved graphs.
       }
@@ -228,10 +204,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _pdaSimulator.rebuild(_simController.text, startArrow: _startArrow);
     if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
       _pdaSimulator.step = _pdaSimulator.tokens.length;
-    }
-    _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
-    if (_tmSimulator.step > _tmSimulator.maxStep) {
-      _tmSimulator.step = _tmSimulator.maxStep;
     }
   }
 
@@ -342,11 +314,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       lines: _lines,
     );
 
-    _tmSimulator = TmSimulator(           // ← TM
-      nodes: _nodes,
-      lines: _lines,
-    );
-
     _simController.addListener(_schedulePersist);
     WidgetsBinding.instance.addObserver(this);
     _loadPreferences();
@@ -413,7 +380,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _startArrow = state.startArrow;
       _nodeCounter = state.nodeCounter;
       _lineCounter = state.lineCounter;
-      _automataMode = state.automataMode;
+      _pdaMode = state.pdaMode;
       _draggingNodeId = null;
       _draggingLineId = null;
       _lineSourceNodeId = null;
@@ -482,22 +449,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       context,
       savedExports: _savedExports,
       onImportDsl: _importFromDsl,
-      onInsertBlackBox: (blackBox) {
-        setState(() {
-          final id = _nextId('n');
-          final pos = (_lastTapPosition ?? const Offset(260, 220)) -
-              const Offset(70, 50);
-          _nodes[id] = NodeData(
-            id: id,
-            position: pos,
-            label: blackBox.name.trim().isEmpty ? 'Black Box' : blackBox.name,
-            isBlackBox: true,
-            blackBoxDescription: '',
-            blackBoxDsl: blackBox.dsl,
-          );
-        });
-        _refreshSimulation();
-      },
+      onInsertBlackBox: (savedExport) => _importFromDsl(savedExport.dsl),
       onListChanged: () {
         setState(() {});
         _schedulePersist();
@@ -511,10 +463,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         event.logicalKey == LogicalKeyboardKey.shiftLeft || event.logicalKey == LogicalKeyboardKey.shiftRight;
 
     if (!isShift) return;
-
-    // Don't intercept shift while the user is typing in any text field.
-    final focus = FocusManager.instance.primaryFocus;
-    if (focus != _focusNode && focus != null) return;
 
     if (event is KeyDownEvent) {
       setState(() {
@@ -539,8 +487,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   LineData? _lineAt(Offset point) {
     for (final line in _lines.values) {
-      final nodeA = _nodes[line.nodeAId]!;
-      final nodeB = _nodes[line.nodeBId]!;
+      final nodeA = _nodes[line.nodeAId];
+      final nodeB = _nodes[line.nodeBId];
+
+      if (nodeA == null || nodeB == null) continue;
 
       if (line.containsPoint(point, nodeA.center, nodeB.center)) {
         return line;
@@ -800,10 +750,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _isPanningCanvas = false;
 
     _lastPanPosition = null;
-    _rubberBandEnd = null;
     _cancelRubberBand();
-    _lineSourceNodeId = null;
-    _rubberBandEnd = null;
     _refreshSimulation();
   }
 
@@ -835,26 +782,17 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-
     if (_loadingPrefs) {
-      return Scaffold(
-        backgroundColor: theme.bg,
-        body: Center(
-          child: CircularProgressIndicator(
-            color: theme.accent,
-            strokeWidth: 2,
-          ),
-        ),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      backgroundColor: theme.bg,
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
-        automataMode: _automataMode,
+        automataMode: _pdaMode ? AutomataMode.pda : AutomataMode.ndfa,
         isGuest: widget.isGuest,
         accountLabel: widget.isGuest
             ? 'Guest (local only)'
@@ -863,12 +801,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onShowSimulatorChanged: _setShowSimulator,
         onModeChanged: (mode) {
           setState(() {
-            _automataMode = mode;
+            _pdaMode = mode == AutomataMode.pda;
             _simRebuild();
-            if (_automataMode == AutomataMode.pda) {
+            if (_pdaMode) {
               _pdaSimulator.step = _simulator.step;
-            } else if (_automataMode == AutomataMode.tm) {
-              _tmSimulator.step = _simulator.step.clamp(-1, _tmSimulator.maxStep);
             }
           });
           _schedulePersist();
@@ -879,48 +815,18 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onImport: _showImportDialog,
         onExportHistory: _showExportHistory,
         onReset: _reset,
-        onGoToGame: widget.onGoToGame,
         onSignOut: widget.onSignOut,
       ),
 
       appBar: AppBar(
-        backgroundColor: theme.surface,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(color: theme.textMid),
-        title: Text(
-          'AUTOMATA DESIGNER',
-          style: GoogleFonts.orbitron(
-            color: theme.accent,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 3,
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: theme.borderMid),
-        ),
+        title: const Text('Automata Designer'),
         actions: [
           if (widget.isGuest)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: theme.textDim.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: theme.borderMid),
-                ),
-                child: Text(
-                  'GUEST',
-                  style: GoogleFonts.orbitron(
-                    color: theme.textDim,
-                    fontSize: 8,
-                    letterSpacing: 2,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Chip(
+                label: Text('Guest'),
+                visualDensity: VisualDensity.compact,
               ),
             ),
         ],
@@ -929,59 +835,55 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Start arrow — orange when active
-          _PaletteFab(
+          FloatingActionButton(
             heroTag: 'startArrow',
             tooltip: 'Set start state',
-            icon: Icons.play_arrow,
-            active: _placingStartArrow,
-            activeColor: _kOrange,
-            onPressed: () => setState(() => _placingStartArrow = !_placingStartArrow),
+            backgroundColor: _placingStartArrow ? Colors.orange : null,
+            onPressed: () {
+              setState(() {
+                _placingStartArrow = !_placingStartArrow;
+              });
+            },
+            child: const Icon(Icons.play_arrow),
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          // Delete — red when active
-          _PaletteFab(
+          FloatingActionButton(
             heroTag: 'deleteMode',
             tooltip: 'Delete mode',
-            icon: Icons.delete_outline,
-            active: _deleteMode,
-            activeColor: _kRed,
+            backgroundColor: _deleteMode ? Colors.red : null,
             onPressed: () {
               setState(() {
                 _deleteMode = !_deleteMode;
+
                 if (_deleteMode) {
                   _lineMode = false;
                   _placingStartArrow = false;
                 }
               });
             },
+            child: const Icon(Icons.delete),
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          // Line mode — cyan when active
-          _PaletteFab(
+          FloatingActionButton(
             heroTag: 'lineMode',
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-            icon: _lineMode ? Icons.timeline : Icons.add_link,
-            active: _lineMode,
-            activeColor: theme.accent,
+            backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
             onPressed: () => _setLineMode(!_lineMode),
+            child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          // Simulator toggle — green when shown (small)
-          _PaletteFab(
+          FloatingActionButton.small(
             heroTag: 'toggleSim',
             tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
-            icon: Icons.science_outlined,
-            active: _showSimulator,
-            activeColor: theme.accentGreen,
-            small: true,
+            backgroundColor: _showSimulator ? Colors.purple.shade100 : null,
             onPressed: () => _setShowSimulator(!_showSimulator),
+            child: const Icon(Icons.science, size: 20),
           ),
         ],
       ),
@@ -1053,7 +955,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                 Positioned.fill(
                   child: IgnorePointer(
                     child: CustomPaint(
-                      painter: RubberBandPainter(start: _nodes[_lineSourceNodeId!]!.center, end: _rubberBandEnd!),
+                      painter: RubberBandPainter(start: _nodes[_lineSourceNodeId!]!.center, end: _rubberBandEnd!, color: Colors.lightBlueAccent),
                     ),
                   ),
                 ),
@@ -1091,7 +993,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   key: ValueKey(node.id),
                   data: node,
                   lineMode: _lineMode,
-                  interactionLocked: _placingStartArrow,
                   deleteMode: _deleteMode,
                   highlighted: _simActiveNodes.contains(node.id),
 
@@ -1134,8 +1035,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
                 simulator: _simulator,
-                pdaSimulator: _automataMode == AutomataMode.pda ? _pdaSimulator : null,
-                tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
+                pdaSimulator: _pdaMode ? _pdaSimulator : null,
                 controller: _simController,
                 nodes: _nodes,
                 onClose: () => _setShowSimulator(false),
@@ -1143,91 +1043,21 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   setState(() {
                     _simRebuild();
                     _simulator.step = -1;
-                    _pdaSimulator.step = -1;
-                    _tmSimulator.step = -1;
+                    _pdaSimulator.step = -1;          // ← NEW
                   });
                   _schedulePersist();
                 },
                 onStepChanged: () {
-                  _pdaSimulator.step = _simulator.step;
-                  _tmSimulator.step = _simulator.step.clamp(
-                      -1, _tmSimulator.maxStep);
+                  _pdaSimulator.step = _simulator.step; // keep in sync
                   setState(() {});
                   _schedulePersist();
                 },
               ),
 
             // ── PDA Stack Panel ────────────────────────────────────────
-            if (_showSimulator && _automataMode == AutomataMode.pda)
+            if (_showSimulator && _pdaMode)
               PdaStackPanel(simulator: _pdaSimulator, nodes: _nodes),
-
-            // ── TM Config Panel ────────────────────────────────────────
-            if (_showSimulator && _automataMode == AutomataMode.tm)
-              TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  _PaletteFab — FAB styled to the dark cyberpunk palette.
-//  When [active] the button glows with [activeColor]; otherwise it sits dim.
-// ─────────────────────────────────────────────────────────────────────────────
-class _PaletteFab extends StatelessWidget {
-  const _PaletteFab({
-    required this.heroTag,
-    required this.tooltip,
-    required this.icon,
-    required this.active,
-    required this.activeColor,
-    required this.onPressed,
-    this.small = false,
-  });
-
-  final Object heroTag;
-  final String tooltip;
-  final IconData icon;
-  final bool active;
-  final Color activeColor;
-  final VoidCallback onPressed;
-  final bool small;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-
-    final bg = active ? activeColor.withOpacity(0.14) : theme.surface;
-    final fg = active ? activeColor : theme.textMid;
-    final side = active
-        ? BorderSide(color: activeColor.withOpacity(0.7), width: 1.5)
-        : BorderSide(color: theme.borderMid, width: 1);
-
-    final size = small ? 36.0 : 48.0;
-    final iconSize = small ? 18.0 : 22.0;
-
-    return Tooltip(
-      message: tooltip,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(small ? 8 : 12),
-          border: Border.all(color: side.color, width: side.width),
-          boxShadow: active
-              ? [BoxShadow(color: activeColor.withOpacity(0.3), blurRadius: 12, spreadRadius: 0)]
-              : null,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(small ? 8 : 12),
-            onTap: onPressed,
-            child: Icon(icon, color: fg, size: iconSize),
-          ),
         ),
       ),
     );

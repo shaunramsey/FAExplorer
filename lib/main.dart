@@ -63,10 +63,19 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeNotifier = context.watch<AppThemeNotifier>();
+    final c = themeNotifier.data;
+    final light = c.isLightTheme;
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarBrightness: light ? Brightness.light : Brightness.dark,
+      statusBarIconBrightness: light ? Brightness.dark : Brightness.light,
+      systemNavigationBarColor: c.bg,
+      systemNavigationBarIconBrightness: light ? Brightness.dark : Brightness.light,
+    ));
     return MaterialApp(
       title: 'Automata Designer',
       debugShowCheckedModeBanner: false,
-      theme: _buildTheme(themeNotifier.data),
+      theme: _buildTheme(c),
       home: AppGate(
         authService: authService,
         firebaseEnabled: firebaseEnabled,
@@ -75,21 +84,21 @@ class MyApp extends StatelessWidget {
   }
 
   static ThemeData _buildTheme(AppThemeData c) {
-    final base = ThemeData.dark();
+    final base = c.isLightTheme ? ThemeData.light() : ThemeData.dark();
 
     return base.copyWith(
       scaffoldBackgroundColor: c.bg,
       canvasColor: c.surface,
       cardColor: c.surface,
 
-      colorScheme: ColorScheme.dark(
+      colorScheme: (c.isLightTheme ? ColorScheme.light : ColorScheme.dark)(
         primary:          c.accent,
         onPrimary:        c.bg,
         secondary:        c.accentGreen,
         onSecondary:      c.bg,
         surface:          c.surface,
         onSurface:        c.textLight,
-        error:            const Color(0xFFFF1744),
+        error:            c.error,
         onError:          c.bg,
         outline:          c.borderMid,
       ),
@@ -107,7 +116,9 @@ class MyApp extends StatelessWidget {
           letterSpacing: 3,
         ),
         iconTheme: IconThemeData(color: c.textMid),
-        systemOverlayStyle: SystemUiOverlayStyle.light,
+        systemOverlayStyle: c.isLightTheme
+            ? SystemUiOverlayStyle.dark
+            : SystemUiOverlayStyle.light,
       ),
 
       // Drawer
@@ -122,7 +133,7 @@ class MyApp extends StatelessWidget {
       // Input fields
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFF080D14),
+        fillColor: c.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: c.borderMid),
@@ -137,7 +148,7 @@ class MyApp extends StatelessWidget {
         ),
         labelStyle: GoogleFonts.orbitron(color: c.textMid, fontSize: 12, letterSpacing: 1),
         hintStyle: GoogleFonts.sourceCodePro(color: c.textDim, fontSize: 13),
-        errorStyle: GoogleFonts.sourceCodePro(color: const Color(0xFFFF1744), fontSize: 11),
+        errorStyle: GoogleFonts.sourceCodePro(color: c.error, fontSize: 11),
       ),
 
       // Filled / elevated buttons

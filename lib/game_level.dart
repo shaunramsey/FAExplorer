@@ -1,3 +1,5 @@
+import 'widgets/app_theme.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Game Mode — Level definitions and registry
 //
@@ -2100,21 +2102,5 @@ final Map<String, GameLevel> kLevelById = {
 //  Tag colour palette used by the neural-network level map
 // ─────────────────────────────────────────────────────────────────────────────
 
-Color levelTagColor(String? tag) {
-  switch (tag) {
-    case 'intro':
-      return const Color(0xFF00E5FF); // cyan  — starting point
-    case 'dfa':
-      return const Color(0xFF69FF47); // green — deterministic FA
-    case 'nfa':
-      return const Color(0xFFFFD740); // amber — non-deterministic FA
-    case 'boss':
-      return const Color(0xFFFF1744); // red   — challenge / boss level
-    case 'pda':
-      return const Color(0xFFFF6D00); // orange — pushdown automata
-    case 'tm':
-      return const Color(0xFFE040FB); // purple — Turing machines
-    default:
-      return const Color(0xFF9E9E9E); // grey
-  }
-}
+/// Default tag colors when no [AppThemeNotifier] is available.
+Color levelTagColor(String? tag) => AppThemeData.defaults().tagColor(tag);

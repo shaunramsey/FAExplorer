@@ -1,15 +1,32 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:math';
+import 'package:provider/provider.dart';
+
 import 'models.dart';
-import 'token_replacements.dart'; // ← single source of truth
+import 'token_replacements.dart';
+import 'widgets/app_theme.dart';
 
 class LinePainter extends CustomPainter {
   final LineGeometry geometry;
   final bool deleteMode;
   final bool highlighted;
+  final Color defaultColor;
+  final Color highlightColor;
+  final Color deleteColor;
 
-  const LinePainter({required this.geometry, this.deleteMode = false, this.highlighted = false});
+  const LinePainter({
+    required this.geometry,
+    required this.deleteMode,
+    required this.highlighted,
+    required this.defaultColor,
+    required this.highlightColor,
+    required this.deleteColor,
+  });
+
+  Color get _lineColor =>
+      deleteMode ? deleteColor : highlighted ? highlightColor : defaultColor;
 
   void _drawArrow(Canvas canvas, Offset tip, double angle) {
     const len = 15;
@@ -27,20 +44,10 @@ class LinePainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = deleteMode
-            ? Colors.red
-            : highlighted
-            ? const Color.fromARGB(255, 208, 0, 255)
-            : Colors.white
+        ..color = _lineColor
         ..style = PaintingStyle.fill,
     );
   }
-
-  Color get _lineColor => deleteMode
-      ? Colors.red
-      : highlighted
-      ? const Color.fromARGB(255, 208, 0, 255)
-      : Colors.white;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -74,7 +81,8 @@ class LinePainter extends CustomPainter {
         geometry.endPoint.dy - sin(angle) * arrowLen,
       );
 
-      final double angle2 = atan2(geometry.endPoint.dy - shortenedEnd.dy, geometry.endPoint.dx - shortenedEnd.dx);
+      final double angle2 =
+          atan2(geometry.endPoint.dy - shortenedEnd.dy, geometry.endPoint.dx - shortenedEnd.dx);
       canvas.drawLine(geometry.startPoint, shortenedEnd, paint);
 
       _drawArrow(canvas, geometry.endPoint, angle2);
@@ -85,7 +93,10 @@ class LinePainter extends CustomPainter {
   bool shouldRepaint(LinePainter oldDelegate) =>
       oldDelegate.geometry != geometry ||
       oldDelegate.highlighted != highlighted ||
-      oldDelegate.deleteMode != deleteMode;
+      oldDelegate.deleteMode != deleteMode ||
+      oldDelegate.defaultColor != defaultColor ||
+      oldDelegate.highlightColor != highlightColor ||
+      oldDelegate.deleteColor != deleteColor;
 }
 
 class LineWidget extends StatefulWidget {
@@ -152,8 +163,17 @@ class _LineWidgetState extends State<LineWidget> {
     super.dispose();
   }
 
+  Color _labelColor(AppThemeNotifier theme) {
+    return widget.deleteMode
+        ? theme.error
+        : widget.highlighted
+            ? theme.lineHighlight
+            : theme.lineColor;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final geometry = widget.data.computeGeometry(widget.centerA, widget.centerB);
 
     const double boxWidth = 120;
@@ -168,22 +188,24 @@ class _LineWidgetState extends State<LineWidget> {
       widget.data.label,
     );
 
+    final labelColor = _labelColor(theme);
+
     return Stack(
       children: [
-        // ─────────────────────────────
-        // LINE + ARROW
-        // ─────────────────────────────
         Positioned.fill(
           child: IgnorePointer(
             child: CustomPaint(
-              painter: LinePainter(geometry: geometry, deleteMode: widget.deleteMode, highlighted: widget.highlighted),
+              painter: LinePainter(
+                geometry: geometry,
+                deleteMode: widget.deleteMode,
+                highlighted: widget.highlighted,
+                defaultColor: theme.lineColor,
+                highlightColor: theme.lineHighlight,
+                deleteColor: theme.error,
+              ),
             ),
           ),
         ),
-
-        // ─────────────────────────────
-        // FLOATING LABEL
-        // ─────────────────────────────
         Positioned(
           left: mid.dx,
           top: mid.dy,
@@ -192,28 +214,18 @@ class _LineWidgetState extends State<LineWidget> {
             child: TextField(
               controller: _controller,
               focusNode: _focusNode,
-
               textAlign: TextAlign.center,
-
               maxLines: null,
               keyboardType: TextInputType.multiline,
               textInputAction: TextInputAction.newline,
-
               style: GoogleFonts.courierPrime(
                 fontSize: 30,
                 height: 1,
                 fontWeight: FontWeight.bold,
-                color: widget.deleteMode
-                    ? Colors.red
-                    : widget.highlighted
-                    ? const Color.fromARGB(255, 208, 0, 255)
-                    : Colors.white,
+                color: labelColor,
               ),
-
-              // Use the shared parser from token_replacements.dart
               onChanged: (value) {
                 final parsed = parseTokenText(value);
-
                 final newLineCount = '\n'.allMatches(parsed).length + 1;
 
                 if (newLineCount != _lineCount) {
@@ -227,7 +239,6 @@ class _LineWidgetState extends State<LineWidget> {
                   );
                 }
               },
-
               decoration: InputDecoration(
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -235,7 +246,11 @@ class _LineWidgetState extends State<LineWidget> {
                 filled: false,
                 hintText: '~',
                 isDense: true,
-                hintStyle: TextStyle(color: widget.deleteMode ? Colors.red : Colors.white.withOpacity(0.6)),
+                hintStyle: TextStyle(
+                  color: widget.deleteMode
+                      ? theme.error
+                      : theme.lineColor.withOpacity(0.6),
+                ),
               ),
             ),
           ),

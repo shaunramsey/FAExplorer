@@ -13,8 +13,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import 'auth/auth_service.dart';
+import 'widgets/app_theme.dart';
+import 'widgets/app_theme_settings.dart';
 import 'data/automata_session_store.dart';
 import 'data/firebase_session_store.dart';
 import 'automata_screen.dart';
@@ -116,8 +119,13 @@ class _AppGateState extends State<AppGate> {
 
     // Authenticated but stores still loading
     if (_loadingStores || _sessionStore == null || _progressStore == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: context.watch<AppThemeNotifier>().bg,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: context.watch<AppThemeNotifier>().accent,
+          ),
+        ),
       );
     }
 
@@ -138,7 +146,6 @@ class _AppGateState extends State<AppGate> {
         sessionStore: _sessionStore!,
         isGuest: widget.authService.isGuest,
         userEmail: widget.authService.user?.email,
-        onGoToGame: () => setState(() => _mode = _AppMode.game),
         onSignOut: _handleSignOut,
       );
     }
@@ -199,10 +206,11 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final completed = widget.progressStore.loadCompletedLevels().length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF07080F),
+      backgroundColor: theme.bg,
       body: AnimatedBuilder(
         animation: _entryCtrl,
         builder: (ctx, _) {
@@ -219,13 +227,25 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Column(
                     children: [
-                      const SizedBox(height: 48),
+                      const SizedBox(height: 32),
 
-                      // Title
+                      Row(
+                        children: [
+                          const Spacer(),
+                          IconButton(
+                            tooltip: 'Appearance & colors',
+                            icon: Icon(Icons.palette_outlined, color: theme.textMid),
+                            onPressed: () => showAppThemeSettings(context),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
                       Text(
                         'AUTOMATA',
                         style: GoogleFonts.orbitron(
-                          color: const Color(0xFF00E5FF),
+                          color: theme.accent,
                           fontSize: 36,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 8,
@@ -235,7 +255,7 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
                       Text(
                         'DESIGNER',
                         style: GoogleFonts.orbitron(
-                          color: const Color(0xFF00E5FF),
+                          color: theme.accent,
                           fontSize: 18,
                           letterSpacing: 12,
                         ),
@@ -243,13 +263,13 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
 
                       const Spacer(),
 
-                      // Mode cards
                       _ModeCard(
                         icon: Icons.grid_view_rounded,
                         title: 'SANDBOX',
                         subtitle:
                             'Free-form automata designer.\nBuild, simulate, export.',
-                        accent: const Color(0xFF69FF47),
+                        accent: theme.accentGreen,
+                        subtitleColor: theme.textMid,
                         pulseAnim: _pulseCtrl,
                         onTap: widget.onSandbox,
                       ),
@@ -261,7 +281,8 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
                         title: 'GAME MODE',
                         subtitle:
                             'Solve automata puzzles.\n$completed level${completed == 1 ? '' : 's'} completed.',
-                        accent: const Color(0xFF00E5FF),
+                        accent: theme.accent,
+                        subtitleColor: theme.textMid,
                         pulseAnim: _pulseCtrl,
                         onTap: widget.onGame,
                         featured: true,
@@ -269,7 +290,6 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
 
                       const Spacer(),
 
-                      // Sign-out / guest note
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -277,7 +297,7 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
                             Text(
                               'GUEST MODE  •  ',
                               style: GoogleFonts.orbitron(
-                                color: const Color(0xFF2D3748),
+                                color: theme.textDim,
                                 fontSize: 11,
                                 letterSpacing: 1,
                               ),
@@ -287,7 +307,7 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
                             child: Text(
                               'SIGN OUT',
                               style: GoogleFonts.orbitron(
-                                color: const Color(0xFF2D3748),
+                                color: theme.textDim,
                                 fontSize: 11,
                                 letterSpacing: 1,
                               ),
@@ -318,6 +338,7 @@ class _ModeCard extends StatefulWidget {
   final String title;
   final String subtitle;
   final Color accent;
+  final Color subtitleColor;
   final Animation<double> pulseAnim;
   final VoidCallback onTap;
   final bool featured;
@@ -327,6 +348,7 @@ class _ModeCard extends StatefulWidget {
     required this.title,
     required this.subtitle,
     required this.accent,
+    required this.subtitleColor,
     required this.pulseAnim,
     required this.onTap,
     this.featured = false,
@@ -404,7 +426,7 @@ class _ModeCardState extends State<_ModeCard> {
                         Text(
                           widget.subtitle,
                           style: GoogleFonts.sourceCodePro(
-                            color: const Color(0xFF718096),
+                            color: widget.subtitleColor,
                             fontSize: 12,
                             height: 1.5,
                           ),
