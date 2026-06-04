@@ -1327,7 +1327,7 @@ class _EdgePainter extends CustomPainter {
     }
 
     // ── Adjacent-column: simple S-curve ─────────────────────────────────────
-    if (dst.dx - src.dx <= _kColGap + 10) {
+    if (dst.dx - src.dx <= _kColGap * 4) {
       final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
       final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
       return _PathData(
@@ -1380,8 +1380,8 @@ for (final y in candidateYs) {
   }{
       // Two cubic bezier segments meeting at (midX, y).
       final c1 = Offset(src.dx + halfCtrl, src.dy);
-      final c2 = Offset(midX - 20, y);
-      final c3 = Offset(midX + 20, y);
+      final c2 = Offset(midX - 60, y);
+      final c3 = Offset(midX + 60, y);
       final c4 = arrowFrom;
 
       final seg1 = _sampleCubic(src, c1, c2, Offset(midX, y));
