@@ -141,7 +141,7 @@ Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
   while (q.isNotEmpty) {
     final cur = q.removeAt(0);
     for (final next in adj[cur]!) {
-      layer[next] = max(layer[next]!, layer[cur]! + 1);
+      layer[next] = max(layer[next]!, layer[cur]! + 2);
       indeg[next] = indeg[next]! - 1;
       if (indeg[next] == 0) q.add(next);
     }
@@ -159,6 +159,20 @@ Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
 
 Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double canvasH) {
   final layerById = _computeLayersFromDeps(levels);
+  List<String> _extractLevelDependencies(GameLevel level) {
+  List<String> extract(UnlockRule rule) {
+    if (rule is AlwaysUnlocked) return [];
+    if (rule is RequireLevel) return [rule.levelId];
+    if (rule is RequireAll) return rule.levelIds;
+    if (rule is RequireAny) return rule.levelIds;
+    if (rule is RequireExpression) {
+      return rule.children.expand(extract).toList();
+    }
+    return [];
+  }
+
+  return extract(level.unlockRule);
+}
 
   final Map<int, List<GameLevel>> cols = {};
   for (final l in levels) {
@@ -169,7 +183,32 @@ Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double can
   final Map<String, Offset> result = {};
   for (final entry in cols.entries) {
     final colIdx = entry.key;
-    final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
+    final members = [...entry.value];
+
+members.sort((a, b) {
+  double barycenter(GameLevel level) {
+    final deps = _extractLevelDependencies(level);
+
+    if (deps.isEmpty) {
+      return level.y;
+    }
+
+    double sum = 0;
+    int count = 0;
+
+    for (final depId in deps) {
+      final dep = kLevelById[depId];
+      if (dep != null) {
+        sum += dep.y;
+        count++;
+      }
+    }
+
+    return count == 0 ? level.y : sum / count;
+  }
+
+  return barycenter(a).compareTo(barycenter(b));
+});
     final cx = _kSidePad + colIdx * _kColGap;
     final count = members.length;
     final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
@@ -1256,7 +1295,7 @@ class _EdgePainter extends CustomPainter {
 
     // ── Bezier sampler ──────────────────────────────────────────────────────
     // Approximate a cubic bezier with [steps] sample points.
-    List<Offset> _sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 30}) {
+    List<Offset> _sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
       final pts = <Offset>[];
       for (int i = 0; i <= steps; i++) {
         final t = i / steps;
@@ -1277,8 +1316,8 @@ class _EdgePainter extends CustomPainter {
         if ((p - srcNodeCenter).distance < 8 || (p - dstNodeCenter).distance < 8) continue;
         final rect = Rect.fromCenter(
           center: p,
-          width: _kNodeW + 40,
-          height: _kNodeH + 40,
+          width: _kNodeW + 120,
+          height: _kNodeH + 120,
         );
         for (final pt in pts) {
           if (rect.contains(pt)) return true;
@@ -1306,7 +1345,7 @@ class _EdgePainter extends CustomPainter {
     // Build a rich candidate list: fixed lanes + per-node offsets.
     final usableBottom = canvasH - _kBotPad - _kLegendH;
     final candidateYs = <double>[
-      _kTopPad + 18,
+      _kTopPad + 362,
       _kTopPad + 50,
       _kTopPad + 90,
       canvasH * 0.18,
@@ -1333,7 +1372,12 @@ class _EdgePainter extends CustomPainter {
     final halfCtrl = ctrlDist * 0.7;
     final arrowFrom = Offset(dst.dx - halfCtrl, dst.dy);
 
-    for (final y in candidateYs) {
+    const maxDeviation = 220.0;
+
+for (final y in candidateYs) {
+  if ((y - midY).abs() > maxDeviation) {
+    continue;
+  }{
       // Two cubic bezier segments meeting at (midX, y).
       final c1 = Offset(src.dx + halfCtrl, src.dy);
       final c2 = Offset(midX - 20, y);
@@ -1354,9 +1398,13 @@ class _EdgePainter extends CustomPainter {
         );
       }
     }
+}
 
     // Absolute fallback: route hard above all nodes.
-    final fallbackY = _kTopPad + 12;
+    final fallbackY = midY.clamp(
+  _kTopPad + 40,
+  canvasH - _kBotPad - _kLegendH - 40,
+);
     return _PathData(
       path: Path()
         ..moveTo(src.dx, src.dy)
