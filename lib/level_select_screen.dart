@@ -20,11 +20,12 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import 'game_level.dart';
 import 'game_progress_store.dart';
 import 'game_puzzle.dart';
-import 'main.dart' show kBg, kSurface, kBorder, kBorderMid, kAccent, kTextDim, kTextMid, kTextLight;
+import 'widgets/app_theme.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants
@@ -44,15 +45,11 @@ const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
 //  Colour palette
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _kGridLine = Color(0xFF0D1620);
 const _kEdgeDim = Color(0xFF1A2E40); // locked path — slightly brighter than original
 const _kEdgeActive = Color(0xFF1CBD8A); // prereq done, dest available — vibrant teal
 const _kEdgeBright = Color(0xFF1FD99A); // both done — bright teal-green
 const _kEdgeAlmost = Color(0xFFFFAA00); // this prereq done but dest still locked — amber
 const _kEdgeBlocking = Color(0xFFFF6D00); // this is the MISSING prereq — pulsing orange
-const _kLockBg = Color(0xFF080D14);
-const _kLockBorder = Color(0xFF141E2A);
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Position helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,19 +297,20 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final screenH = MediaQuery.of(context).size.height;
     final canvasH = _canvasHeight(kAllLevels, screenH);
     final positions = _computePositionsFromDeps(kAllLevels, canvasH);
     final canvasW = _canvasWidthFromPositions(positions);
 
     return Scaffold(
-      backgroundColor: kBg,
+      backgroundColor: theme.bg,
       body: Stack(
         children: [
           // ── Background grid ────────────────────────────────────────────
           CustomPaint(
             size: Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.height),
-            painter: _GridPainter(),
+            painter: _GridPainter(gridColor: theme.gridLine),
           ),
 
           // ── Scrollable canvas (horizontal only) ───────────────────────
@@ -401,6 +399,7 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -414,7 +413,7 @@ class _TopBar extends StatelessWidget {
                 Text(
                   'AUTOMATA',
                   style: GoogleFonts.orbitron(
-                    color: kAccent,
+                    color: theme.accent,
                     fontSize: 19,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 4,
@@ -423,7 +422,7 @@ class _TopBar extends StatelessWidget {
                 Text(
                   'LEARNING MAP',
                   style: GoogleFonts.orbitron(
-                    color: kTextDim,
+                    color: theme.textDim,
                     fontSize: 8,
                     letterSpacing: 3.5,
                     fontWeight: FontWeight.w500,
@@ -437,9 +436,9 @@ class _TopBar extends StatelessWidget {
             // Scroll hint
             Row(
               children: [
-                const Icon(Icons.open_with, color: kTextDim, size: 14),
+                Icon(Icons.open_with, color: theme.textDim, size: 14),
                 const SizedBox(width: 4),
-                Text('SCROLL', style: GoogleFonts.orbitron(color: kTextDim, fontSize: 8, letterSpacing: 2)),
+                Text('SCROLL', style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 8, letterSpacing: 2)),
               ],
             ),
 
@@ -450,7 +449,7 @@ class _TopBar extends StatelessWidget {
               children: [
                 Text(
                   '$completed / $total',
-                  style: GoogleFonts.orbitron(color: kTextLight, fontSize: 12, letterSpacing: 1),
+                  style: GoogleFonts.orbitron(color: theme.textLight, fontSize: 12, letterSpacing: 1),
                 ),
                 const SizedBox(width: 10),
                 SizedBox(
@@ -459,8 +458,8 @@ class _TopBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(3),
                     child: LinearProgressIndicator(
                       value: total > 0 ? completed / total : 0,
-                      backgroundColor: _kGridLine,
-                      valueColor: const AlwaysStoppedAnimation(kAccent),
+                      backgroundColor: theme.gridLine,
+                      valueColor: AlwaysStoppedAnimation(theme.accent),
                       minHeight: 5,
                     ),
                   ),
@@ -478,11 +477,11 @@ class _TopBar extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
-                  side: const BorderSide(color: kBorderMid, width: 1),
+                  side: BorderSide(color: theme.borderMid, width: 1),
                 ),
-                foregroundColor: kTextDim,
+                foregroundColor: theme.textDim,
               ),
-              child: Text('SANDBOX', style: GoogleFonts.orbitron(color: kTextDim, fontSize: 9, letterSpacing: 2)),
+              child: Text('SANDBOX', style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 9, letterSpacing: 2)),
             ),
           ],
         ),
@@ -505,6 +504,7 @@ class _NodeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final tagColor = levelTagColor(level.tag);
 
     return AnimatedBuilder(
@@ -520,13 +520,13 @@ class _NodeCard extends StatelessWidget {
             ? tagColor.withOpacity(0.85)
             : unlocked
             ? tagColor.withOpacity(0.55)
-            : kTextMid.withOpacity(0.85);
+            : theme.textMid.withOpacity(0.85);
 
         final bgColor = completed
             ? tagColor.withOpacity(0.10)
             : unlocked
             ? tagColor.withOpacity(0.05)
-            : kBorder;
+            : theme.border;
 
         return Container(
           decoration: BoxDecoration(
@@ -557,7 +557,7 @@ class _NodeCard extends StatelessWidget {
                     else if (unlocked)
                       Icon(Icons.radio_button_unchecked, color: tagColor.withOpacity(0.7), size: 11)
                     else
-                      Icon(Icons.lock_outline, color: kTextDim, size: 11),
+                      Icon(Icons.lock_outline, color: theme.textDim, size: 11),
                     const SizedBox(width: 4),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -568,7 +568,7 @@ class _NodeCard extends StatelessWidget {
                       child: Text(
                         (level.tag ?? 'misc').toUpperCase(),
                         style: GoogleFonts.orbitron(
-                          color: unlocked ? tagColor.withOpacity(0.9) : kTextDim,
+                          color: unlocked ? tagColor.withOpacity(0.9) : theme.textDim,
                           fontSize: 6.5,
                           letterSpacing: 1.2,
                           fontWeight: FontWeight.w700,
@@ -590,8 +590,8 @@ class _NodeCard extends StatelessWidget {
                     color: completed
                         ? tagColor
                         : unlocked
-                        ? kTextLight
-                        : kTextDim,
+                        ? theme.textLight
+                        : theme.textDim,
                     fontSize: 9.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.4,
@@ -644,6 +644,7 @@ class _UnlockHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final tagColor = levelTagColor(level.tag);
 
     if (completed) {
@@ -677,9 +678,9 @@ class _UnlockHint extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: kBorderMid,
+        color: theme.borderMid,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: kTextMid.withOpacity(0.25)),
+        border: Border.all(color: theme.textMid.withOpacity(0.25)),
       ),
       child: Text(
         _shortHint(),
@@ -687,7 +688,7 @@ class _UnlockHint extends StatelessWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: GoogleFonts.sourceCodePro(
-          color: kTextLight,
+          color: theme.textLight,
           fontSize: 7.5,
           letterSpacing: 0.8,
           height: 1.4,
@@ -730,6 +731,7 @@ class _LockedSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final titles = _requiredTitles();
     final isAnd = _isAnd();
 
@@ -737,9 +739,9 @@ class _LockedSheet extends StatelessWidget {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: kSurface,
+        color: theme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: kBorderMid, width: 1.5),
+        border: Border.all(color: theme.borderMid, width: 1.5),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 24, offset: const Offset(0, -4))],
       ),
       child: Column(
@@ -751,19 +753,19 @@ class _LockedSheet extends StatelessWidget {
               width: 36,
               height: 4,
               margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(color: kBorderMid, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: theme.borderMid, borderRadius: BorderRadius.circular(2)),
             ),
           ),
 
           Row(
             children: [
-              Icon(Icons.lock, color: kTextDim, size: 18),
+              Icon(Icons.lock, color: theme.textDim, size: 18),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   level.title,
                   style: GoogleFonts.orbitron(
-                    color: kTextLight,
+                    color: theme.textLight,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,
@@ -793,7 +795,7 @@ class _LockedSheet extends StatelessWidget {
           const SizedBox(height: 16),
 
           if (titles.isEmpty)
-            Text('This level is always available.', style: GoogleFonts.sourceCodePro(color: kTextMid, fontSize: 13))
+            Text('This level is always available.', style: GoogleFonts.sourceCodePro(color: theme.textMid, fontSize: 13))
           else ...[
             Text(
               titles.length == 1
@@ -801,7 +803,7 @@ class _LockedSheet extends StatelessWidget {
                   : isAnd
                   ? 'TO UNLOCK, COMPLETE ALL OF:'
                   : 'TO UNLOCK, COMPLETE ANY ONE OF:',
-              style: GoogleFonts.orbitron(color: kTextDim, fontSize: 9, letterSpacing: 2, fontWeight: FontWeight.w600),
+              style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 9, letterSpacing: 2, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             ...titles.map(
@@ -816,7 +818,7 @@ class _LockedSheet extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(t, style: GoogleFonts.sourceCodePro(color: kTextLight, fontSize: 13)),
+                      child: Text(t, style: GoogleFonts.sourceCodePro(color: theme.textLight, fontSize: 13)),
                     ),
                   ],
                 ),
@@ -862,17 +864,17 @@ class _LockedSheet extends StatelessWidget {
 class _Legend extends StatelessWidget {
   const _Legend();
 
-  static const _tags = [
-    ('intro', kAccent, 'Intro'),
-    ('dfa', Color(0xFF69FF47), 'DFA'),
-    ('nfa', Color(0xFFFFD740), 'NFA'),
-    ('pda', Color(0xFFFF6D00), 'PDA'),
-    ('tm', Color(0xFFE040FB), 'TM'),
-    ('boss', Color(0xFFFF1744), 'Boss'),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final tags = [
+      ('intro', theme.accent, 'Intro'),
+      ('dfa', Color(0xFF69FF47), 'DFA'),
+      ('nfa', Color(0xFFFFD740), 'NFA'),
+      ('pda', Color(0xFFFF6D00), 'PDA'),
+      ('tm', Color(0xFFE040FB), 'TM'),
+      ('boss', Color(0xFFFF1744), 'Boss'),
+    ];
     return Positioned(
       left: 0,
       right: 0,
@@ -897,25 +899,25 @@ class _Legend extends StatelessWidget {
               children: [
                 // ── Node state indicators ──────────────────────────────
                 _LegendItem(
-                  icon: const Icon(Icons.check_circle, color: kTextLight, size: 11),
+                  icon: Icon(Icons.check_circle, color: theme.textLight, size: 11),
                   label: 'Completed',
-                  color: kTextLight,
+                  color: theme.textLight,
                 ),
                 _LegendItem(
-                  icon: const Icon(Icons.radio_button_unchecked, color: kTextMid, size: 11),
+                  icon: Icon(Icons.radio_button_unchecked, color: theme.textMid, size: 11),
                   label: 'Available',
-                  color: kTextMid,
+                  color: theme.textMid,
                 ),
                 _LegendItem(
-                  icon: const Icon(Icons.lock_outline, color: kTextDim, size: 11),
+                  icon: Icon(Icons.lock_outline, color: theme.textDim, size: 11),
                   label: 'Locked',
-                  color: kTextDim,
+                  color: theme.textDim,
                 ),
 
-                Container(width: 1, height: 14, color: kBorderMid),
+                Container(width: 1, height: 14, color: theme.borderMid),
 
                 // ── Tag colours ────────────────────────────────────────
-                for (final (_, color, label) in _tags)
+                for (final (_, color, label) in tags)
                   _LegendItem(
                     icon: Container(
                       width: 8,
@@ -926,7 +928,7 @@ class _Legend extends StatelessWidget {
                     color: color.withOpacity(0.85),
                   ),
 
-                Container(width: 1, height: 14, color: kBorderMid),
+                Container(width: 1, height: 14, color: theme.borderMid),
 
                 // ── Edge state indicators ──────────────────────────────
                 _LegendItem(
@@ -1044,10 +1046,14 @@ class _LegendItem extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _GridPainter extends CustomPainter {
+  const _GridPainter({required this.gridColor});
+
+  final Color gridColor;
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = _kGridLine
+      ..color = gridColor
       ..strokeWidth = 0.5;
     const spacing = 40.0;
     for (double x = 0; x < size.width; x += spacing) {
@@ -1059,7 +1065,7 @@ class _GridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_GridPainter old) => false;
+  bool shouldRepaint(_GridPainter old) => old.gridColor != gridColor;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

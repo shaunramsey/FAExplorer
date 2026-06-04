@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import 'widgets/app_theme.dart';
 import 'game_gate.dart';
@@ -10,30 +11,17 @@ import 'firebase_options.dart';
 
 export 'automata_screen.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Shared palette — mirrors level_select_screen.dart exactly so every screen
-//  speaks the same visual language.
-// ─────────────────────────────────────────────────────────────────────────────
-const kBg          = Color(0xFF05080F);
-const kGridLine    = Color(0xFF0D1620);
-const kAccent      = Color(0xFF00E5FF);   // cyan highlight
-const kAccentGreen = Color(0xFF1FD99A);   // edge-bright teal
-const kTextDim     = Color(0xFF8A9BB0);
-const kTextMid     = Color(0xFFB0BDCC);
-const kTextLight   = Color(0xFFE8ECF0);
-const kSurface     = Color(0xFF0A0F18);
-const kBorder      = Color(0xFF141E2A);
-const kBorderMid   = Color(0xFF1A2535);
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  final themeNotifier = await AppThemeNotifier.load();
+
   // Keep status/nav bars transparent so the dark bg bleeds through.
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarBrightness: Brightness.dark,
     statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: kBg,
+    systemNavigationBarColor: themeNotifier.bg,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
@@ -49,14 +37,17 @@ Future<void> main() async {
     }
   }
 
-  final authService   = AuthService(firebaseEnabled: firebaseEnabled);
-  final themeNotifier = await AppThemeNotifier.load();
+  final authService = AuthService(firebaseEnabled: firebaseEnabled);
 
-  runApp(MyApp(
-    authService: authService,
-    firebaseEnabled: firebaseEnabled,
-    themeNotifier: themeNotifier,
-  ));
+  runApp(
+    ChangeNotifierProvider<AppThemeNotifier>.value(
+      value: themeNotifier,
+      child: MyApp(
+        authService: authService,
+        firebaseEnabled: firebaseEnabled,
+      ),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -64,33 +55,26 @@ class MyApp extends StatelessWidget {
     super.key,
     required this.authService,
     required this.firebaseEnabled,
-    required this.themeNotifier,
   });
 
   final AuthService authService;
   final bool firebaseEnabled;
-  final AppThemeNotifier themeNotifier;
 
   @override
   Widget build(BuildContext context) {
-    return AppThemeScope(
-      notifier: themeNotifier,
-      child: ListenableBuilder(
-        listenable: themeNotifier,
-        builder: (context, _) => MaterialApp(
-          title: 'Automata Designer',
-          debugShowCheckedModeBanner: false,
-          theme: _buildTheme(themeNotifier.data),
-          home: AppGate(
-            authService: authService,
-            firebaseEnabled: firebaseEnabled,
-          ),
-        ),
+    final themeNotifier = context.watch<AppThemeNotifier>();
+    return MaterialApp(
+      title: 'Automata Designer',
+      debugShowCheckedModeBanner: false,
+      theme: _buildTheme(themeNotifier.data),
+      home: AppGate(
+        authService: authService,
+        firebaseEnabled: firebaseEnabled,
       ),
     );
   }
 
-  ThemeData _buildTheme(AppThemeData c) {
+  static ThemeData _buildTheme(AppThemeData c) {
     final base = ThemeData.dark();
 
     return base.copyWith(

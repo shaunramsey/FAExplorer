@@ -1,18 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import '../models.dart';
 import '../pda_simulator.dart';
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Theme palette (mirrors main.dart)
-// ─────────────────────────────────────────────────────────────────────────────
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kTextLight = Color(0xFFCDD5E0);
-const _kTextMid   = Color(0xFF6B7E96);
-const _kTextDim   = Color(0xFF3A4A5E);
-const _kAccent    = Color(0xFF00E5FF);
+import 'app_theme.dart';
 
 /// Floating panel: NPDA configurations (state, remaining input, stack) per step.
 class PdaStackPanel extends StatelessWidget {
@@ -29,6 +21,7 @@ class PdaStackPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final configs = simulator.activeConfigs;
     final result = simulator.finalResult();
     final atEnd = simulator.step == simulator.tokens.length;
@@ -48,11 +41,11 @@ class PdaStackPanel extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 300, maxHeight: 480),
           child: Card(
-            color: _kSurface,
+            color: theme.surface,
             elevation: 6,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: _kBorderMid),
+              side: BorderSide(color: theme.borderMid),
             ),
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -63,14 +56,14 @@ class PdaStackPanel extends StatelessWidget {
                   Row(
                     children: [
                       Icon(Icons.layers, size: 18,
-                          color: headerColor ?? _kAccent),
+                          color: headerColor ?? theme.accent),
                       const SizedBox(width: 6),
                       Text(
                         'PDA (NPDA)',
                         style: GoogleFonts.courierPrime(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: headerColor ?? _kTextLight,
+                          color: headerColor ?? theme.textLight,
                         ),
                       ),
                       const Spacer(),
@@ -95,9 +88,9 @@ class PdaStackPanel extends StatelessWidget {
                         : simulator.step < 0
                             ? 'Before input'
                             : 'After token ${simulator.step} / ${simulator.tokens.length}',
-                    style: GoogleFonts.courierPrime(fontSize: 11, color: _kTextDim),
+                    style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim),
                   ),
-                  Divider(height: 16, color: _kBorderMid),
+                  Divider(height: 16, color: theme.borderMid),
                   if (simulator.stackGrowthLoopDetected)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -135,7 +128,7 @@ class PdaStackPanel extends StatelessWidget {
                                     style: GoogleFonts.courierPrime(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: _kTextDim,
+                                      color: theme.textDim,
                                     ),
                                   ),
                                 ),
@@ -174,13 +167,14 @@ class _ConfigCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: const Color(0xFF080D14),
+        color: theme.bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _kBorderMid),
+        border: Border.all(color: theme.borderMid),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,7 +189,7 @@ class _ConfigCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'stack',
-            style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
+            style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
           ),
           const SizedBox(height: 4),
           _StackView(stack: stack),
@@ -218,6 +212,7 @@ class _RowLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -225,7 +220,7 @@ class _RowLabel extends StatelessWidget {
           width: 44,
           child: Text(
             label,
-            style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
+            style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
           ),
         ),
         Expanded(
@@ -234,7 +229,7 @@ class _RowLabel extends StatelessWidget {
             style: GoogleFonts.courierPrime(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: muted ? _kTextDim : _kTextLight,
+              color: muted ? theme.textDim : theme.textLight,
             ),
           ),
         ),
@@ -250,18 +245,19 @@ class _StackView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     if (stack.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF080D14),
+          color: theme.bg,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: _kBorderMid),
+          border: Border.all(color: theme.borderMid),
         ),
         child: Text(
           '(empty)',
-          style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextDim),
+          style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textDim),
           textAlign: TextAlign.center,
         ),
       );
@@ -297,6 +293,7 @@ class _StackCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final display = symbol.isEmpty ? 'ε' : symbol;
     final isBottomMarker = symbol == kStackBottom;
 
@@ -311,14 +308,14 @@ class _StackCell extends StatelessWidget {
           bottom: isBottom ? const Radius.circular(6) : Radius.zero,
         ),
         border: Border.all(
-          color: isTop ? const Color(0xFF00E5FF) : _kBorderMid,
+          color: isTop ? theme.accent : theme.borderMid,
           width: isTop ? 1.5 : 1,
         ),
       ),
       child: Row(
         children: [
           if (isTop) ...[
-            Icon(Icons.arrow_right, size: 16, color: _kAccent),
+            Icon(Icons.arrow_right, size: 16, color: theme.accent),
             const SizedBox(width: 4),
           ] else
             const SizedBox(width: 20),
@@ -328,19 +325,19 @@ class _StackCell extends StatelessWidget {
               style: GoogleFonts.courierPrime(
                 fontSize: 15,
                 fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
-                color: isTop ? _kAccent : _kTextMid,
+                color: isTop ? theme.accent : theme.textMid,
               ),
             ),
           ),
           if (isTop)
             Text(
               'top',
-              style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
+              style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
             ),
           if (isBottom && isBottomMarker)
             Text(
               'btm',
-              style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
+              style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
             ),
         ],
       ),

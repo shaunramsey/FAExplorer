@@ -12,6 +12,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import 'widgets/app_theme.dart';
 
 import 'game_level.dart';
 import 'game_progress_store.dart';
@@ -22,18 +25,6 @@ import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'node.dart';
 import 'line.dart';
 import 'start_arrow.dart';
-import 'main.dart'
-    show
-        kBg,
-        kSurface,
-        kBorder,
-        kBorderMid,
-        kAccent,
-        kAccentGreen,
-        kTextDim,
-        kTextMid,
-        kTextLight;
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 class GamePuzzleScreen extends StatefulWidget {
@@ -475,8 +466,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Scaffold(
-      backgroundColor: kBg,
+      backgroundColor: theme.bg,
       appBar: AppBar(
         title: Text(widget.level.title,
             style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
@@ -504,9 +496,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         fontWeight: FontWeight.w700, fontSize: 13)),
                 style: FilledButton.styleFrom(
                   backgroundColor: _isCorrect
-                      ? kAccentGreen
-                      : kAccent,
-                  foregroundColor: kBg,
+                      ? theme.accentGreen
+                      : theme.accent,
+                  foregroundColor: theme.bg,
                 ),
               ),
             ),
@@ -590,6 +582,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                             painter: _RubberBandPainter(
                               start: _nodes[_lineSourceNodeId!]!.center,
                               end: _rubberBandEnd!,
+                              color: theme.accent,
                             ),
                           ),
                         ),
@@ -681,7 +674,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
             icon: _lineMode ? Icons.timeline : Icons.add_link,
             active: _lineMode,
-            activeColor: kAccent,
+            activeColor: theme.accent,
             onPressed: () => setState(() => _lineMode = !_lineMode),
           ),
           const SizedBox(height: 10),
@@ -690,21 +683,23 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             tooltip: 'Clear canvas',
             icon: Icons.refresh,
             active: false,
-            activeColor: kAccent,
+            activeColor: theme.accent,
             small: true,
-            onPressed: () => showDialog(
+            onPressed: () {
+              final dialogTheme = AppThemeNotifier.read(context);
+              showDialog(
               context: context,
               builder: (_) => AlertDialog(
-                backgroundColor: kSurface,
+                backgroundColor: dialogTheme.surface,
                 surfaceTintColor: Colors.transparent,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: kBorderMid),
+                  side: BorderSide(color: dialogTheme.borderMid),
                 ),
                 title: Text(
                   'Clear canvas?',
                   style: GoogleFonts.orbitron(
-                    color: kTextLight,
+                    color: dialogTheme.textLight,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1,
@@ -713,7 +708,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 content: Text(
                   'This will delete all your work on this puzzle.',
                   style: GoogleFonts.sourceCodePro(
-                    color: kTextMid,
+                    color: dialogTheme.textMid,
                     fontSize: 13,
                   ),
                 ),
@@ -721,7 +716,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     style: TextButton.styleFrom(
-                      foregroundColor: kTextDim,
+                      foregroundColor: dialogTheme.textDim,
                     ),
                     child: Text('Cancel',
                         style: GoogleFonts.orbitron(fontSize: 11, letterSpacing: 1)),
@@ -748,7 +743,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                   ),
                 ],
               ),
-            ),
+            );
+            },
           ),
         ],
       ),
@@ -775,9 +771,10 @@ class _GoalBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Container(
       width: double.infinity,
-      color: kSurface,
+      color: theme.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -787,14 +784,14 @@ class _GoalBanner extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(
                 left: BorderSide(color: tagColor, width: 4),
-                bottom: const BorderSide(color: kBorderMid),
+                bottom: BorderSide(color: theme.borderMid),
               ),
             ),
             child: Text(
               description,
               style: GoogleFonts.sourceCodePro(
                 fontSize: 13,
-                color: kTextMid,
+                color: theme.textMid,
                 height: 1.5,
               ),
             ),
@@ -806,14 +803,14 @@ class _GoalBanner extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: isCorrect
-                  ? const Color(0xFF0D2A1F)   // tinted from kAccentGreen
-                  : const Color(0xFF1F0D0D),  // tinted from error
+                  ? theme.accentGreen.withOpacity(0.12)
+                  : const Color(0xFF1F0D0D),
               child: Text(
                 checkResult!,
                 style: GoogleFonts.sourceCodePro(
                   fontSize: 12,
                   color: isCorrect
-                      ? kAccentGreen
+                      ? theme.accentGreen
                       : const Color(0xFFFF6B6B),
                   height: 1.5,
                 ),
@@ -861,10 +858,11 @@ class _SuccessDialogState extends State<_SuccessDialog>
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final tagColor = levelTagColor(widget.level.tag);
 
     return Dialog(
-      backgroundColor: kBg,
+      backgroundColor: theme.bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: tagColor.withOpacity(0.8), width: 2),
@@ -950,12 +948,16 @@ class _SuccessDialogState extends State<_SuccessDialog>
 class _RubberBandPainter extends CustomPainter {
   final Offset start;
   final Offset end;
+  final Color color;
 
-  const _RubberBandPainter({required this.start, required this.end});
+  const _RubberBandPainter({
+    required this.start,
+    required this.end,
+    required this.color,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    const color = Color.fromARGB(255, 0, 229, 255); // kAccent — matches the rest of the canvas
     const strokeWidth = 2.5;
     const arrowLen = 14.0;
     const arrowWing = 8.0;
@@ -1002,7 +1004,7 @@ class _RubberBandPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RubberBandPainter old) =>
-      old.start != start || old.end != end;
+      old.start != start || old.end != end || old.color != color;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1029,15 +1031,16 @@ class _PaletteFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const bgIdle = kSurface;
-    const fgIdle = kTextDim;
-    const border = kBorderMid;
+    final theme = context.watch<AppThemeNotifier>();
+    final bgIdle = theme.surface;
+    final fgIdle = theme.textDim;
+    final border = theme.borderMid;
 
     final bg = active ? activeColor.withOpacity(0.14) : bgIdle;
     final fg = active ? activeColor : fgIdle;
     final side = active
         ? BorderSide(color: activeColor.withOpacity(0.7), width: 1.5)
-        : const BorderSide(color: border, width: 1);
+        : BorderSide(color: border, width: 1);
 
     final size = small ? 36.0 : 48.0;
     final iconSize = small ? 18.0 : 22.0;

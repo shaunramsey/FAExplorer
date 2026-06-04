@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import 'auth/auth_mode.dart';
 import 'auth/auth_service.dart';
@@ -7,11 +8,7 @@ import 'automata_screen.dart';
 import 'data/automata_session_store.dart';
 import 'data/firebase_session_store.dart';
 import 'login_screen.dart';
-
-// Palette shared with level_select_screen.dart / main.dart
-const _kBg      = Color(0xFF05080F);
-const _kAccent  = Color(0xFF00E5FF);
-const _kTextDim = Color(0xFF3A4A5E);
+import 'widgets/app_theme.dart';
 
 class AppGate extends StatefulWidget {
   const AppGate({
@@ -113,13 +110,14 @@ class _LoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: theme.bg,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Spinning accent ring
             AnimatedBuilder(
               animation: spinCtrl,
               builder: (_, __) => Transform.rotate(
@@ -130,7 +128,7 @@ class _LoadingScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: _kAccent.withOpacity(0.15),
+                      color: theme.accent.withOpacity(0.15),
                       width: 2,
                     ),
                   ),
@@ -140,9 +138,9 @@ class _LoadingScreen extends StatelessWidget {
                       width: 6,
                       height: 6,
                       margin: const EdgeInsets.only(top: 2),
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _kAccent,
+                        color: theme.accent,
                       ),
                     ),
                   ),
@@ -155,7 +153,7 @@ class _LoadingScreen extends StatelessWidget {
             Text(
               'INITIALISING',
               style: GoogleFonts.orbitron(
-                color: _kTextDim,
+                color: theme.textDim,
                 fontSize: 10,
                 letterSpacing: 4,
                 fontWeight: FontWeight.w500,

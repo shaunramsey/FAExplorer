@@ -7,15 +7,24 @@
 //
 //  Usage (in main.dart):
 //    final themeNotifier = await AppThemeNotifier.load();
-//    runApp(MyApp(themeNotifier: themeNotifier));
+//    runApp(
+//      ChangeNotifierProvider(
+//        create: (_) => themeNotifier,
+//        child: const MyApp(),
+//      ),
+//    );
 //
 //  Usage (anywhere in the widget tree):
-//    final colors = AppThemeNotifier.of(context);
-//    colors.accent   // live accent Color
+//    final theme = context.watch<AppThemeNotifier>();
+//    theme.accent   // live accent Color — widget rebuilds when it changes
+//
+//    // Or without listening (e.g. in callbacks):
+//    context.read<AppThemeNotifier>().setColor('accent', Colors.cyan);
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -219,62 +228,15 @@ class AppThemeNotifier extends ChangeNotifier {
     }
   }
 
-  // ── InheritedWidget bridge ────────────────────────────────────────────────
+  // ── Provider bridge ───────────────────────────────────────────────────────
 
-  /// Wrap your [MaterialApp] (or any subtree) with [AppThemeScope] and then
-  /// call [AppThemeNotifier.of(context)] anywhere in the tree.
-  static AppThemeNotifier of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<_AppThemeScope>();
-    assert(scope != null, 'No AppThemeScope found in the widget tree.');
-    return scope!.notifier;
-  }
-}
+  /// Listen for theme changes and rebuild (same as [context.watch]).
+  static AppThemeNotifier of(BuildContext context) =>
+      context.watch<AppThemeNotifier>();
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  AppThemeScope — InheritedWidget that carries the notifier down the tree
-// ─────────────────────────────────────────────────────────────────────────────
-
-class AppThemeScope extends StatefulWidget {
-  const AppThemeScope({super.key, required this.notifier, required this.child});
-
-  final AppThemeNotifier notifier;
-  final Widget child;
-
-  @override
-  State<AppThemeScope> createState() => _AppThemeScopeState();
-}
-
-class _AppThemeScopeState extends State<AppThemeScope> {
-  @override
-  void initState() {
-    super.initState();
-    widget.notifier.addListener(_onThemeChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.notifier.removeListener(_onThemeChanged);
-    super.dispose();
-  }
-
-  void _onThemeChanged() => setState(() {});
-
-  @override
-  Widget build(BuildContext context) {
-    return _AppThemeScope(
-      notifier: widget.notifier,
-      child: widget.child,
-    );
-  }
-}
-
-class _AppThemeScope extends InheritedWidget {
-  const _AppThemeScope({required this.notifier, required super.child});
-
-  final AppThemeNotifier notifier;
-
-  @override
-  bool updateShouldNotify(_AppThemeScope old) => notifier.data != old.notifier.data;
+  /// Read without subscribing — use in callbacks after the widget has built.
+  static AppThemeNotifier read(BuildContext context) =>
+      context.read<AppThemeNotifier>();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

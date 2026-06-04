@@ -3,21 +3,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import '../dsl_code.dart';
+import '../widgets/app_theme.dart';
 import '../fa_equivalence.dart';
 import '../widgets/automata_drawer.dart' show AutomataMode;
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Theme palette (mirrors main.dart)
-// ─────────────────────────────────────────────────────────────────────────────
-const _kBg        = Color(0xFF05080F);
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kAccent    = Color(0xFF00E5FF);
-const _kTextLight = Color(0xFFCDD5E0);
-const _kTextMid   = Color(0xFF6B7E96);
-const _kTextDim   = Color(0xFF3A4A5E);
 
 Future<void> showEquivalenceDialog(
   BuildContext context, {
@@ -136,6 +127,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
   // ── UI ────────────────────────────────────────────────────────────────────
 
   Widget _dslEditor(
+    AppThemeNotifier theme,
     TextEditingController ctrl,
     String label,
     String? error,
@@ -148,28 +140,28 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
           style: GoogleFonts.courierPrime(
             fontWeight: FontWeight.bold,
             fontSize: 14,
-            color: _kTextLight,
+            color: theme.textLight,
           ),
         ),
         const SizedBox(height: 6),
         Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF080D14),
+            color: theme.bg,
             border: Border.all(
-              color: error != null ? const Color(0xFFFF1744) : _kBorderMid,
+              color: error != null ? const Color(0xFFFF1744) : theme.borderMid,
             ),
             borderRadius: BorderRadius.circular(6),
           ),
           child: TextField(
             controller: ctrl,
             maxLines: 14,
-            style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextLight),
-            cursorColor: _kAccent,
+            style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textLight),
+            cursorColor: theme.accent,
             decoration: InputDecoration(
               contentPadding: const EdgeInsets.all(10),
               border: InputBorder.none,
               hintText: 'Paste DSL here…',
-              hintStyle: GoogleFonts.courierPrime(color: _kTextDim, fontSize: 13),
+              hintStyle: GoogleFonts.courierPrime(color: theme.textDim, fontSize: 13),
             ),
           ),
         ),
@@ -248,8 +240,9 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Dialog(
-      backgroundColor: _kSurface,
+      backgroundColor: theme.surface,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 720, maxHeight: 800),
@@ -262,25 +255,25 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
               padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
               child: Row(
                 children: [
-                  Icon(Icons.compare_arrows, color: _kAccent),
+                  Icon(Icons.compare_arrows, color: theme.accent),
                   const SizedBox(width: 8),
                   Text(
                     'Compare Automata',
                     style: GoogleFonts.courierPrime(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: _kTextLight),
+                        color: theme.textLight),
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: Icon(Icons.close, color: _kTextMid),
+                    icon: Icon(Icons.close, color: theme.textMid),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
             ),
 
-            Divider(height: 16, color: _kBorderMid),
+            Divider(height: 16, color: theme.borderMid),
 
             Expanded(
               child: SingleChildScrollView(
@@ -294,13 +287,13 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                       decoration: BoxDecoration(
                         color: const Color(0xFF080D14),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: _kBorderMid),
+                        border: Border.all(color: theme.borderMid),
                       ),
                       child: Text(
                         'Paste the DSL for two automata. For NFA/DFA, the checker can prove equivalence exactly. '
                         'For PDA/TM, it performs a bounded search for a distinguishing input string. '
                         'If no counterexample is found within the search bound, equivalence remains unknown.',
-                        style: GoogleFonts.courierPrime(fontSize: 12, color: _kTextMid),
+                        style: GoogleFonts.courierPrime(fontSize: 12, color: theme.textMid),
                       ),
                     ),
 
@@ -313,17 +306,17 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(child: _dslEditor(_ctrlA, 'Automaton A', _errorA)),
+                            Expanded(child: _dslEditor(theme, _ctrlA, 'Automaton A', _errorA)),
                             const SizedBox(width: 16),
-                            Expanded(child: _dslEditor(_ctrlB, 'Automaton B', _errorB)),
+                            Expanded(child: _dslEditor(theme, _ctrlB, 'Automaton B', _errorB)),
                           ],
                         );
                       }
                       return Column(
                         children: [
-                          _dslEditor(_ctrlA, 'Automaton A', _errorA),
+                          _dslEditor(theme, _ctrlA, 'Automaton A', _errorA),
                           const SizedBox(height: 16),
-                          _dslEditor(_ctrlB, 'Automaton B', _errorB),
+                          _dslEditor(theme, _ctrlB, 'Automaton B', _errorB),
                         ],
                       );
                     }),
@@ -336,7 +329,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
               ),
             ),
 
-            Divider(height: 1, color: _kBorderMid),
+            Divider(height: 1, color: theme.borderMid),
 
             // ── Actions ─────────────────────────────────────────────────────
             Padding(
@@ -346,7 +339,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(foregroundColor: _kTextMid),
+                    style: TextButton.styleFrom(foregroundColor: theme.textMid),
                     child: const Text('Close'),
                   ),
                   const SizedBox(width: 8),
@@ -415,7 +408,10 @@ class _Banner extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   body,
-                  style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextMid),
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 13,
+                    color: context.watch<AppThemeNotifier>().textMid,
+                  ),
                 ),
               ],
             ),

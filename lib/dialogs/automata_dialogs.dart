@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+import '../widgets/app_theme.dart';
 import '../models.dart';
 import '../dsl_code.dart';
 import '../pda_simulator.dart';
@@ -9,16 +11,6 @@ import '../simulator.dart';
 import '../svg_export.dart';
 import '../tm_simulator.dart';
 import '../widgets/automata_drawer.dart' show AutomataMode;
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Theme palette (mirrors main.dart)
-// ─────────────────────────────────────────────────────────────────────────────
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kAccent    = Color(0xFF00E5FF);
-const _kTextLight = Color(0xFFCDD5E0);
-const _kTextMid   = Color(0xFF6B7E96);
-const _kTextDim   = Color(0xFF3A4A5E);
 
 void showExportDialog(
   BuildContext context, {
@@ -29,21 +21,22 @@ void showExportDialog(
   required StartArrowData? startArrow,
   required void Function(String name, String dsl) onSave,
 }) {
+  final theme = AppThemeNotifier.read(context);
   final nameController = TextEditingController(text: 'Export ${savedExportCount + 1}');
 
   showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      backgroundColor: _kSurface,
+      backgroundColor: theme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: _kBorderMid),
+        side: BorderSide(color: theme.borderMid),
       ),
       title: Text(
         'Export',
         style: GoogleFonts.courierPrime(
           fontWeight: FontWeight.bold,
-          color: _kTextLight,
+          color: theme.textLight,
         ),
       ),
       content: SizedBox(
@@ -54,7 +47,7 @@ void showExportDialog(
           children: [
             TextField(
               controller: nameController,
-              style: GoogleFonts.courierPrime(color: _kTextLight, fontSize: 13),
+              style: GoogleFonts.courierPrime(color: theme.textLight, fontSize: 13),
               decoration: InputDecoration(
                 labelText: 'Save Name',
                 border: const OutlineInputBorder(),
@@ -63,7 +56,7 @@ void showExportDialog(
             const SizedBox(height: 12),
             Text(
               'Copied to clipboard.',
-              style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextMid),
+              style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textMid),
             ),
             const SizedBox(height: 10),
             ConstrainedBox(
@@ -71,15 +64,15 @@ void showExportDialog(
               child: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF080D14),
+                  color: theme.bg,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _kBorderMid),
+                  border: Border.all(color: theme.borderMid),
                 ),
                 child: SingleChildScrollView(
                   child: SelectableText(
                     dsl.isEmpty ? '(empty graph)' : dsl,
                     style: GoogleFonts.courierPrime(
-                        fontSize: 13, color: _kTextMid),
+                        fontSize: 13, color: theme.textMid),
                   ),
                 ),
               ),
@@ -139,6 +132,7 @@ void showImportDialog(
   BuildContext context, {
   required String? Function(String text, {required bool isSvg}) onImport,
 }) {
+  final theme = AppThemeNotifier.read(context);
   final controller = TextEditingController();
   String? errorText;
 
@@ -159,15 +153,15 @@ void showImportDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setDialogState) => AlertDialog(
-        backgroundColor: _kSurface,
+        backgroundColor: theme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: _kBorderMid),
+          side: BorderSide(color: theme.borderMid),
         ),
         title: Text(
           'Import',
           style: GoogleFonts.courierPrime(
-              fontWeight: FontWeight.bold, color: _kTextLight),
+              fontWeight: FontWeight.bold, color: theme.textLight),
         ),
         content: SizedBox(
           width: double.maxFinite,
@@ -182,13 +176,13 @@ void showImportDialog(
                   maxLines: null,
                   expands: true,
                   style: GoogleFonts.courierPrime(
-                      fontSize: 13, color: _kTextLight),
-                  cursorColor: _kAccent,
+                      fontSize: 13, color: theme.textLight),
+                  cursorColor: theme.accent,
                   decoration: InputDecoration(
                     border: const OutlineInputBorder(),
                     hintText: hint,
                     hintStyle: GoogleFonts.courierPrime(
-                        fontSize: 11, color: _kTextDim),
+                        fontSize: 11, color: theme.textDim),
                     errorText: errorText,
                     errorMaxLines: 3,
                   ),
@@ -239,21 +233,23 @@ void showExportHistoryDialog(
   required void Function(SavedExport blackBox) onInsertBlackBox,
   required void Function() onListChanged,
 }) {
+  final theme = AppThemeNotifier.read(context);
+
   showDialog(
     context: context,
     builder: (ctx) {
       return StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            backgroundColor: _kSurface,
+            backgroundColor: theme.surface,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: _kBorderMid),
+              side: BorderSide(color: theme.borderMid),
             ),
             title: Text(
               'Saved Exports',
               style: GoogleFonts.courierPrime(
-                  fontWeight: FontWeight.bold, color: _kTextLight),
+                  fontWeight: FontWeight.bold, color: theme.textLight),
             ),
             content: SizedBox(
               width: double.maxFinite,
@@ -262,7 +258,7 @@ void showExportHistoryDialog(
                   ? Center(
                       child: Text(
                         'No saved exports',
-                        style: GoogleFonts.courierPrime(color: _kTextDim),
+                        style: GoogleFonts.courierPrime(color: theme.textDim),
                       ),
                     )
                   : ListView.builder(
@@ -274,12 +270,12 @@ void showExportHistoryDialog(
                         final save = savedExports[index];
                         return ListTile(
                           title: Text(save.name,
-                              style: TextStyle(color: _kTextLight)),
+                              style: TextStyle(color: theme.textLight)),
                           leading: save.isBlackBox
                               ? Icon(Icons.inbox_rounded,
-                                  color: _kTextMid)
+                                  color: theme.textMid)
                               : Icon(Icons.account_tree_outlined,
-                                  color: _kTextMid),
+                                  color: theme.textMid),
                           subtitle: Text(
                             save.isBlackBox
                                 ? 'Black box machine'
@@ -288,7 +284,7 @@ void showExportHistoryDialog(
                                     : save.dsl.split('\n').first),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: _kTextDim),
+                            style: TextStyle(color: theme.textDim),
                           ),
                           onTap: () {
                             if (save.isBlackBox) {
@@ -310,7 +306,7 @@ void showExportHistoryDialog(
                               if (save.isBlackBox)
                                 IconButton(
                                   icon: Icon(Icons.add_box_outlined,
-                                      color: _kTextMid),
+                                      color: theme.textMid),
                                   tooltip: 'Insert as black box',
                                   onPressed: () {
                                     Navigator.of(ctx).pop();
@@ -321,28 +317,28 @@ void showExportHistoryDialog(
                                 IconButton(
                                   icon: Icon(
                                       Icons.input_rounded,
-                                      color: _kTextMid),
+                                      color: theme.textMid),
                                   tooltip: 'Load',
                                   onPressed: () {
                                     showDialog(
                                       context: context,
                                       builder: (_) => AlertDialog(
-                                        backgroundColor: _kSurface,
+                                        backgroundColor: theme.surface,
                                         shape: RoundedRectangleBorder(
                                           borderRadius:
                                               BorderRadius.circular(12),
                                           side:
-                                              BorderSide(color: _kBorderMid),
+                                              BorderSide(color: theme.borderMid),
                                         ),
                                         title: Text(
                                           'Load "${save.name}"?',
                                           style: TextStyle(
-                                              color: _kTextLight),
+                                              color: theme.textLight),
                                         ),
                                         content: Text(
                                           'This will replace the current graph.',
                                           style: TextStyle(
-                                              color: _kTextMid),
+                                              color: theme.textMid),
                                         ),
                                         actions: [
                                           TextButton(
@@ -373,27 +369,27 @@ void showExportHistoryDialog(
                                   },
                                 ),
                               IconButton(
-                                icon: Icon(Icons.edit, color: _kTextMid),
+                                icon: Icon(Icons.edit, color: theme.textMid),
                                 onPressed: () {
                                   final controller =
                                       TextEditingController(text: save.name);
                                   showDialog(
                                     context: context,
                                     builder: (_) => AlertDialog(
-                                      backgroundColor: _kSurface,
+                                      backgroundColor: theme.surface,
                                       shape: RoundedRectangleBorder(
                                         borderRadius:
                                             BorderRadius.circular(12),
                                         side:
-                                            BorderSide(color: _kBorderMid),
+                                            BorderSide(color: theme.borderMid),
                                       ),
                                       title: Text('Rename Export',
                                           style:
-                                              TextStyle(color: _kTextLight)),
+                                              TextStyle(color: theme.textLight)),
                                       content: TextField(
                                         controller: controller,
-                                        style: TextStyle(color: _kTextLight),
-                                        cursorColor: _kAccent,
+                                        style: TextStyle(color: theme.textLight),
+                                        cursorColor: theme.accent,
                                       ),
                                       actions: [
                                         TextButton(
@@ -448,6 +444,7 @@ void showBlackBoxRunnerDialog(
   BuildContext context, {
   required SavedExport save,
 }) {
+  final theme = AppThemeNotifier.read(context);
   final inputController = TextEditingController();
   String output = '';
   String? errorText;
@@ -456,15 +453,15 @@ void showBlackBoxRunnerDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setDialogState) => AlertDialog(
-        backgroundColor: _kSurface,
+        backgroundColor: theme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: _kBorderMid),
+          side: BorderSide(color: theme.borderMid),
         ),
         title: Text(
           save.name,
           style: GoogleFonts.courierPrime(
-              fontWeight: FontWeight.bold, color: _kTextLight),
+              fontWeight: FontWeight.bold, color: theme.textLight),
         ),
         content: SizedBox(
           width: 700,
@@ -474,19 +471,19 @@ void showBlackBoxRunnerDialog(
             children: [
               Text(
                 'Black box machine',
-                style: TextStyle(color: _kTextMid),
+                style: TextStyle(color: theme.textMid),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: inputController,
                 maxLines: 8,
                 style: GoogleFonts.courierPrime(
-                    fontSize: 13, color: _kTextLight),
-                cursorColor: _kAccent,
+                    fontSize: 13, color: theme.textLight),
+                cursorColor: theme.accent,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
                   hintText: 'One input string per line',
-                  hintStyle: TextStyle(color: _kTextDim),
+                  hintStyle: TextStyle(color: theme.textDim),
                   errorText: errorText,
                 ),
               ),
@@ -496,9 +493,9 @@ void showBlackBoxRunnerDialog(
                 constraints: const BoxConstraints(maxHeight: 220),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  border: Border.all(color: _kBorderMid),
+                  border: Border.all(color: theme.borderMid),
                   borderRadius: BorderRadius.circular(6),
-                  color: const Color(0xFF080D14),
+                  color: theme.bg,
                 ),
                 child: SingleChildScrollView(
                   child: SelectableText(
@@ -506,7 +503,7 @@ void showBlackBoxRunnerDialog(
                         ? 'Output will list only accepted strings and changes.'
                         : output,
                     style: GoogleFonts.courierPrime(
-                        fontSize: 13, color: _kTextMid),
+                        fontSize: 13, color: theme.textMid),
                   ),
                 ),
               ),
