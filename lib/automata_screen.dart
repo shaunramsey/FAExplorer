@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'models.dart';
 import 'data/automata_session_store.dart';
 import 'preferences_store.dart';
@@ -17,7 +18,9 @@ import 'dialogs/automata_dialogs.dart';
 import 'dialogs/batch_simulator_dialog.dart';
 import 'dialogs/equivalence_dialog.dart';
 import 'widgets/automata_drawer.dart';
+import 'widgets/app_theme.dart';
 import 'widgets/help_overlay.dart';
+import 'widgets/palette_fab.dart';
 import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
@@ -835,60 +838,58 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         ],
       ),
 
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton(
-            heroTag: 'startArrow',
-            tooltip: 'Set start state',
-            backgroundColor: _placingStartArrow ? Colors.orange : null,
-            onPressed: () {
-              setState(() {
-                _placingStartArrow = !_placingStartArrow;
-              });
-            },
-            child: const Icon(Icons.play_arrow),
-          ),
-
-          const SizedBox(height: 12),
-
-          FloatingActionButton(
-            heroTag: 'deleteMode',
-            tooltip: 'Delete mode',
-            backgroundColor: _deleteMode ? Colors.red : null,
-            onPressed: () {
-              setState(() {
-                _deleteMode = !_deleteMode;
-
-                if (_deleteMode) {
-                  _lineMode = false;
-                  _placingStartArrow = false;
-                }
-              });
-            },
-            child: const Icon(Icons.delete),
-          ),
-
-          const SizedBox(height: 12),
-
-          FloatingActionButton(
-            heroTag: 'lineMode',
-            tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-            backgroundColor: _lineMode ? Colors.lightBlueAccent : null,
-            onPressed: () => _setLineMode(!_lineMode),
-            child: Icon(_lineMode ? Icons.timeline : Icons.add_link),
-          ),
-
-          const SizedBox(height: 12),
-
-          FloatingActionButton.small(
-            heroTag: 'toggleSim',
-            tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
-            backgroundColor: _showSimulator ? Colors.purple.shade100 : null,
-            onPressed: () => _setShowSimulator(!_showSimulator),
-            child: const Icon(Icons.science, size: 20),
-          ),
-        ],
+      floatingActionButton: Builder(
+        builder: (context) {
+          final theme = context.watch<AppThemeNotifier>();
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PaletteFab(
+                heroTag: 'startArrow',
+                tooltip: 'Set start state',
+                icon: Icons.play_arrow,
+                active: _placingStartArrow,
+                activeColor: const Color(0xFFFF6D00),
+                onPressed: () =>
+                    setState(() => _placingStartArrow = !_placingStartArrow),
+              ),
+              const SizedBox(height: 10),
+              PaletteFab(
+                heroTag: 'deleteMode',
+                tooltip: 'Delete mode',
+                icon: Icons.delete_outline,
+                active: _deleteMode,
+                activeColor: Theme.of(context).colorScheme.error,
+                onPressed: () => setState(() {
+                  _deleteMode = !_deleteMode;
+                  if (_deleteMode) {
+                    _lineMode = false;
+                    _placingStartArrow = false;
+                  }
+                }),
+              ),
+              const SizedBox(height: 10),
+              PaletteFab(
+                heroTag: 'lineMode',
+                tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
+                icon: _lineMode ? Icons.timeline : Icons.add_link,
+                active: _lineMode,
+                activeColor: theme.accent,
+                onPressed: () => _setLineMode(!_lineMode),
+              ),
+              const SizedBox(height: 10),
+              PaletteFab(
+                heroTag: 'toggleSim',
+                tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
+                icon: Icons.science,
+                active: _showSimulator,
+                activeColor: theme.accent,
+                small: true,
+                onPressed: () => _setShowSimulator(!_showSimulator),
+              ),
+            ],
+          );
+        },
       ),
 
       body: KeyboardListener(
