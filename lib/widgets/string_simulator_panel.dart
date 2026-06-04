@@ -2,22 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import '../models.dart';
+import 'app_theme.dart';
 import '../pda_simulator.dart';
 import '../simulator.dart';
 import '../tm_simulator.dart';
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Theme palette (mirrors main.dart)
-// ─────────────────────────────────────────────────────────────────────────────
-const _kBg        = Color(0xFF05080F);
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kAccent    = Color(0xFF00E5FF);
-const _kTextLight = Color(0xFFCDD5E0);
-const _kTextMid   = Color(0xFF6B7E96);
-const _kTextDim   = Color(0xFF3A4A5E);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Speed levels (ms per step)
@@ -312,6 +303,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final sim = widget.simulator;
     final tokens = sim.tokens;
     final step = sim.step;
@@ -368,9 +360,9 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
           margin: const EdgeInsets.fromLTRB(12, 12, 0, 0),
           width: 250,
           decoration: BoxDecoration(
-            color: _kSurface,
+            color: theme.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _kBorderMid, width: 1),
+            border: Border.all(color: theme.borderMid, width: 1),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.5),
@@ -378,7 +370,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                 offset: const Offset(0, 4),
               ),
               BoxShadow(
-                color: _kAccent.withOpacity(0.04),
+                color: theme.accent.withOpacity(0.04),
                 blurRadius: 24,
                 spreadRadius: -4,
               ),
@@ -393,19 +385,19 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                 padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
                 child: Row(
                   children: [
-                    Icon(Icons.science, size: 14, color: _kAccent),
+                    Icon(Icons.science, size: 14, color: theme.accent),
                     const SizedBox(width: 6),
                     Text(
                       'Simulator',
                       style: GoogleFonts.courierPrime(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
-                        color: _kTextLight,
+                        color: theme.textLight,
                       ),
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(Icons.close, size: 14, color: _kTextMid),
+                      icon: Icon(Icons.close, size: 14, color: theme.textMid),
                       onPressed: widget.onClose,
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.all(4),
@@ -415,7 +407,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                 ),
               ),
 
-              Divider(height: 1, color: _kBorderMid),
+              Divider(height: 1, color: theme.borderMid),
 
               // Body
               Padding(
@@ -431,12 +423,12 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                         _stopPlayback();
                         widget.onTextChanged();
                       },
-                      style: GoogleFonts.courierPrime(fontSize: 13, color: _kTextLight),
-                      cursorColor: _kAccent,
+                      style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textLight),
+                      cursorColor: theme.accent,
                       decoration: InputDecoration(
                         hintText: 'Input string…',
                         hintStyle: GoogleFonts.courierPrime(
-                          color: _kTextDim,
+                          color: theme.textDim,
                           fontSize: 13,
                         ),
                         isDense: true,
@@ -448,15 +440,15 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                         fillColor: const Color(0xFF080D14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: _kBorderMid),
+                          borderSide: BorderSide(color: theme.borderMid),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: _kBorderMid),
+                          borderSide: BorderSide(color: theme.borderMid),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: _kAccent, width: 1.5),
+                          borderSide: BorderSide(color: theme.accent, width: 1.5),
                         ),
                       ),
                     ),
@@ -531,8 +523,8 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                             color: (hasTokens && !atEnd)
                                 ? (_playing
                                     ? const Color.fromARGB(255, 208, 0, 255)
-                                    : _kBorderMid)
-                                : _kBg,
+                                    : theme.borderMid)
+                                : theme.bg,
                             borderRadius: BorderRadius.circular(18),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(18),
@@ -541,7 +533,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                 padding: const EdgeInsets.all(6),
                                 child: Icon(
                                   _playing ? Icons.pause : Icons.play_arrow,
-                                  color: _kTextLight,
+                                  color: theme.textLight,
                                   size: 17,
                                 ),
                               ),
@@ -571,7 +563,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                             value: i,
                             label: Text(
                               _kSpeedLabels[i],
-                              style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextMid),
+                              style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textMid),
                             ),
                           ),
                         ),
@@ -648,8 +640,9 @@ class _TransportBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return IconButton(
-      icon: Icon(icon, size: 17, color: onPressed != null ? _kTextLight : _kTextDim),
+      icon: Icon(icon, size: 17, color: onPressed != null ? theme.textLight : theme.textDim),
       tooltip: tooltip,
       onPressed: onPressed,
       visualDensity: VisualDensity.compact,
@@ -678,6 +671,8 @@ class _TokenChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+
     if (isCurrent) {
       return AnimatedBuilder(
         animation: pulseAnim,
@@ -693,16 +688,16 @@ class _TokenChip extends StatelessWidget {
     }
     if (isConsumed) {
       return _chip(
-        bg: const Color(0xFF0D1620),
-        fg: _kTextDim,
-        border: const Color(0xFF1A2535),
+        bg: theme.gridLine,
+        fg: theme.textDim,
+        border: theme.borderMid,
         bold: false,
       );
     }
     return _chip(
       bg: Colors.transparent,
-      fg: _kTextMid,
-      border: _kBorderMid,
+      fg: theme.textMid,
+      border: theme.borderMid,
       bold: false,
     );
   }
@@ -751,6 +746,8 @@ class _TapeCellChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+
     if (isHead) {
       return AnimatedBuilder(
         animation: pulseAnim,
@@ -784,16 +781,16 @@ class _TapeCellChip extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 28),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1620),
+        color: theme.gridLine,
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: _kBorderMid, width: 1),
+        border: Border.all(color: theme.borderMid, width: 1),
       ),
       child: Center(
         child: Text(
           cell == kBlank ? '∅' : cell,
           style: GoogleFonts.courierPrime(
             fontSize: 12,
-            color: _kTextMid,
+            color: theme.textMid,
             fontWeight: FontWeight.normal,
           ),
         ),

@@ -4,6 +4,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import 'widgets/app_theme.dart';
 import 'models.dart';
 import 'data/automata_session_store.dart';
 import 'preferences_store.dart';
@@ -25,19 +28,8 @@ import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
 import 'widgets/tm_config_panel.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Palette — mirrors level_select_screen.dart
-// ─────────────────────────────────────────────────────────────────────────────
-const _kBg        = Color(0xFF05080F);
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kAccent    = Color(0xFF00E5FF);   // cyan
-const _kGreen     = Color(0xFF1FD99A);   // teal / accept
-const _kRed       = Color(0xFFFF1744);   // delete
-const _kOrange    = Color(0xFFFF6D00);   // start arrow active
-const _kTextDim   = Color(0xFF3A4A5E);
-const _kTextMid   = Color(0xFF6B7E96);
-const _kTextLight = Color(0xFFCDD5E0);
+const _kRed    = Color(0xFFFF1744);   // delete
+const _kOrange = Color(0xFFFF6D00);   // start arrow active
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -843,12 +835,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+
     if (_loadingPrefs) {
       return Scaffold(
-        backgroundColor: _kBg,
+        backgroundColor: theme.bg,
         body: Center(
           child: CircularProgressIndicator(
-            color: _kAccent,
+            color: theme.accent,
             strokeWidth: 2,
           ),
         ),
@@ -856,7 +850,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     }
 
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: theme.bg,
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
@@ -890,14 +884,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       ),
 
       appBar: AppBar(
-        backgroundColor: _kSurface,
+        backgroundColor: theme.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: _kTextMid),
+        iconTheme: IconThemeData(color: theme.textMid),
         title: Text(
           'AUTOMATA DESIGNER',
           style: GoogleFonts.orbitron(
-            color: _kAccent,
+            color: theme.accent,
             fontSize: 13,
             fontWeight: FontWeight.w700,
             letterSpacing: 3,
@@ -905,7 +899,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: _kBorderMid),
+          child: Container(height: 1, color: theme.borderMid),
         ),
         actions: [
           if (widget.isGuest)
@@ -914,14 +908,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _kTextDim.withOpacity(0.1),
+                  color: theme.textDim.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: _kBorderMid),
+                  border: Border.all(color: theme.borderMid),
                 ),
                 child: Text(
                   'GUEST',
                   style: GoogleFonts.orbitron(
-                    color: _kTextDim,
+                    color: theme.textDim,
                     fontSize: 8,
                     letterSpacing: 2,
                     fontWeight: FontWeight.w600,
@@ -973,7 +967,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
             icon: _lineMode ? Icons.timeline : Icons.add_link,
             active: _lineMode,
-            activeColor: _kAccent,
+            activeColor: theme.accent,
             onPressed: () => _setLineMode(!_lineMode),
           ),
 
@@ -985,7 +979,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             tooltip: _showSimulator ? 'Hide simulator' : 'Show simulator',
             icon: Icons.science_outlined,
             active: _showSimulator,
-            activeColor: _kGreen,
+            activeColor: theme.accentGreen,
             small: true,
             onPressed: () => _setShowSimulator(!_showSimulator),
           ),
@@ -1202,15 +1196,13 @@ class _PaletteFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const bgIdle   = Color(0xFF0A0F18);
-    const fgIdle   = Color(0xFF6B7E96);
-    const border   = Color(0xFF1A2535);
+    final theme = context.watch<AppThemeNotifier>();
 
-    final bg = active ? activeColor.withOpacity(0.14) : bgIdle;
-    final fg = active ? activeColor : fgIdle;
+    final bg = active ? activeColor.withOpacity(0.14) : theme.surface;
+    final fg = active ? activeColor : theme.textMid;
     final side = active
         ? BorderSide(color: activeColor.withOpacity(0.7), width: 1.5)
-        : const BorderSide(color: border, width: 1);
+        : BorderSide(color: theme.borderMid, width: 1);
 
     final size = small ? 36.0 : 48.0;
     final iconSize = small ? 18.0 : 22.0;

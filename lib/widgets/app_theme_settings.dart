@@ -21,7 +21,7 @@ import 'app_theme.dart';
 
 void showAppThemeSettings(BuildContext context) {
   // Grab the notifier before closing the drawer (which pops context).
-  final notifier = AppThemeNotifier.of(context);
+  final notifier = AppThemeNotifier.read(context);
 
   // Close the drawer first so the sheet slides up cleanly.
   Navigator.of(context).pop();

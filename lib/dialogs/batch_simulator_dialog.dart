@@ -1,21 +1,13 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import '../widgets/app_theme.dart';
 import '../batch_highlight_controller.dart';
 import '../models.dart';
 import '../simulator.dart';
 import '../tm_simulator.dart';
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Theme palette (mirrors main.dart)
-// ─────────────────────────────────────────────────────────────────────────────
-const _kBg        = Color(0xFF05080F);
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kAccent    = Color(0xFF00E5FF);
-const _kTextLight = Color(0xFFCDD5E0);
-const _kTextMid   = Color(0xFF6B7E96);
-const _kTextDim   = Color(0xFF3A4A5E);
 
 Future<void> showBatchSimulatorDialog(
   BuildContext context, {
@@ -93,20 +85,21 @@ Future<void> showBatchSimulatorDialog(
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setLocalState) {
+          final theme = context.watch<AppThemeNotifier>();
           final acceptCount = accepted.length;
           final rejectCount = rejected.length;
           final totalRun    = acceptCount + rejectCount;
 
           return AlertDialog(
-            backgroundColor: _kSurface,
+            backgroundColor: theme.surface,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: _kBorderMid),
+              side: BorderSide(color: theme.borderMid),
             ),
             title: Text(
               'Batch String Simulator${tmSimulator != null ? ' (TM)' : ''}',
               style: GoogleFonts.courierPrime(
-                color: _kTextLight,
+                color: theme.textLight,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -121,24 +114,24 @@ Future<void> showBatchSimulatorDialog(
                       expands: true,
                       maxLines: null,
                       minLines: null,
-                      cursorColor: _kAccent,
+                      cursorColor: theme.accent,
                       style: GoogleFonts.courierPrime(
-                          color: _kTextLight, fontSize: 16),
+                          color: theme.textLight, fontSize: 16),
                       decoration: InputDecoration(
                         hintText: 'One string per line...\nPress enter to simulate.',
-                        hintStyle: GoogleFonts.courierPrime(color: _kTextDim),
+                        hintStyle: GoogleFonts.courierPrime(color: theme.textDim),
                         filled: true,
                         fillColor: const Color(0xFF080D14),
                         border: OutlineInputBorder(
-                          borderSide: BorderSide(color: _kBorderMid),
+                          borderSide: BorderSide(color: theme.borderMid),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: _kBorderMid),
+                          borderSide: BorderSide(color: theme.borderMid),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: _kAccent, width: 1.5),
+                          borderSide: BorderSide(color: theme.accent, width: 1.5),
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
@@ -173,8 +166,8 @@ Future<void> showBatchSimulatorDialog(
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0D1620),
-                            foregroundColor: _kTextMid,
-                            side: BorderSide(color: _kBorderMid),
+                            foregroundColor: theme.textMid,
+                            side: BorderSide(color: theme.borderMid),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),

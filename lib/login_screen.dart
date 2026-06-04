@@ -3,22 +3,12 @@ import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import 'auth/auth_service.dart';
+import 'widgets/app_theme.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Palette (mirrors level_select_screen.dart + main.dart)
-// ─────────────────────────────────────────────────────────────────────────────
-const _kBg        = Color(0xFF05080F);
-const _kGridLine  = Color(0xFF0D1620);
-const _kAccent    = Color(0xFF00E5FF);
-const _kGreen     = Color(0xFF1FD99A);
-const _kTextDim   = Color(0xFF8A9BB0);
-const _kTextMid   = Color(0xFFB0BDCC);
-const _kTextLight = Color(0xFFE8ECF0);
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kError     = Color(0xFFFF1744);
+const _kError = Color(0xFFFF1744);
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -110,8 +100,9 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: theme.bg,
       body: Stack(
         children: [
           // Animated grid background
@@ -119,7 +110,11 @@ class _LoginScreenState extends State<LoginScreen>
             animation: _bgCtrl,
             builder: (_, __) => CustomPaint(
               size: MediaQuery.of(context).size,
-              painter: _GridPainter(animValue: _bgCtrl.value),
+              painter: _GridPainter(
+                animValue: _bgCtrl.value,
+                gridColor: theme.gridLine,
+                accentColor: theme.accent,
+              ),
             ),
           ),
 
@@ -135,27 +130,27 @@ class _LoginScreenState extends State<LoginScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildHeader(),
+                        _buildHeader(theme),
                         const SizedBox(height: 36),
                         if (!widget.firebaseEnabled) _buildFirebaseWarning(),
                         if (!widget.firebaseEnabled) const SizedBox(height: 20),
-                        _buildEmailField(),
+                        _buildEmailField(theme),
                         const SizedBox(height: 14),
-                        _buildPasswordField(),
+                        _buildPasswordField(theme),
                         if (_error != null) ...[
                           const SizedBox(height: 12),
                           _buildError(),
                         ],
                         const SizedBox(height: 24),
-                        _buildSignInButton(),
+                        _buildSignInButton(theme),
                         const SizedBox(height: 10),
-                        _buildToggleRegisterButton(),
+                        _buildToggleRegisterButton(theme),
                         const SizedBox(height: 20),
-                        _buildDivider(),
+                        _buildDivider(theme),
                         const SizedBox(height: 20),
-                        _buildGuestButton(),
+                        _buildGuestButton(theme),
                         const SizedBox(height: 10),
-                        _buildGuestNote(),
+                        _buildGuestNote(theme),
                       ],
                     ),
                   ),
@@ -170,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   // ── Pieces ─────────────────────────────────────────────────────────────────
 
-  Widget _buildHeader() {
+  Widget _buildHeader(AppThemeNotifier theme) {
     return Column(
       children: [
         // Glowing title
@@ -178,13 +173,13 @@ class _LoginScreenState extends State<LoginScreen>
           'AUTOMATA',
           textAlign: TextAlign.center,
           style: GoogleFonts.orbitron(
-            color: _kAccent,
+            color: theme.accent,
             fontSize: 32,
             fontWeight: FontWeight.w900,
             letterSpacing: 6,
             shadows: [
-              Shadow(color: _kAccent.withOpacity(0.6), blurRadius: 18),
-              Shadow(color: _kAccent.withOpacity(0.3), blurRadius: 40),
+              Shadow(color: theme.accent.withOpacity(0.6), blurRadius: 18),
+              Shadow(color: theme.accent.withOpacity(0.3), blurRadius: 40),
             ],
           ),
         ),
@@ -193,20 +188,20 @@ class _LoginScreenState extends State<LoginScreen>
           'DESIGNER',
           textAlign: TextAlign.center,
           style: GoogleFonts.orbitron(
-            color: _kTextDim,
+            color: theme.textDim,
             fontSize: 12,
             fontWeight: FontWeight.w500,
             letterSpacing: 8,
           ),
         ),
         const SizedBox(height: 18),
-        Container(height: 1, color: _kBorderMid),
+        Container(height: 1, color: theme.borderMid),
         const SizedBox(height: 16),
         Text(
           'Sign in to sync your graphs across devices,\nor continue as a guest.',
           textAlign: TextAlign.center,
           style: GoogleFonts.sourceCodePro(
-            color: _kTextMid,
+            color: theme.textMid,
             fontSize: 12,
             height: 1.6,
           ),
@@ -245,8 +240,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildEmailField() {
+  Widget _buildEmailField(AppThemeNotifier theme) {
     return _StyledField(
+      theme: theme,
       controller: _emailController,
       label: 'EMAIL',
       enabled: widget.firebaseEnabled && !_busy,
@@ -261,8 +257,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildPasswordField() {
+  Widget _buildPasswordField(AppThemeNotifier theme) {
     return _StyledField(
+      theme: theme,
       controller: _passwordController,
       label: 'PASSWORD',
       enabled: widget.firebaseEnabled && !_busy,
@@ -290,7 +287,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildSignInButton() {
+  Widget _buildSignInButton(AppThemeNotifier theme) {
     final label = _busy
         ? 'PLEASE WAIT…'
         : _isRegistering
@@ -300,11 +297,11 @@ class _LoginScreenState extends State<LoginScreen>
     return _GlowButton(
       onPressed: (!_busy && widget.firebaseEnabled) ? _submit : null,
       label: label,
-      color: _kAccent,
+      color: theme.accent,
     );
   }
 
-  Widget _buildToggleRegisterButton() {
+  Widget _buildToggleRegisterButton(AppThemeNotifier theme) {
     return TextButton(
       onPressed: (!_busy && widget.firebaseEnabled)
           ? () => setState(() {
@@ -313,7 +310,7 @@ class _LoginScreenState extends State<LoginScreen>
               })
           : null,
       style: TextButton.styleFrom(
-        foregroundColor: _kTextDim,
+        foregroundColor: theme.textDim,
         padding: const EdgeInsets.symmetric(vertical: 8),
       ),
       child: Text(
@@ -329,41 +326,41 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildDivider(AppThemeNotifier theme) {
     return Row(
       children: [
-        Expanded(child: Container(height: 1, color: _kBorderMid)),
+        Expanded(child: Container(height: 1, color: theme.borderMid)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
             'OR',
             style: GoogleFonts.orbitron(
-              color: _kTextDim,
+              color: theme.textDim,
               fontSize: 9,
               letterSpacing: 3,
             ),
           ),
         ),
-        Expanded(child: Container(height: 1, color: _kBorderMid)),
+        Expanded(child: Container(height: 1, color: theme.borderMid)),
       ],
     );
   }
 
-  Widget _buildGuestButton() {
+  Widget _buildGuestButton(AppThemeNotifier theme) {
     return _GlowButton(
       onPressed: _busy ? null : _guest,
       label: 'CONTINUE AS GUEST',
-      color: _kGreen,
+      color: theme.accentGreen,
       icon: Icons.person_outline,
     );
   }
 
-  Widget _buildGuestNote() {
+  Widget _buildGuestNote(AppThemeNotifier theme) {
     return Text(
       'Guest mode saves locally only and does not use Firebase.',
       textAlign: TextAlign.center,
       style: GoogleFonts.sourceCodePro(
-        color: _kTextDim,
+        color: theme.textDim,
         fontSize: 10,
         letterSpacing: 0.3,
       ),
@@ -377,6 +374,7 @@ class _LoginScreenState extends State<LoginScreen>
 
 class _StyledField extends StatelessWidget {
   const _StyledField({
+    required this.theme,
     required this.controller,
     required this.label,
     this.enabled = true,
@@ -386,6 +384,7 @@ class _StyledField extends StatelessWidget {
     this.validator,
   });
 
+  final AppThemeNotifier theme;
   final TextEditingController controller;
   final String label;
   final bool enabled;
@@ -402,25 +401,25 @@ class _StyledField extends StatelessWidget {
       obscureText: obscureText,
       autocorrect: autocorrect,
       keyboardType: keyboardType,
-      style: GoogleFonts.sourceCodePro(color: _kTextLight, fontSize: 14),
-      cursorColor: _kAccent,
+      style: GoogleFonts.sourceCodePro(color: theme.textLight, fontSize: 14),
+      cursorColor: theme.accent,
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: GoogleFonts.orbitron(color: _kTextDim, fontSize: 10, letterSpacing: 2),
-        floatingLabelStyle: GoogleFonts.orbitron(color: _kAccent, fontSize: 10, letterSpacing: 2),
+        labelStyle: GoogleFonts.orbitron(color: theme.textDim, fontSize: 10, letterSpacing: 2),
+        floatingLabelStyle: GoogleFonts.orbitron(color: theme.accent, fontSize: 10, letterSpacing: 2),
         filled: true,
-        fillColor: const Color(0xFF080D14),
+        fillColor: theme.bg,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: _kBorderMid),
+          borderSide: BorderSide(color: theme.borderMid),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: _kBorderMid),
+          borderSide: BorderSide(color: theme.borderMid),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: _kAccent, width: 1.5),
+          borderSide: BorderSide(color: theme.accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -457,6 +456,7 @@ class _GlowButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final enabled = onPressed != null;
 
     return AnimatedContainer(
@@ -472,12 +472,12 @@ class _GlowButton extends StatelessWidget {
         child: OutlinedButton.icon(
           onPressed: onPressed,
           icon: icon != null
-              ? Icon(icon, size: 16, color: enabled ? color : _kTextDim)
+              ? Icon(icon, size: 16, color: enabled ? color : theme.textDim)
               : const SizedBox.shrink(),
           label: Text(
             label,
             style: GoogleFonts.orbitron(
-              color: enabled ? color : _kTextDim,
+              color: enabled ? color : theme.textDim,
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 2,
@@ -485,7 +485,7 @@ class _GlowButton extends StatelessWidget {
           ),
           style: OutlinedButton.styleFrom(
             backgroundColor: enabled ? color.withOpacity(0.08) : Colors.transparent,
-            side: BorderSide(color: enabled ? color.withOpacity(0.6) : _kBorderMid, width: 1.2),
+            side: BorderSide(color: enabled ? color.withOpacity(0.6) : theme.borderMid, width: 1.2),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             padding: const EdgeInsets.symmetric(horizontal: 20),
           ),
@@ -501,12 +501,19 @@ class _GlowButton extends StatelessWidget {
 
 class _GridPainter extends CustomPainter {
   final double animValue;
-  _GridPainter({required this.animValue});
+  final Color gridColor;
+  final Color accentColor;
+
+  const _GridPainter({
+    required this.animValue,
+    required this.gridColor,
+    required this.accentColor,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = _kGridLine
+      ..color = gridColor
       ..strokeWidth = 0.5;
 
     const spacing = 40.0;
@@ -523,7 +530,7 @@ class _GridPainter extends CustomPainter {
     final pulse = (sin(animValue * 2 * pi) + 1) / 2; // 0..1
 
     final dotPaint = Paint()
-      ..color = _kAccent.withOpacity(0.04 + pulse * 0.04)
+      ..color = accentColor.withOpacity(0.04 + pulse * 0.04)
       ..style = PaintingStyle.fill;
 
     for (double x = 0; x < size.width; x += spacing) {
@@ -533,12 +540,15 @@ class _GridPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(x, y),
           1.2 * fade,
-          dotPaint..color = _kAccent.withOpacity((0.08 + pulse * 0.06) * fade),
+          dotPaint..color = accentColor.withOpacity((0.08 + pulse * 0.06) * fade),
         );
       }
     }
   }
 
   @override
-  bool shouldRepaint(_GridPainter old) => old.animValue != animValue;
+  bool shouldRepaint(_GridPainter old) =>
+      old.animValue != animValue ||
+      old.gridColor != gridColor ||
+      old.accentColor != accentColor;
 }

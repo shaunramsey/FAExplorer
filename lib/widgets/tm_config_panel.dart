@@ -1,18 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
 import '../models.dart';
 import '../tm_simulator.dart';
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Theme palette (mirrors main.dart)
-// ─────────────────────────────────────────────────────────────────────────────
-const _kSurface   = Color(0xFF0A0F18);
-const _kBorderMid = Color(0xFF1A2535);
-const _kAccent    = Color(0xFF00E5FF);
-const _kTextLight = Color(0xFFCDD5E0);
-const _kTextMid   = Color(0xFF6B7E96);
-const _kTextDim   = Color(0xFF3A4A5E);
+import 'app_theme.dart';
 
 /// Floating panel: NTM configurations (state, head position, tape) per step.
 class TmConfigPanel extends StatelessWidget {
@@ -29,6 +21,7 @@ class TmConfigPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final configs = simulator.activeConfigs;
     final result  = simulator.result;
     final isDone  = result != TmResult.running;
@@ -49,11 +42,11 @@ class TmConfigPanel extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 340, maxHeight: 520),
           child: Card(
-            color: _kSurface,
+            color: theme.surface,
             elevation: 6,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: _kBorderMid),
+              side: BorderSide(color: theme.borderMid),
             ),
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -65,14 +58,14 @@ class TmConfigPanel extends StatelessWidget {
                   Row(
                     children: [
                       Icon(Icons.memory, size: 18,
-                          color: headerColor ?? _kAccent),
+                          color: headerColor ?? theme.accent),
                       const SizedBox(width: 6),
                       Text(
                         'TM (NTM)',
                         style: GoogleFonts.courierPrime(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: headerColor ?? _kTextLight,
+                          color: headerColor ?? theme.textLight,
                         ),
                       ),
                       const Spacer(),
@@ -97,9 +90,9 @@ class TmConfigPanel extends StatelessWidget {
                   Text(
                     'Step ${simulator.step < 0 ? 0 : simulator.step + 1} '
                     '/ ${simulator.steps.isEmpty ? 0 : simulator.steps.length - 1}',
-                    style: GoogleFonts.courierPrime(fontSize: 11, color: _kTextDim),
+                    style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim),
                   ),
-                  Divider(height: 16, color: _kBorderMid),
+                  Divider(height: 16, color: theme.borderMid),
 
                   // ── Configs list ─────────────────────────────────────
                   if (configs.isEmpty)
@@ -123,7 +116,7 @@ class TmConfigPanel extends StatelessWidget {
                                     style: GoogleFonts.courierPrime(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: _kTextDim,
+                                      color: theme.textDim,
                                     ),
                                   ),
                                 ),
@@ -178,23 +171,24 @@ class _TmConfigCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     final borderColor = isAccepted
-        ? const Color(0xFF1FD99A)
+        ? theme.accentGreen
         : isRejected
             ? const Color(0xFFFF1744)
-            : _kBorderMid;
+            : theme.borderMid;
 
     final bgColor = isAccepted
-        ? const Color(0xFF051A10)
+        ? theme.accentGreen.withOpacity(0.08)
         : isRejected
             ? const Color(0xFF1A0005)
-            : const Color(0xFF080D14);
+            : theme.bg;
 
     final stateTextColor = isAccepted
-        ? const Color(0xFF1FD99A)
+        ? theme.accentGreen
         : isRejected
             ? const Color(0xFFFF1744)
-            : _kTextLight;
+            : theme.textLight;
 
     return Container(
       width: double.infinity,
@@ -215,7 +209,7 @@ class _TmConfigCard extends StatelessWidget {
                 width: 44,
                 child: Text(
                   'state',
-                  style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
+                  style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
                 ),
               ),
               Expanded(
@@ -234,7 +228,7 @@ class _TmConfigCard extends StatelessWidget {
                   style: GoogleFonts.courierPrime(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1FD99A),
+                    color: theme.accentGreen,
                   ),
                 ),
               if (isRejected)
@@ -252,7 +246,7 @@ class _TmConfigCard extends StatelessWidget {
 
           Text(
             'tape',
-            style: GoogleFonts.courierPrime(fontSize: 10, color: _kTextDim),
+            style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
           ),
           const SizedBox(height: 4),
 
@@ -306,15 +300,16 @@ class _TapeCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Container(
       width: 32,
       height: 32,
       margin: const EdgeInsets.symmetric(horizontal: 1),
       decoration: BoxDecoration(
-        color: isHead ? const Color(0xFF0A1929) : const Color(0xFF080D14),
+        color: isHead ? theme.surface : theme.bg,
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: isHead ? _kAccent : _kBorderMid,
+          color: isHead ? theme.accent : theme.borderMid,
           width: isHead ? 2 : 1,
         ),
       ),
@@ -326,7 +321,7 @@ class _TapeCell extends StatelessWidget {
               style: GoogleFonts.courierPrime(
                 fontSize: 14,
                 fontWeight: isHead ? FontWeight.bold : FontWeight.normal,
-                color: isHead ? _kAccent : _kTextMid,
+                color: isHead ? theme.accent : theme.textMid,
               ),
             ),
           ),
@@ -338,7 +333,7 @@ class _TapeCell extends StatelessWidget {
               child: Center(
                 child: Text(
                   '▲',
-                  style: TextStyle(fontSize: 7, color: _kAccent.withOpacity(0.7)),
+                  style: TextStyle(fontSize: 7, color: theme.accent.withOpacity(0.7)),
                 ),
               ),
             ),
