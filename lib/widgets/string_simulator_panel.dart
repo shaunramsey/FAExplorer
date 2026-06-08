@@ -348,7 +348,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final result     = _currentResult;
     final showResult = result != null && (atEnd || isTmMode);
 
-    final currentChipIndex = (step > 0 && step <= tokens.length) ? step - 1 : -1;
+    final currentChipIndex = (step >= 0 && step < tokens.length) ? step : -1;
 
     final tapeView = isTmMode ? tm.tapeView : null;
 
@@ -485,9 +485,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           separatorBuilder: (_, __) => const SizedBox(width: 3),
                           itemBuilder: (context, i) {
                             final isCurrent  = i == currentChipIndex;
-                            final isConsumed = currentChipIndex >= 0
-                                ? i < currentChipIndex
-                                : i < step;
+                            final isConsumed = currentChipIndex >= 0 ? i < currentChipIndex : i < step;
                             return _TokenChip(
                               key: _chipKeys[i],
                               token: tokens[i],
