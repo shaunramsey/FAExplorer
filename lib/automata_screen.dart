@@ -24,6 +24,8 @@ import 'widgets/palette_fab.dart';
 import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
+import 'tm_simulator.dart';
+import 'widgets/tm_config_panel.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -55,7 +57,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   bool _showHelpOverlay = false;
   bool _showSimulator = true;
-  bool _pdaMode = false;          // ← NEW
+  AutomataMode _automataMode = AutomataMode.ndfa;
 
   StartArrowData? _startArrow;
 
@@ -81,6 +83,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   late final AutomataSimulator _simulator;
   late final PdaSimulator _pdaSimulator;     // ← NEW
+  late final TmSimulator _tmSimulator;       // ← TM
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
   Timer? _persistTimer;
   bool _persistenceReady = false;
@@ -98,6 +101,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         startArrow: _startArrow,
         nodeCounter: _nodeCounter,
         lineCounter: _lineCounter,
+        automataMode: _automataMode,
       );
 
   // ────────────────────────────────────────────────────────────────────────
@@ -115,8 +119,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   /// At the accepted final step, union all nodes/lines from every step to
   /// highlight the complete accepted path. Otherwise show only the current step.
   Set<String> get _simActiveNodes {
-    if (_pdaMode) {
+    if (_automataMode == AutomataMode.pda) {
       return _pdaSimulator.activeNodes;
+    }
+    if (_automataMode == AutomataMode.tm) {
+      return _tmSimulator.activeNodes;
     }
     if (_isAtAcceptedFinalStep) {
       return _simulator.states.expand((s) => s).toSet();
@@ -125,8 +132,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   Set<String> get _simActiveLines {
-    if (_pdaMode) {
+    if (_automataMode == AutomataMode.pda) {
       return _pdaSimulator.activeLines;
+    }
+    if (_automataMode == AutomataMode.tm) {
+      return _tmSimulator.activeLines;
     }
     if (_isAtAcceptedFinalStep) {
       return _simulator.usedLines.expand((s) => s).toSet();
@@ -178,7 +188,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _startArrow = state.startArrow;
         _nodeCounter = state.nodeCounter;
         _lineCounter = state.lineCounter;
-        _pdaMode = state.pdaMode;
+        _automataMode = state.automataMode;
       } catch (_) {
         // Ignore corrupt saved graphs.
       }
@@ -210,6 +220,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
       _pdaSimulator.step = _pdaSimulator.tokens.length;
     }
+    _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
   }
 
   void _cancelRubberBand() {
@@ -319,6 +330,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       lines: _lines,
     );
 
+    _tmSimulator = TmSimulator(           // ← TM
+      nodes: _nodes,
+      lines: _lines,
+    );
+
     _simController.addListener(_schedulePersist);
     WidgetsBinding.instance.addObserver(this);
     _loadPreferences();
@@ -385,7 +401,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _startArrow = state.startArrow;
       _nodeCounter = state.nodeCounter;
       _lineCounter = state.lineCounter;
-      _pdaMode = state.pdaMode;
+      _automataMode = state.automataMode;
       _draggingNodeId = null;
       _draggingLineId = null;
       _lineSourceNodeId = null;
@@ -797,7 +813,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       drawer: AutomataDrawer(
         showHelpOverlay: _showHelpOverlay,
         showSimulator: _showSimulator,
-        automataMode: _pdaMode ? AutomataMode.pda : AutomataMode.ndfa,
+        automataMode: _automataMode,
         isGuest: widget.isGuest,
         accountLabel: widget.isGuest
             ? 'Guest (local only)'
@@ -806,10 +822,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onShowSimulatorChanged: _setShowSimulator,
         onModeChanged: (mode) {
           setState(() {
-            _pdaMode = mode == AutomataMode.pda;
+            _automataMode = mode;
             _simRebuild();
-            if (_pdaMode) {
+            if (mode == AutomataMode.pda) {
               _pdaSimulator.step = _simulator.step;
+            } else if (mode == AutomataMode.tm) {
+              _tmSimulator.step = _simulator.step.clamp(-1, _tmSimulator.maxStep);
             }
           });
           _schedulePersist();
@@ -1039,7 +1057,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
                 simulator: _simulator,
-                pdaSimulator: _pdaMode ? _pdaSimulator : null,
+                pdaSimulator: _automataMode == AutomataMode.pda ? _pdaSimulator : null,
+                tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
                 controller: _simController,
                 nodes: _nodes,
                 onClose: () => _setShowSimulator(false),
@@ -1059,8 +1078,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               ),
 
             // ── PDA Stack Panel ────────────────────────────────────────
-            if (_showSimulator && _pdaMode)
+            if (_showSimulator && _automataMode == AutomataMode.pda)
               PdaStackPanel(simulator: _pdaSimulator, nodes: _nodes),
+
+            // ── TM Config Panel ───────────────────────────────────────
+            if (_showSimulator && _automataMode == AutomataMode.tm)
+              TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
           ],
         ),
       ),
