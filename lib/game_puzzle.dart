@@ -8,6 +8,7 @@
 //  • Celebrates with a completion dialog on success
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -74,6 +75,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   String? _checkResult;
   bool _isCorrect = false;
 
+  // ── save / load state ────────────────────────────────────────────────────
+  bool _loadingSavedDsl = true;
+  Timer? _saveDebounce;
+
   // ── animation ───────────────────────────────────────────────────────────
   late final AnimationController _successCtrl;
 
@@ -86,13 +91,70 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
+
+    _loadSavedDsl();
   }
 
   @override
   void dispose() {
+    _saveDebounce?.cancel();
     _focusNode.dispose();
     _successCtrl.dispose();
     super.dispose();
+  }
+
+  // ── persistence helpers ─────────────────────────────────────────────────
+
+  /// Restores the user's previous work for this level from SharedPreferences.
+  Future<void> _loadSavedDsl() async {
+    final dsl = widget.progressStore.loadLevelDsl(widget.level.id);
+    if (dsl != null && dsl.isNotEmpty) {
+      try {
+        final gs = DslCodec.importFromDsl(dsl);
+        if (mounted) {
+          setState(() {
+            _nodes
+              ..clear()
+              ..addAll(gs.nodes);
+            _lines
+              ..clear()
+              ..addAll(gs.lines);
+            _startArrow = gs.startArrow;
+            // Resync counters so new IDs never collide with restored ones.
+            _nodeCounter = _nodes.length;
+            _lineCounter = _lines.length;
+          });
+        }
+      } catch (_) {
+        // Corrupted save — silently ignore and start fresh.
+      }
+    }
+    if (mounted) setState(() => _loadingSavedDsl = false);
+  }
+
+  /// Schedules a debounced save (fires 800 ms after the last canvas change).
+  void _scheduleSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 800), _saveNow);
+  }
+
+  /// Immediately serialises the current canvas and writes it to SharedPreferences.
+  Future<void> _saveNow() async {
+    try {
+      final dsl = DslCodec.exportToDsl(
+        GraphState(
+          nodes: _nodes,
+          lines: _lines,
+          startArrow: _startArrow,
+          nodeCounter: _nodeCounter,
+          lineCounter: _lineCounter,
+          automataMode: widget.level.automataMode,
+        ),
+      );
+      await widget.progressStore.saveLevelDsl(widget.level.id, dsl);
+    } catch (_) {
+      // Non-fatal — best-effort save.
+    }
   }
 
   // ── helpers ─────────────────────────────────────────────────────────────
@@ -180,15 +242,18 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       final n = _nodeAt(pos);
       if (n != null) {
         setState(() => _deleteNode(n.id));
+        _scheduleSave();
         return;
       }
       final l = _lineAt(pos);
       if (l != null) {
         setState(() => _deleteLine(l.id));
+        _scheduleSave();
         return;
       }
       if (_hitStartArrow(pos)) {
         setState(() => _startArrow = null);
+        _scheduleSave();
         return;
       }
       return;
@@ -308,6 +373,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     _lastPanPosition = null;
     _rubberBandEnd = null;
     _lineSourceNodeId = null;
+    _scheduleSave();
   }
 
   // ── answer checking ─────────────────────────────────────────────────────
@@ -409,6 +475,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _isCorrect = true;
           _checkResult = '✓ Correct! Your automaton is equivalent to the target.';
           await widget.progressStore.markCompleted(widget.level.id);
+          await _saveNow(); // persist the winning solution immediately
           widget.onCompleted?.call();
           _successCtrl.forward(from: 0);
           _showSuccessDialog();
@@ -505,7 +572,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             ),
         ],
       ),
-      body: Column(
+      body: _loadingSavedDsl
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
         children: [
           // ── Goal banner ──────────────────────────────────────────────
           _GoalBanner(
@@ -537,6 +606,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                     final id = _nextId('n');
                     _nodes[id] = NodeData(id: id, position: pos);
                   });
+                  _scheduleSave();
                 },
                 onTapDown: (d) {
                   _lastTapPosition = d.localPosition;
@@ -547,6 +617,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         _startArrow = StartArrowData(nodeId: n.id);
                         _placingStartArrow = false;
                       });
+                      _scheduleSave();
                     }
                   }
                 },
@@ -570,8 +641,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                           data: _startArrow!,
                           nodeCenter: _nodes[_startArrow!.nodeId]!.center,
                           deleteMode: _deleteMode,
-                          onDelete: () =>
-                              setState(() => _startArrow = null),
+                          onDelete: () {
+                            setState(() => _startArrow = null);
+                            _scheduleSave();
+                          },
                         ),
                       ),
 
@@ -602,8 +675,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                             centerB: b.center,
                             deleteMode: _deleteMode,
                             highlighted: false,
-                            onLabelChanged: (t) =>
-                                setState(() => line.label = t),
+                            onLabelChanged: (t) {
+                              setState(() => line.label = t);
+                              _scheduleSave();
+                            },
                           ),
                         ),
                       );
@@ -618,8 +693,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         deleteMode: _deleteMode,
                         highlighted: false,
                         isLabelTaken: _isLabelTaken,
-                        onLabelChanged: (t) =>
-                            setState(() => node.label = t),
+                        onLabelChanged: (t) {
+                          setState(() => node.label = t);
+                          _scheduleSave();
+                        },
                         onLineModeSelect: () {
                           if (_lineMode && _canStartLineFrom(node.id)) {
                             _lineSourceNodeId = node.id;
@@ -628,9 +705,12 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         onDoubleTap: () {
                           if (!node.canToggleNormalAccept) return;
                           setState(() => node.isAccept = !node.isAccept);
+                          _scheduleSave();
                         },
-                        onDelete: () =>
-                            setState(() => _deleteNode(node.id)),
+                        onDelete: () {
+                          setState(() => _deleteNode(node.id));
+                          _scheduleSave();
+                        },
                       ),
                     ),
                   ],
@@ -734,6 +814,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         _checkResult = null;
                         _isCorrect = false;
                       });
+                      widget.progressStore.clearLevelDsl(widget.level.id);
                     },
                     style: FilledButton.styleFrom(
                       backgroundColor: Theme.of(context).colorScheme.error,
