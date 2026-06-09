@@ -8,6 +8,7 @@ import 'game_level.dart';
 
 abstract final class GamePreferenceKeys {
   static const completedLevels = 'game_completed_levels';
+  static String levelDsl(String levelId) => 'game_level_dsl_$levelId';
 }
 
 class GameProgressStore {
@@ -48,6 +49,19 @@ class GameProgressStore {
 
   Future<void> resetAll() async {
     await _prefs.remove(GamePreferenceKeys.completedLevels);
+  }
+
+  // ── Per-level DSL (work-in-progress) ─────────────────────────────────────
+
+  String? loadLevelDsl(String levelId) =>
+      _prefs.getString(GamePreferenceKeys.levelDsl(levelId));
+
+  Future<void> saveLevelDsl(String levelId, String dsl) async {
+    await _prefs.setString(GamePreferenceKeys.levelDsl(levelId), dsl);
+  }
+
+  Future<void> clearLevelDsl(String levelId) async {
+    await _prefs.remove(GamePreferenceKeys.levelDsl(levelId));
   }
 
   Future<void> _save(Set<String> ids) async {

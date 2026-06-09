@@ -1,3 +1,10 @@
+# June 4th, 2026
+* Changed color settings to have palettes for the user to choose from and added more color settings
+* Fixed halt and accept states so they properly halt
+* Changed curved line indexing again to fix imports and exports
+* Added a slider to the level select screen for keyboard and mouse
+* Changed the level select screen to make everything look a lot cleaner
+
 # June 3rd, 2026
 * Added in more levels and made the level select screen more linear
 * Changed a lot of the colors to make everything have a more central theme

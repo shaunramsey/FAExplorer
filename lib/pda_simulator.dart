@@ -295,6 +295,12 @@ class PdaSimulator {
           continue;
         }
       }
+      // \0 in user input is treated as the null/empty token (same as `?`).
+      if (i + 1 < input.length && input[i] == '\\' && input[i + 1] == '0') {
+        result.add('?');
+        i += 2;
+        continue;
+      }
       result.add(input[i]);
       i++;
     }
@@ -376,7 +382,20 @@ class PdaSimulator {
             final readSym = _normalizeSym(t.read);
             if (readSym.isEmpty) continue;
 
-            if (readSym != token) continue;
+            // ── wildcard / negated-wildcard on the read symbol ──────────
+            bool readMatches;
+            if (readSym == '.') {
+              // Plain wildcard — matches any single input token.
+              readMatches = true;
+            } else if (readSym.length >= 3 && readSym[0] == '.' && readSym[1] == '-') {
+              // Negated wildcard ".-X[Y…]" — matches any token NOT excluded.
+              final excluded = readSym.substring(2).split('').map(_normalizeSym).toList();
+              readMatches = !excluded.contains(token);
+            } else {
+              readMatches = (readSym == token);
+            }
+            if (!readMatches) continue;
+            // ────────────────────────────────────────────────────────────
 
             final popSym = _normalizeSym(t.pop);
             final pushSyms = t.push.map(_normalizeSym).toList();
