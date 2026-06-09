@@ -1,4 +1,5 @@
 import 'widgets/app_theme.dart';
+import 'automaton_type_checker.dart' show RequiredAutomatonType;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Game Mode — Level definitions and registry
@@ -144,6 +145,20 @@ class GameLevel {
   /// Which automata mode the hidden target should use for equivalence checking.
   final AutomataMode automataMode;
 
+  /// If set, the player's submission is checked to be this automaton type
+  /// BEFORE the equivalence check runs.  Null means "any type accepted".
+  ///
+  /// Examples:
+  ///   requiredAutomatonType: RequiredAutomatonType.dfa   → player must submit a DFA
+  ///   requiredAutomatonType: RequiredAutomatonType.nfa   → player must use ≥1 NFA feature
+  ///   requiredAutomatonType: null                        → no type restriction
+  final RequiredAutomatonType? requiredAutomatonType;
+
+  /// Alphabet used for DFA completeness checking (missing-transition warnings).
+  /// Only relevant when [requiredAutomatonType] == RequiredAutomatonType.dfa.
+  /// Pass an empty set to skip the completeness check.
+  final Set<String> alphabet;
+
   final UnlockRule unlockRule;
 
   /// Position on the neural-network level-select canvas (normalised 0–1).
@@ -160,6 +175,8 @@ class GameLevel {
     required this.svgAsset,
     this.dsl = '',
     this.automataMode = AutomataMode.ndfa,
+    this.requiredAutomatonType,
+    this.alphabet = const {},
     this.unlockRule = const AlwaysUnlocked(),
     this.x = 0.5,
     this.y = 0.5,
@@ -245,6 +262,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('intro_accept_a'),
     x: 0.12,
     y: 0.20,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -276,6 +294,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('intro_accept_a'),
     x: 0.12,
     y: 0.40,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -299,6 +318,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('intro_accept_a'),
     x: 0.12,
     y: 0.60,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -328,6 +348,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_even_0s'),
     x: 0.12,
     y: 0.80,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -366,6 +387,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('intro_accept_a'),
     x: 0.20,
     y: 0.15,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -396,6 +418,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('intro_accept_a'),
     x: 0.20,
     y: 0.35,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -422,6 +445,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_only_empty_nfa'),
     x: 0.20,
     y: 0.55,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -448,6 +472,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_accepts_everything'),
     x: 0.20,
     y: 0.75,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -477,6 +502,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireAny(['dfa_ab', 'dfa_even_a']),
     x: 0.28,
     y: 0.12,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -510,6 +536,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_even_0s'),
     x: 0.28,
     y: 0.32,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -544,6 +571,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dfa_ab'),
     x: 0.28,
     y: 0.52,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -569,6 +597,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('nfa_ends_b'),
     x: 0.28,
     y: 0.72,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -606,6 +635,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireAll(['dfa_ab', 'dfa_even_a']),
     x: 0.36,
     y: 0.15,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -637,6 +667,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireAll(['nfa_ends_b', 'dfa_ab']),
     x: 0.36,
     y: 0.35,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -673,6 +704,7 @@ const List<GameLevel> kAllLevels = [
     ),
     x: 0.36,
     y: 0.55,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -701,6 +733,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_exactly_one_0_dfa'),
     x: 0.36,
     y: 0.75,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -772,6 +805,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_b_nfa'),
     x: 0.43,
     y: 0.38,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -811,6 +845,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_b_nfa'),
     x: 0.43,
     y: 0.58,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -848,6 +883,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_b_nfa'),
     x: 0.43,
     y: 0.78,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -893,6 +929,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_abc_nfa'),
     x: 0.49,
     y: 0.10,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -920,6 +957,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_abc_nfa'),
     x: 0.49,
     y: 0.28,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -968,6 +1006,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_two_same_nfa'),
     x: 0.49,
     y: 0.46,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -995,6 +1034,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_accepts_everything_nfa'),
     x: 0.49,
     y: 0.65,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -1028,6 +1068,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_caterpillar_nfa'),
     x: 0.49,
     y: 0.83,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -1070,6 +1111,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_even_0s'),
     x: 0.55,
     y: 0.10,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -1103,6 +1145,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('nfa_complex'),
     x: 0.55,
     y: 0.28,
+    requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
   ),
 
@@ -1134,6 +1177,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_b_dfa'),
     x: 0.55,
     y: 0.46,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -1166,6 +1210,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_b_dfa'),
     x: 0.55,
     y: 0.62,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -1204,6 +1249,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('nfa_complex'),
     x: 0.55,
     y: 0.80,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
@@ -1353,6 +1399,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_ends_two_same_dfa'),
     x: 0.56,  // slight x offset keeps it visually distinct from boss_palindrome
     y: 0.97,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
     tag: 'dfa',
   ),
 
