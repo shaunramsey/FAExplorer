@@ -9,6 +9,19 @@ import 'widgets/automata_drawer.dart' show AutomataMode;
 
 enum SimResult { accept, reject }
 
+/// Wildcard label — matches any single input token (but not epsilon).
+const String kWildcard = '.';
+
+/// Parses a negated-wildcard label of the form ".-X" or ".-XY" into the
+/// excluded tokens.  Returns null if [label] is not in that form.
+List<String>? _parseNegatedWildcard(String label) {
+  // Must start with ".-" (dot dash) and have at least one excluded char.
+  if (label.length < 3) return null;
+  if (label[0] != '.' || label[1] != '-') return null;
+  final excluded = label.substring(2).split('').where((s) => s.isNotEmpty).toList();
+  return excluded.isEmpty ? null : excluded;
+}
+
 class _SimConfig {
   final String nodeId;
   final List<String> tokens;
@@ -128,6 +141,12 @@ class AutomataSimulator {
           continue;
         }
       }
+      // \0 in user input is treated as the null/empty token (same as `?`).
+      if (i + 1 < input.length && input[i] == '\\' && input[i + 1] == '0') {
+        result.add('?');
+        i += 2;
+        continue;
+      }
       result.add(input[i]);
       i++;
     }
@@ -148,7 +167,10 @@ class AutomataSimulator {
   bool _isEpsilonLabel(String label, bool atEndOfInput, bool nullWasExplicitlyTyped) {
     final normalized = _normalizeSimToken(label);
     if (normalized.isEmpty || normalized == '~') return true;
-    if (normalized == '?') return atEndOfInput && !nullWasExplicitlyTyped;
+    // Both `?` and `\0` on a transition label mean "null jump" (epsilon at end-of-input).
+    if ((normalized == '?' || normalized == r'\0') && atEndOfInput && !nullWasExplicitlyTyped) {
+      return true;
+    }
     return false;
   }
 
@@ -362,7 +384,11 @@ class AutomataSimulator {
           final nullWasExplicitlyTyped = current.tokens.any(_isNullToken);
 
           if (normalized.isEmpty || normalized == '~') isNormalEpsilon = true;
-          if (normalized == '?' && atEndOfInput && (!nullWasExplicitlyTyped || currentNode.isBlackBox)) {
+          // Both `?` and `\0` on a transition label act as null jumps
+          // (epsilon transitions that fire only when input is exhausted).
+          if ((normalized == '?' || normalized == r'\0') &&
+              atEndOfInput &&
+              (!nullWasExplicitlyTyped || currentNode.isBlackBox)) {
             isNullJump = true;
           }
         }
@@ -456,6 +482,41 @@ class AutomataSimulator {
           if (line.nodeAId != effective.nodeId) continue;
           for (final alt in _transitionAlternatives(line.label)) {
             if (_isEpsilonLabel(alt, false, nullWasExplicitlyTyped)) continue;
+
+            // ── wildcard and negated-wildcard handling ──────────────────
+            // A bare "." matches any single token (wildcard).
+            // ".-X" or ".-XY" matches any single token that is NOT in the
+            // excluded set after the dash.
+            final altTrimmed = alt.trim();
+            if (altTrimmed == kWildcard) {
+              // Plain wildcard: matches exactly one token (not epsilon).
+              consumedAny = true;
+              nextConfigs.add(_SimConfig(
+                nodeId: line.nodeBId,
+                tokens: effective.tokens,
+                inputPos: effective.inputPos + 1,
+              ));
+              stepLines.add(line.id);
+              break;
+            }
+            final negExcluded = _parseNegatedWildcard(altTrimmed);
+            if (negExcluded != null) {
+              // Negated wildcard: matches any single token not in the excluded list.
+              final inputToken = _normalizeSimToken(effective.tokens[effective.inputPos]);
+              if (!negExcluded.map(_normalizeSimToken).contains(inputToken)) {
+                consumedAny = true;
+                nextConfigs.add(_SimConfig(
+                  nodeId: line.nodeBId,
+                  tokens: effective.tokens,
+                  inputPos: effective.inputPos + 1,
+                ));
+                stepLines.add(line.id);
+                break;
+              }
+              continue;
+            }
+            // ────────────────────────────────────────────────────────────
+
             // Treat the transition label as a sequence of tokens and attempt
             // to match that sequence starting at the current input position.
             final labelTokens = _tokenize(alt);
