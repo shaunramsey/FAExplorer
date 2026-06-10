@@ -295,6 +295,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.12,
     y: 0.40,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'0', '1'},
     tag: 'dfa',
   ),
 
@@ -319,6 +320,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.12,
     y: 0.60,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'.'},
     tag: 'dfa',
   ),
 
@@ -349,6 +351,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.12,
     y: 0.80,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'0', '1'},
     tag: 'dfa',
   ),
 
@@ -388,6 +391,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.20,
     y: 0.15,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -419,6 +423,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.20,
     y: 0.35,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -446,6 +451,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.20,
     y: 0.55,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'.'},
     tag: 'dfa',
   ),
 
@@ -537,6 +543,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.28,
     y: 0.32,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'0', '1'},
     tag: 'dfa',
   ),
 
@@ -572,6 +579,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.28,
     y: 0.52,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -705,6 +713,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.36,
     y: 0.55,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -884,6 +893,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.43,
     y: 0.78,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -930,6 +940,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.49,
     y: 0.10,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b', 'c'},
     tag: 'dfa',
   ),
 
@@ -1007,6 +1018,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.49,
     y: 0.46,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'0', '1'},
     tag: 'dfa',
   ),
 
@@ -1069,6 +1081,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.49,
     y: 0.83,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'.'},
     tag: 'dfa',
   ),
 
@@ -1112,6 +1125,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.55,
     y: 0.10,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'0', '1'},
     tag: 'dfa',
   ),
 
@@ -1178,6 +1192,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.55,
     y: 0.46,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -1211,6 +1226,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.55,
     y: 0.62,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -1250,6 +1266,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.55,
     y: 0.80,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 
@@ -1400,6 +1417,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.56,  // slight x offset keeps it visually distinct from boss_palindrome
     y: 0.97,
     requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
     tag: 'dfa',
   ),
 

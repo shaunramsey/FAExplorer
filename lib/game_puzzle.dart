@@ -616,6 +616,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _GoalBanner(
             description: widget.level.description,
             tagColor: context.watch<AppThemeNotifier>().tagColor(widget.level.tag),
+            automataMode: widget.level.automataMode,
+            requiredAutomatonType: widget.level.requiredAutomatonType,
+            alphabet: widget.level.alphabet,
             checkResult: _checkResult,
             isCorrect: _isCorrect,
           ),
@@ -879,23 +882,55 @@ class _GoalBanner extends StatelessWidget {
   final Color tagColor;
   final String? checkResult;
   final bool isCorrect;
+  final AutomataMode automataMode;
+  final RequiredAutomatonType? requiredAutomatonType;
+  final Set<String> alphabet;
 
   const _GoalBanner({
     required this.description,
     required this.tagColor,
+    required this.automataMode,
+    required this.alphabet,
+    this.requiredAutomatonType,
     this.checkResult,
     this.isCorrect = false,
   });
 
+  /// Returns the display label and color for the mode chip.
+  (String label, Color color) _modeInfo(AppThemeNotifier theme) {
+    // If a specific automaton type is required, that is the primary label.
+    if (requiredAutomatonType != null) {
+      return switch (requiredAutomatonType!) {
+        RequiredAutomatonType.dfa => ('DFA', const Color(0xFF4FC3F7)),
+        RequiredAutomatonType.nfa => ('NFA', const Color(0xFFCE93D8)),
+      };
+    }
+    // Otherwise derive from the automata mode.
+    return switch (automataMode) {
+      AutomataMode.pda => ('PDA', const Color(0xFFFFB74D)),
+      AutomataMode.tm  => ('TM',  const Color(0xFFEF9A9A)),
+      // ndfa with no type restriction means either DFA or NFA is accepted.
+      _                => ('FA',  const Color(0xFF80CBC4)),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
+    final (modeLabel, modeColor) = _modeInfo(theme);
+
+    // Alphabet display: sorted symbols joined by commas, or "—" if empty.
+    final alphabetText = alphabet.isEmpty
+        ? '—'
+        : (alphabet.toList()..sort()).join(', ');
+
     return Container(
       width: double.infinity,
       color: theme.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Description ──────────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -914,6 +949,43 @@ class _GoalBanner extends StatelessWidget {
               ),
             ),
           ),
+
+          // ── Alphabet + Mode info row ──────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+            decoration: BoxDecoration(
+              color: theme.surface,
+              border: Border(
+                left: BorderSide(color: tagColor, width: 4),
+                bottom: BorderSide(color: theme.borderMid),
+              ),
+            ),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                // Alphabet chip
+                _InfoChip(
+                  icon: Icons.abc,
+                  label: 'Σ = { $alphabetText }',
+                  color: theme.textDim,
+                  theme: theme,
+                ),
+                // Mode chip
+                _InfoChip(
+                  icon: Icons.account_tree_outlined,
+                  label: modeLabel,
+                  color: modeColor,
+                  theme: theme,
+                  bold: true,
+                ),
+              ],
+            ),
+          ),
+
+          // ── Check result ──────────────────────────────────────────────
           if (checkResult != null)
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
@@ -934,6 +1006,54 @@ class _GoalBanner extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Small labelled chip used inside _GoalBanner
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final AppThemeNotifier theme;
+  final bool bold;
+
+  const _InfoChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.theme,
+    this.bold = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        border: Border.all(color: color.withOpacity(0.35)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color.withOpacity(0.85)),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: GoogleFonts.sourceCodePro(
+              fontSize: 12,
+              color: color,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+              letterSpacing: bold ? 0.8 : 0,
+            ),
+          ),
         ],
       ),
     );
