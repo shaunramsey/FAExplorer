@@ -466,12 +466,40 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     });
   }
 
+
+  /// Inserts a black-box node onto the canvas backed by [save]'s DSL.
+  ///
+  /// The node is placed at a default position offset so it does not stack on
+  /// top of existing nodes.  The canvas is NOT replaced — the new node is
+  /// added alongside whatever is already there.
+  void _insertAsBlackBoxNode(SavedExport save) {
+    setState(() {
+      final id = _nextId('n');
+
+      // Place the node in a sensible default position, offset from existing
+      // nodes so it does not land exactly on top of them.
+      Offset position = const Offset(300, 300);
+      if (_nodes.isNotEmpty) {
+        final last = _nodes.values.last;
+        position = last.position + const Offset(120, 0);
+      }
+
+      final node = NodeData(id: id, position: position);
+      node.label = save.name;
+      node.isBlackBox = true;
+      node.blackBoxDsl = save.dsl;
+
+      _nodes[id] = node;
+    });
+    _schedulePersist();
+  }
+
   void _showExportHistory() {
     showExportHistoryDialog(
       context,
       savedExports: _savedExports,
       onImportDsl: _importFromDsl,
-      onInsertBlackBox: (savedExport) => _importFromDsl(savedExport.dsl),
+      onInsertBlackBox: _insertAsBlackBoxNode,
       onListChanged: () {
         setState(() {});
         _schedulePersist();

@@ -239,7 +239,7 @@ void showExportHistoryDialog(
   BuildContext context, {
   required List<SavedExport> savedExports,
   required String? Function(String dsl) onImportDsl,
-  required void Function(SavedExport blackBox) onInsertBlackBox,
+  required void Function(SavedExport export) onInsertBlackBox,
   required void Function() onListChanged,
 }) {
   final theme = AppThemeNotifier.read(context);
@@ -312,16 +312,17 @@ void showExportHistoryDialog(
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (save.isBlackBox)
-                                IconButton(
-                                  icon: Icon(Icons.add_box_outlined,
-                                      color: theme.textMid),
-                                  tooltip: 'Insert as black box',
-                                  onPressed: () {
-                                    Navigator.of(ctx).pop();
-                                    onInsertBlackBox(save);
-                                  },
-                                ),
+                              // Available for all exports: inserts a black box
+                              // node onto the canvas backed by this saved DSL.
+                              IconButton(
+                                icon: Icon(Icons.add_box_outlined,
+                                    color: theme.textMid),
+                                tooltip: 'Insert as black box node',
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  onInsertBlackBox(save);
+                                },
+                              ),
                               if (!save.isBlackBox) ...[
                                 IconButton(
                                   icon: Icon(
