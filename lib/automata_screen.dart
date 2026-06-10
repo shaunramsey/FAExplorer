@@ -429,13 +429,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   void _showExportDialog() {
     showExportDialog(
-      context,
-      dsl: _exportToDsl(),
-      savedExportCount: _savedExports.length,
-      nodes: _nodes,
-      lines: _lines,
-      startArrow: _startArrow,
-      onSave: (name, dsl) {
+  context,
+  dsl: _exportToDsl(),
+  savedExportCount: _savedExports.length,
+  nodes: _nodes,
+  lines: _lines,
+  startArrow: _startArrow,
+  graphState: _graphState,
+  onSave: (name, dsl) {
         setState(() {
           _savedExports.insert(0, SavedExport(name: name, dsl: dsl));
         });

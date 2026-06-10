@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../widgets/app_theme.dart';
 import '../models.dart';
 import '../dsl_code.dart';
+import '../latex_export.dart';
 import '../pda_simulator.dart';
 import '../saved_export.dart';
 import '../simulator.dart';
@@ -19,6 +20,7 @@ void showExportDialog(
   required Map<String, NodeData> nodes,
   required Map<String, LineData> lines,
   required StartArrowData? startArrow,
+  required GraphState graphState,
   required void Function(String name, String dsl) onSave,
 }) {
   final theme = AppThemeNotifier.read(context);
@@ -96,6 +98,13 @@ void showExportDialog(
             Navigator.pop(ctx);
           },
           child: const Text('Export SVG'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(ctx);
+            showLatexExportDialog(context, graphState: graphState);
+          },
+          child: const Text('Export LaTeX'),
         ),
         TextButton(
           onPressed: () {
@@ -313,7 +322,7 @@ void showExportHistoryDialog(
                                     onInsertBlackBox(save);
                                   },
                                 ),
-                              if (!save.isBlackBox)
+                              if (!save.isBlackBox) ...[
                                 IconButton(
                                   icon: Icon(
                                       Icons.input_rounded,
@@ -368,6 +377,23 @@ void showExportHistoryDialog(
                                     );
                                   },
                                 ),
+                                IconButton(
+                                  icon: Icon(Icons.code,
+                                      color: theme.textMid),
+                                  tooltip: 'Export as LaTeX',
+                                  onPressed: () {
+                                    try {
+                                      final gs = DslCodec.importFromDsl(save.dsl);
+                                      showLatexExportDialog(context, graphState: gs);
+                                    } catch (e) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(SnackBar(
+                                        content: Text('LaTeX export error: $e'),
+                                      ));
+                                    }
+                                  },
+                                ),
+                              ],
                               IconButton(
                                 icon: Icon(Icons.edit, color: theme.textMid),
                                 onPressed: () {
