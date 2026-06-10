@@ -714,7 +714,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         }
       });
     }
-    _refreshSimulation();
+    // Pure canvas pan doesn't change the graph — skip refresh so the
+    // simulator step/state is preserved while the user scrolls.
+    if (!_isPanningCanvas) {
+      _refreshSimulation();
+    }
   }
 
   void _onPanEnd(DragEndDetails details) {
@@ -755,6 +759,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _draggingNodeId = null;
     _draggingLineId = null;
     _draggingStartArrow = false;
+
+    // Capture whether we were panning before clearing the flag.
+    final wasPanningCanvas = _isPanningCanvas;
     _isPanningCanvas = false;
 
     _lastPanPosition = null;
@@ -762,7 +769,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _cancelRubberBand();
     _lineSourceNodeId = null;
     _rubberBandEnd = null;
-    _refreshSimulation();
+    // Don't rebuild the simulation if we were only panning the canvas —
+    // nothing in the graph changed, so the current step should be preserved.
+    if (!wasPanningCanvas) {
+      _refreshSimulation();
+    }
   }
 
   void _onPanUpdateWithTracking(DragUpdateDetails details) {
