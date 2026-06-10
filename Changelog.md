@@ -1,3 +1,12 @@
+# June 9th, 2026
+* Added in . to mean everything can take that jump and .-"WORD/CHARACTER" to mean that everything but that word, character is allowed to take that jump
+* Implemented a way for game mode to check if it was NFA vs DFA
+
+# June 8th, 2026
+* Fixed TM mode
+* Fixed NDFA and PDA string simulation highlights
+* Made game levels save your completion 
+
 # June 4th, 2026
 * Changed color settings to have palettes for the user to choose from and added more color settings
 * Fixed halt and accept states so they properly halt
