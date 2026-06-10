@@ -27,6 +27,7 @@ import 'package:provider/provider.dart';
 import 'game_level.dart';
 import 'game_progress_store.dart';
 import 'game_puzzle.dart';
+import 'tutorial_screen.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/app_theme_settings.dart';
 
@@ -296,12 +297,29 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   }
 
   Future<void> _openLevel(GameLevel level) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GamePuzzleScreen(level: level, progressStore: widget.progressStore, onCompleted: _reload),
-      ),
-    );
+    if (level.isTutorial) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TutorialScreen(
+            level: level,
+            progressStore: widget.progressStore,
+            onCompleted: _reload,
+          ),
+        ),
+      );
+    } else {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GamePuzzleScreen(
+            level: level,
+            progressStore: widget.progressStore,
+            onCompleted: _reload,
+          ),
+        ),
+      );
+    }
     _reload();
   }
 
@@ -319,6 +337,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     final canvasH = _canvasHeight(kAllLevels, screenH);
     final positions = _computePositionsFromDeps(kAllLevels, canvasH);
     final canvasW = _canvasWidthFromPositions(positions);
+    // For the progress bar, count puzzle levels and tutorial levels separately
+    final puzzleLevels = kAllLevels.where((l) => !l.isTutorial).toList();
+    final completedPuzzles = _completed.intersection(puzzleLevels.map((l) => l.id).toSet()).length;
 
     return Scaffold(
       backgroundColor: theme.bg,
@@ -394,8 +415,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
             child: Material(
               color: Colors.transparent,
               child: _TopBar(
-                completed: _completed.length,
-                total: kAllLevels.length,
+                completed: completedPuzzles,
+                total: puzzleLevels.length,
                 onSandbox: widget.onGoToSandbox,
                 scrollFraction: _scrollFraction,
                 onScrollChanged: _scrollToFraction,
@@ -612,9 +633,17 @@ class _NodeCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     if (completed)
-                      Icon(Icons.check_circle, color: tagColor, size: 13)
+                      Icon(
+                        level.isTutorial ? Icons.school : Icons.check_circle,
+                        color: tagColor,
+                        size: 13,
+                      )
                     else if (unlocked)
-                      Icon(Icons.radio_button_unchecked, color: tagColor.withOpacity(0.7), size: 11)
+                      Icon(
+                        level.isTutorial ? Icons.school_outlined : Icons.radio_button_unchecked,
+                        color: tagColor.withOpacity(0.7),
+                        size: 11,
+                      )
                     else
                       Icon(Icons.lock_outline, color: theme.textDim, size: 11),
                     const SizedBox(width: 4),
@@ -723,7 +752,7 @@ class _UnlockHint extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(color: tagColor.withOpacity(0.12), borderRadius: BorderRadius.circular(3)),
         child: Text(
-          'TAP TO PLAY',
+          level.isTutorial ? 'TAP TO READ' : 'TAP TO PLAY',
           style: GoogleFonts.sourceCodePro(
             color: tagColor.withOpacity(0.9),
             fontSize: 7,

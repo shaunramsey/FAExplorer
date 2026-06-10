@@ -1,5 +1,6 @@
 import 'widgets/app_theme.dart';
 import 'automaton_type_checker.dart' show RequiredAutomatonType;
+import 'tutorial_screen.dart' show TutorialSlide, TutorialIllustration;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Game Mode — Level definitions and registry
@@ -168,6 +169,13 @@ class GameLevel {
   /// Optional tag for grouping / visual theming of the node.
   final String? tag;
 
+  /// Whether this is a tutorial (slideshow) level rather than a puzzle.
+  /// Tutorial levels show [tutorialSlides] instead of the puzzle canvas.
+  final bool isTutorial;
+
+  /// Slides shown when [isTutorial] is true.  Ignored for normal puzzle levels.
+  final List<TutorialSlide> tutorialSlides;
+
   const GameLevel({
     required this.id,
     required this.title,
@@ -181,6 +189,8 @@ class GameLevel {
     this.x = 0.5,
     this.y = 0.5,
     this.tag,
+    this.isTutorial = false,
+    this.tutorialSlides = const [],
   });
 }
 
@@ -213,6 +223,79 @@ class GameLevel {
 const List<GameLevel> kAllLevels = [
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  TUTORIAL 0 — WELCOME  (x ≈ 0.00)
+  //  Canvas basics: add/move/delete nodes, transitions, start arrow, accept state
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'tutorial_welcome',
+    title: 'How to Play',
+    description: 'Learn the basics of the automata canvas.',
+    svgAsset: '',
+    unlockRule: AlwaysUnlocked(),
+    x: 0.00,
+    y: 0.50,
+    tag: 'tutorial',
+    isTutorial: true,
+    tutorialSlides: [
+      TutorialSlide(
+        headline: 'Welcome!',
+        body: 'This app teaches you how to build **finite automata**, '
+            '**pushdown automata**, and **Turing machines** — '
+            'the fundamental models of computation.\n\n'
+            'Each level asks you to build an automaton that matches a target language. '
+            'Follow these tutorials first to learn the tools, then dive in!',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Adding States',
+        body: '**Double-tap** on any empty area of the canvas to create a new state (circle).\n\n'
+            'States represent positions your machine can be in while reading input. '
+            'You can drag states around to arrange your diagram.',
+        illustrationType: TutorialIllustration.addNode,
+      ),
+      TutorialSlide(
+        headline: 'Drawing Transitions',
+        body: 'Hold **Shift** and drag from one state to another to draw a transition arrow.\n\n'
+            'After drawing, **tap the label** on the arrow to set which input symbol it reads '
+            '(e.g. "a", "b", "0", "1"). '
+            'A single arrow can carry multiple symbols — separate them with commas.',
+        illustrationType: TutorialIllustration.addTransition,
+      ),
+      TutorialSlide(
+        headline: 'Accept States',
+        body: 'A state shown with a **double ring** is an accepting state — '
+            'the machine accepts the input if it finishes in one of these.\n\n'
+            'To make a state accepting: **tap it** to open its menu, then toggle **"Accept"**.',
+        illustrationType: TutorialIllustration.setAccepting,
+      ),
+      TutorialSlide(
+        headline: 'The Start Arrow',
+        body: 'Every automaton needs exactly **one start state** — the state it begins in.\n\n'
+            'Drag the floating start arrow onto a state to set it as the start. '
+            'If no start arrow is visible, use the **toolbar** to place one.',
+        illustrationType: TutorialIllustration.setStartArrow,
+      ),
+      TutorialSlide(
+        headline: 'Deleting Things',
+        body: 'Made a mistake? Use the **trash-can** button in the toolbar to enter delete mode.\n\n'
+            'In delete mode, **tap** any state or transition arrow to remove it. '
+            'Tap the trash-can again to exit delete mode.',
+        illustrationType: TutorialIllustration.deleteMode,
+      ),
+      TutorialSlide(
+        headline: 'Checking Your Answer',
+        body: 'When you think your automaton is correct, tap **"Check"** in the top-right corner.\n\n'
+            'The app will test your machine against the target language. '
+            'If they match, the level is complete! If not, you\'ll see a **counterexample** — '
+            'a string your machine handles differently from the target.',
+        illustrationType: TutorialIllustration.checkAnswer,
+      ),
+    ],
+  ),
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  FA COLUMN 0 — INTRO  (x ≈ 0.04)
   //  ONE start node. Everything else chains from here.
   // ═══════════════════════════════════════════════════════════════════════════
@@ -239,6 +322,66 @@ const List<GameLevel> kAllLevels = [
     x: 0.04,
     y: 0.50,
     tag: 'intro',
+  ),
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  TUTORIAL 1 — DFA vs NFA  (x ≈ 0.08)
+  //  Explains determinism, nondeterminism, and when each is required
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'tutorial_dfa_vs_nfa',
+    title: 'DFA vs NFA',
+    description: 'Understand the difference between deterministic and nondeterministic automata.',
+    svgAsset: '',
+    unlockRule: RequireLevel('intro_accept_a'),
+    x: 0.08,
+    y: 0.50,
+    tag: 'tutorial',
+    isTutorial: true,
+    tutorialSlides: [
+      TutorialSlide(
+        headline: 'Two Kinds of Automaton',
+        body: 'Levels in this game are tagged **DFA** or **NFA** (or neither, for bosses).\n\n'
+            '• A **DFA** (Deterministic Finite Automaton) must have exactly one transition per symbol per state.\n'
+            '• An **NFA** (Nondeterministic Finite Automaton) can have zero, one, or many transitions for the same symbol.',
+        illustrationType: TutorialIllustration.dfaVsNfa,
+      ),
+      TutorialSlide(
+        headline: 'DFA Rules',
+        body: 'For a valid DFA over alphabet {a, b}:\n\n'
+            '1. Every state must have **exactly one** outgoing transition for each symbol.\n'
+            '2. No ε (epsilon / free-jump) transitions are allowed.\n'
+            '3. There must be exactly **one start state**.\n\n'
+            'If your submission violates any of these, the checker will tell you exactly which states are the problem.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'NFA Rules',
+        body: 'An NFA is more flexible — it **may** have:\n\n'
+            '• Multiple outgoing arrows for the **same** symbol from one state\n'
+            '• **ε-transitions** (free jumps, drawn as arrows with no label)\n'
+            '• States with **no** outgoing arrow for some symbol\n\n'
+            'An NFA accepts a string if **any** path through the machine leads to an accept state.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'The "." (dot) Symbol',
+        body: 'A transition labelled **"."** matches **any single symbol** from the alphabet.\n\n'
+            'This is a shorthand that saves you drawing one arrow per symbol. '
+            'For example, a self-loop "." on a state means "stay here for any symbol".',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Epsilon (ε) Transitions',
+        body: 'An **ε-transition** (drawn without a label) is a free jump — '
+            'the machine moves to the next state without consuming any input.\n\n'
+            'In the canvas, draw an arrow between two states and **clear the label** to create an ε-transition. '
+            'Only NFAs may use these.',
+        illustrationType: TutorialIllustration.epsilonTransition,
+      ),
+    ],
   ),
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -480,6 +623,60 @@ const List<GameLevel> kAllLevels = [
     y: 0.75,
     requiredAutomatonType: RequiredAutomatonType.nfa,
     tag: 'nfa',
+  ),
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  TUTORIAL 2 — NFA PATTERNS  (x ≈ 0.24)
+  //  Explains regex-like NFA patterns and how to read level descriptions
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'tutorial_nfa_patterns',
+    title: 'NFA Patterns',
+    description: 'Learn how to think about NFA designs and read pattern descriptions.',
+    svgAsset: '',
+    unlockRule: RequireAny(['dfa_ab', 'dfa_even_a', 'dsl_only_empty_dfa']),
+    x: 0.24,
+    y: 0.50,
+    tag: 'tutorial',
+    isTutorial: true,
+    tutorialSlides: [
+      TutorialSlide(
+        headline: 'Pattern Thinking',
+        body: 'Many levels describe a **pattern** — for example, '
+            '\'all strings ending in \"ab\"\'\n\n'
+            'A reliable technique for NFA design:\n'
+            '1. Draw a **"prefix sink"** state that loops on everything.\n'
+            '2. Add a **chain** of states for the pattern you care about.\n'
+            '3. Mark the last state as **accepting**.\n\n'
+            'The NFA \'guesses\' when the pattern starts — it tries all paths.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Comma-Separated Labels',
+        body: 'You can put **multiple symbols** on one arrow by separating them with commas.\n\n'
+            'For example: a transition labelled **"a,b"** means the machine can take that arrow '
+            'when it reads either "a" or "b". This keeps diagrams tidy.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Complement Notation',
+        body: 'Some levels use notation like **".-\"Green Leaf\""** on an arrow.\n\n'
+            'The dot **"."** means "any symbol". The minus means **"except"**. '
+            'So **".-X"** means "any symbol except X". '
+            'This is handy for caterpillar-style puzzles where one word triggers a special transition.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Self-Loops',
+        body: 'A **self-loop** is an arrow from a state back to itself.\n\n'
+            'It means "stay in this state while reading this symbol". '
+            'Self-loops are common for "ignore everything until we see X" logic.\n\n'
+            'To create one: in **line mode** (Shift held), drag from a state onto itself.',
+        illustrationType: TutorialIllustration.none,
+      ),
+    ],
   ),
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1487,6 +1684,62 @@ const List<GameLevel> kAllLevels = [
 
   // ── PDA Col 8 — INTRO  (x ≈ 0.61) ─────────────────────────────────────────
 
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  TUTORIAL 3 — PUSHDOWN AUTOMATA  (x ≈ 0.59)
+  //  Explains the stack, transition format, and when PDAs are needed
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'tutorial_pda',
+    title: 'Pushdown Automata',
+    description: 'Learn how PDAs use a stack to recognise context-free languages.',
+    svgAsset: '',
+    unlockRule: RequireAny(['boss_palindrome', 'dsl_ends_b_dfa']),
+    x: 0.59,
+    y: 0.50,
+    tag: 'tutorial',
+    isTutorial: true,
+    tutorialSlides: [
+      TutorialSlide(
+        headline: 'Beyond Finite Memory',
+        body: 'Some languages **cannot** be recognised by a DFA or NFA. '
+            'The classic example is aⁿbⁿ — equal numbers of a\'s then b\'s.\n\n'
+            'A DFA has no memory of how many a\'s it has seen. '
+            'A **PDA** adds a **stack** — an infinite scratchpad — which solves this.',
+        illustrationType: TutorialIllustration.pdaStack,
+      ),
+      TutorialSlide(
+        headline: 'PDA Transition Format',
+        body: 'Each PDA transition arrow has the label format:\n\n'
+            '  **read, pop | push**\n\n'
+            '• **read** — the input symbol consumed (∅ means consume nothing)\n'
+            '• **pop**  — the stack symbol removed from the top (∅ means pop nothing)\n'
+            '• **push** — the stack symbol added on top (∅ means push nothing)\n\n'
+            'Example: **"a, ∅ | X"** — read "a", don\'t pop, push "X".',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'The ∅ (Empty) Symbol',
+        body: 'In PDA labels, **∅** (empty set symbol) means "nothing":\n\n'
+            '• **read ∅** — consume no input (ε-move on the tape)\n'
+            '• **pop ∅** — don\'t remove anything from the stack\n'
+            '• **push ∅** — don\'t add anything to the stack\n\n'
+            'You can type it as the empty-set character or leave the field blank in the editor.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Stack Strategy for aⁿbⁿ',
+        body: 'Here\'s the classic approach for equal-count problems:\n\n'
+            '1. **Push** a marker (e.g. X) for each "a" you read.\n'
+            '2. When you start reading "b"s, **pop** one X per "b".\n'
+            '3. Accept when the stack is empty and input is exhausted.\n\n'
+            'If the stack runs out before the input (or vice versa), the counts don\'t match — reject.',
+        illustrationType: TutorialIllustration.none,
+      ),
+    ],
+  ),
+
   GameLevel(
     id: 'pda_ab_single',
     title: 'PDA: "ab"',
@@ -1728,6 +1981,70 @@ const List<GameLevel> kAllLevels = [
     x: 0.75,
     y: 0.50,
     tag: 'pda',
+  ),
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  TUTORIAL 4 — TURING MACHINES  (x ≈ 0.79)
+  //  Explains the tape, head, transitions, and TM programming mindset
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'tutorial_tm',
+    title: 'Turing Machines',
+    description: 'Learn the read/write tape model and TM transition format.',
+    svgAsset: '',
+    unlockRule: RequireAny(['level_2', 'pda_an_b2n']),
+    x: 0.79,
+    y: 0.50,
+    tag: 'tutorial',
+    isTutorial: true,
+    tutorialSlides: [
+      TutorialSlide(
+        headline: 'The Turing Machine',
+        body: 'A Turing machine adds a **read/write tape** to a finite automaton. '
+            'The tape is infinite in both directions and starts with your input.\n\n'
+            'A **read/write head** sits on one cell at a time. '
+            'On each step it reads the current symbol, writes a new symbol (or leaves it), '
+            'and moves **Left** or **Right** (or stays Still).',
+        illustrationType: TutorialIllustration.tmTape,
+      ),
+      TutorialSlide(
+        headline: 'TM Transition Format',
+        body: 'Each TM arrow label has the format:\n\n'
+            '  **readSymbol writeSymbol Direction**\n\n'
+            'Direction is **R** (right), **L** (left), or **S** (stay).\n\n'
+            'Example: **"aXR"** — read "a", write "X", move Right.\n'
+            'Example: **"∅∅S"** — read blank, write blank, stay (blank = empty cell).',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Accepting and Rejecting',
+        body: 'A TM **accepts** by entering an accept state (double ring) and halting.\n\n'
+            'A TM **rejects** either by entering a reject state (no outgoing transition for the current symbol causes a crash) '
+            'or by looping forever.\n\n'
+            'The equivalence checker uses a bounded simulation — '
+            'it tests many input strings but can\'t always prove correctness on all inputs.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'The Crossout Technique',
+        body: 'Many TM puzzles use a **crossout** strategy:\n\n'
+            '1. Replace a matched symbol with **X** (or another marker) to "cross it out".\n'
+            '2. Sweep the tape left/right to find the next unmatched symbol.\n'
+            '3. Repeat until all symbols are matched or a mismatch is detected.\n\n'
+            'You\'ll see this in aⁿbⁿ, aⁿbⁿcⁿ, palindrome, and the "ww" puzzles.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Multiple Loops on One State',
+        body: 'TM states often have **many self-loops** — one for each symbol the machine should '
+            'pass over without stopping.\n\n'
+            'In the canvas you can drag a self-loop\'s label dot to rotate it around the state circle, '
+            'so diagrams stay readable even with 4–5 loops on one state.',
+        illustrationType: TutorialIllustration.none,
+      ),
+    ],
   ),
 
   // ═══════════════════════════════════════════════════════════════════════════

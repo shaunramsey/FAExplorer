@@ -19,6 +19,7 @@ import 'widgets/app_theme.dart';
 
 import 'game_level.dart';
 import 'game_progress_store.dart';
+import 'tutorial_screen.dart';
 import 'dsl_code.dart';
 import 'fa_equivalence.dart';
 import 'models.dart';
@@ -570,6 +571,14 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   @override
   Widget build(BuildContext context) {
+    // If somehow a tutorial level is opened via GamePuzzleScreen, redirect it.
+    if (widget.level.isTutorial) {
+      return TutorialScreen(
+        level: widget.level,
+        progressStore: widget.progressStore,
+        onCompleted: widget.onCompleted,
+      );
+    }
     final theme = context.watch<AppThemeNotifier>();
     return Scaffold(
       backgroundColor: theme.bg,
