@@ -30,9 +30,9 @@ echo "* Build number **$NEW_NUM**" >> "$OUTPUT_FILE"
 echo "* [Go Back](README.md) - go to the Readme"  >> "$OUTPUT_FILE"
 echo "* [Latest Build](build/web/index.html) - go to the last build"  >> "$OUTPUT_FILE"
 
-echo "* Build number **$NEW_NUM**" >> "$VERSION_FILE"
+echo " [*] Build number **$NEW_NUM**" >> "$VERSION_FILE"
 
-echo "Copying markdown into assets folder"
+echo " [*] Copying markdown into assets folder for build $NEW_NUM"
 cp Version.md assets/.
 cp Changelog.md assets/.
 cp About.md assets/.
@@ -43,5 +43,5 @@ else
     flutter build web --release --base-href=/FAExplorer/build/web/
 fi
 
-echo "Output successfully written to $OUTPUT_FILE and $VERSION_FILE"
-echo "* Build number **$NEW_NUM** is ready for publishing." 
+echo " [*] Output successfully written to $OUTPUT_FILE and $VERSION_FILE"
+echo " [*] Build number **$NEW_NUM** is ready for github push / publishing." 
