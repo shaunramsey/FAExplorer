@@ -634,8 +634,24 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     return Scaffold(
       backgroundColor: theme.bg,
       appBar: AppBar(
-        title: Text(widget.level.title,
-            style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.level.title,
+                style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
+            Text(
+              widget.difficulty.displayName.toUpperCase(),
+              style: GoogleFonts.orbitron(
+                fontSize: 9,
+                letterSpacing: 3,
+                color: widget.difficulty.isHard
+                    ? const Color(0xFFFFB300)
+                    : const Color(0xFF4CAF50),
+              ),
+            ),
+          ],
+        ),
         leading: BackButton(
           onPressed: () => Navigator.of(context).pop(),
         ),

@@ -241,12 +241,21 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollFraction = 0.0; // 0..1, drives the top-bar slider
 
+  /// Tracks which difficulty the player is currently viewing.
+  /// Completion badges and the progress counter reflect this selection.
+  LevelDifficulty _difficulty = LevelDifficulty.hard;
+
+  /// Completed IDs for the *currently selected* difficulty.
   Set<String> _completed = {};
+
+  /// Union of all completed IDs across both difficulties — used for unlock
+  /// evaluation so completing on either difficulty counts toward prerequisites.
+  Set<String> _completedAny = {};
 
   @override
   void initState() {
     super.initState();
-    _completed = widget.progressStore.loadCompletedLevels();
+    _loadCompleted();
 
     _pulseCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
     _flowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
@@ -272,12 +281,22 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     super.dispose();
   }
 
-  void _reload() => setState(() {
-    _completed = widget.progressStore.loadCompletedLevels();
-  });
+  void _loadCompleted() {
+    setState(() {
+      _completed = widget.progressStore.loadCompletedLevels(_difficulty);
+      _completedAny = widget.progressStore.loadCompletedLevels(LevelDifficulty.hard)
+        ..addAll(widget.progressStore.loadCompletedLevels(LevelDifficulty.easy));
+    });
+  }
 
-  bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completed);
+  void _reload() => _loadCompleted();
+
+  bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completedAny);
   bool _isCompleted(String id) => _completed.contains(id);
+  bool _isCompletedHard(String id) =>
+      widget.progressStore.loadCompletedLevels(LevelDifficulty.hard).contains(id);
+  bool _isCompletedEasy(String id) =>
+      widget.progressStore.loadCompletedLevels(LevelDifficulty.easy).contains(id);
 
   void _onTap(GameLevel level) {
     if (!_isUnlocked(level)) {
@@ -309,6 +328,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         ),
       );
     } else {
+      // If the player selected Easy but this level has no scaffold, fall back
+      // to Hard so the canvas isn't just an empty hard-mode screen mislabelled.
+      final effectiveDifficulty =
+          (_difficulty.isEasy && !level.hasEasyMode) ? LevelDifficulty.hard : _difficulty;
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -316,6 +339,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
             level: level,
             progressStore: widget.progressStore,
             onCompleted: _reload,
+            difficulty: effectiveDifficulty,
           ),
         ),
       );
@@ -373,7 +397,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                           theme: theme.data,
                           levels: kAllLevels,
                           positions: positions,
-                          completed: _completed,
+                          completed: _completedAny,
                           isUnlocked: _isUnlocked,
                           flowValue: _flowCtrl.value,
                           pulseValue: _pulseCtrl.value,
@@ -395,6 +419,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                                 level: level,
                                 unlocked: _isUnlocked(level),
                                 completed: _isCompleted(level.id),
+                                completedHard: _isCompletedHard(level.id),
+                                completedEasy: _isCompletedEasy(level.id),
+                                currentDifficulty: _difficulty,
                                 pulseAnim: _pulseCtrl,
                               ),
                             ),
@@ -420,6 +447,11 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                 onSandbox: widget.onGoToSandbox,
                 scrollFraction: _scrollFraction,
                 onScrollChanged: _scrollToFraction,
+                difficulty: _difficulty,
+                onDifficultyChanged: (d) {
+                  setState(() => _difficulty = d);
+                  _loadCompleted();
+                },
               ),
             ),
           ),
@@ -442,6 +474,8 @@ class _TopBar extends StatelessWidget {
   final VoidCallback onSandbox;
   final double scrollFraction;
   final ValueChanged<double> onScrollChanged;
+  final LevelDifficulty difficulty;
+  final ValueChanged<LevelDifficulty> onDifficultyChanged;
 
   const _TopBar({
     required this.completed,
@@ -449,6 +483,8 @@ class _TopBar extends StatelessWidget {
     required this.onSandbox,
     required this.scrollFraction,
     required this.onScrollChanged,
+    required this.difficulty,
+    required this.onDifficultyChanged,
   });
 
   @override
@@ -489,6 +525,14 @@ class _TopBar extends StatelessWidget {
                 ),
 
                 const Spacer(),
+
+                // ── Difficulty toggle ────────────────────────────────────
+                _DifficultyToggle(
+                  current: difficulty,
+                  onChanged: onDifficultyChanged,
+                ),
+
+                const SizedBox(width: 12),
 
                 // Progress
                 Row(
@@ -578,9 +622,20 @@ class _NodeCard extends StatelessWidget {
   final GameLevel level;
   final bool unlocked;
   final bool completed;
+  final bool completedHard;
+  final bool completedEasy;
+  final LevelDifficulty currentDifficulty;
   final Animation<double> pulseAnim;
 
-  const _NodeCard({required this.level, required this.unlocked, required this.completed, required this.pulseAnim});
+  const _NodeCard({
+    required this.level,
+    required this.unlocked,
+    required this.completed,
+    required this.completedHard,
+    required this.completedEasy,
+    required this.currentDifficulty,
+    required this.pulseAnim,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -663,6 +718,14 @@ class _NodeCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const Spacer(),
+                    // ── Dual-difficulty completion badges ────────────────
+                    if (!level.isTutorial)
+                      _CompletionBadges(
+                        completedHard: completedHard,
+                        completedEasy: completedEasy,
+                        currentDifficulty: currentDifficulty,
+                      ),
                   ],
                 ),
 
@@ -698,6 +761,188 @@ class _NodeCard extends StatelessWidget {
       },
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Difficulty toggle (Easy / Hard pill in the top bar)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DifficultyToggle extends StatelessWidget {
+  const _DifficultyToggle({required this.current, required this.onChanged});
+
+  final LevelDifficulty current;
+  final ValueChanged<LevelDifficulty> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return Container(
+      height: 28,
+      decoration: BoxDecoration(
+        color: theme.bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.borderMid),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: LevelDifficulty.values.map((d) {
+          final selected = d == current;
+          const easyColor = Color(0xFF4CAF50);
+          const hardColor = Color(0xFFFFB300);
+          final activeColor = d.isHard ? hardColor : easyColor;
+          return GestureDetector(
+            onTap: () => onChanged(d),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected ? activeColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Text(
+                d.displayName.toUpperCase(),
+                style: GoogleFonts.orbitron(
+                  fontSize: 8,
+                  letterSpacing: 1.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.black87 : theme.textDim,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Completion badges — shown in the top-right of each node card
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shows a small badge for each difficulty the player has completed.
+/// Hard → gold gear badge.  Easy → green check badge.
+/// If neither is completed, renders nothing.
+class _CompletionBadges extends StatelessWidget {
+  const _CompletionBadges({
+    required this.completedHard,
+    required this.completedEasy,
+    required this.currentDifficulty,
+  });
+
+  final bool completedHard;
+  final bool completedEasy;
+  final LevelDifficulty currentDifficulty;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!completedHard && !completedEasy) return const SizedBox.shrink();
+
+    const size = 14.0;
+
+    if (completedHard && completedEasy) {
+      return SizedBox(
+        width: size + 6,
+        height: size,
+        child: Stack(
+          children: [
+            Positioned(left: 0, child: _EasyBadge(size: size)),
+            Positioned(right: 0, child: _HardBadge(size: size)),
+          ],
+        ),
+      );
+    }
+    if (completedHard) return _HardBadge(size: size);
+    return _EasyBadge(size: size);
+  }
+}
+
+class _EasyBadge extends StatelessWidget {
+  const _EasyBadge({required this.size});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle),
+      child: Icon(Icons.check_rounded, size: size * 0.65, color: Colors.white),
+    );
+  }
+}
+
+class _HardBadge extends StatelessWidget {
+  const _HardBadge({required this.size});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(size: Size(size, size), painter: _HardBadgePainter());
+  }
+}
+
+class _HardBadgePainter extends CustomPainter {
+  static const _gold = Color(0xFFFFB300);
+  static const _goldDeep = Color(0xFFE65100);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = min(cx, cy);
+
+    // Gear teeth
+    final toothPaint = Paint()..color = _gold..style = PaintingStyle.fill;
+    for (var i = 0; i < 6; i++) {
+      final angle = (i / 6) * 2 * pi;
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate(angle);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(r * 0.80, 0), width: r * 0.30, height: r * 0.20),
+          const Radius.circular(1),
+        ),
+        toothPaint,
+      );
+      canvas.restore();
+    }
+
+    // Outer filled circle
+    canvas.drawCircle(Offset(cx, cy), r * 0.68, Paint()..color = _gold..style = PaintingStyle.fill);
+
+    // Inner dark disc
+    canvas.drawCircle(
+      Offset(cx, cy),
+      r * 0.50,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [_goldDeep.withOpacity(0.9), _goldDeep.withOpacity(0.65)],
+        ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.50)),
+    );
+
+    // Six-pointed star
+    const starPoints = 6;
+    final outerR = r * 0.33;
+    final innerR = r * 0.17;
+    final starPath = Path();
+    for (var i = 0; i < starPoints * 2; i++) {
+      final angle = (i / (starPoints * 2)) * 2 * pi - pi / 2;
+      final sr = i.isEven ? outerR : innerR;
+      final x = cx + cos(angle) * sr;
+      final y = cy + sin(angle) * sr;
+      if (i == 0) starPath.moveTo(x, y); else starPath.lineTo(x, y);
+    }
+    starPath.close();
+    canvas.drawPath(starPath, Paint()..color = _gold..style = PaintingStyle.fill);
+
+    // Centre dot
+    canvas.drawCircle(Offset(cx, cy), r * 0.09, Paint()..color = Colors.white.withOpacity(0.9));
+  }
+
+  @override
+  bool shouldRepaint(_HardBadgePainter _) => false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

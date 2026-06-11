@@ -139,7 +139,19 @@ class RequireExpression extends UnlockRule {
 ///
 /// [hard]  — blank canvas; the player builds everything from scratch.
 ///           This is the original behaviour and is always available.
-enum LevelDifficulty { easy, hard }
+enum LevelDifficulty {
+  easy,
+  hard;
+
+  /// Human-readable label used in the UI toggle and page titles.
+  String get displayName => switch (this) {
+        LevelDifficulty.easy => 'Easy',
+        LevelDifficulty.hard => 'Hard',
+      };
+
+  bool get isEasy => this == LevelDifficulty.easy;
+  bool get isHard => this == LevelDifficulty.hard;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GameLevel
