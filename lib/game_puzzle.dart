@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 import 'widgets/app_theme.dart';
 
 import 'game_level.dart';
+// LevelDifficulty is also declared in game_level.dart — no extra import needed.
 import 'game_progress_store.dart';
 import 'tutorial_screen.dart';
 import 'dsl_code.dart';
@@ -36,11 +37,19 @@ class GamePuzzleScreen extends StatefulWidget {
   final GameProgressStore progressStore;
   final VoidCallback? onCompleted;
 
+  /// The difficulty the player chose when opening this level.
+  ///
+  /// [LevelDifficulty.hard] (default) — blank canvas, original behaviour.
+  /// [LevelDifficulty.easy]           — canvas is pre-seeded with nodes from
+  ///                                    [GameLevel.easyScaffoldDsl].
+  final LevelDifficulty difficulty;
+
   const GamePuzzleScreen({
     super.key,
     required this.level,
     required this.progressStore,
     this.onCompleted,
+    this.difficulty = LevelDifficulty.hard,
   });
 
   @override
@@ -108,9 +117,13 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   // ── persistence helpers ─────────────────────────────────────────────────
 
   /// Restores the user's previous work for this level from SharedPreferences.
+  ///
+  /// In easy mode, if no saved progress exists yet, the canvas is seeded from
+  /// [GameLevel.easyScaffoldDsl] so the nodes are already placed.
   Future<void> _loadSavedDsl() async {
-    final dsl = widget.progressStore.loadLevelDsl(widget.level.id);
+    final dsl = widget.progressStore.loadLevelDsl(widget.level.id, widget.difficulty);
     if (dsl != null && dsl.isNotEmpty) {
+      // Restore existing in-progress save.
       try {
         final gs = DslCodec.importFromDsl(dsl);
         if (mounted) {
@@ -128,10 +141,37 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           });
         }
       } catch (_) {
-        // Corrupted save — silently ignore and start fresh.
+        // Corrupted save — fall through and try the scaffold seed instead.
+        _tryApplyEasyScaffold();
       }
+    } else if (widget.difficulty == LevelDifficulty.easy &&
+        widget.level.easyScaffoldDsl.isNotEmpty) {
+      // No saved progress yet — seed from the scaffold.
+      _tryApplyEasyScaffold();
     }
     if (mounted) setState(() => _loadingSavedDsl = false);
+  }
+
+  /// Applies the easy-mode scaffold DSL to the canvas (nodes only; connections
+  /// are intentionally stripped so the player has to draw them).
+  void _tryApplyEasyScaffold() {
+    try {
+      final gs = DslCodec.importFromDsl(widget.level.easyScaffoldDsl);
+      if (mounted) {
+        setState(() {
+          _nodes
+            ..clear()
+            ..addAll(gs.nodes);
+          // Strip all connections — the player draws those themselves.
+          _lines.clear();
+          _startArrow = gs.startArrow;
+          _nodeCounter = _nodes.length;
+          _lineCounter = 0;
+        });
+      }
+    } catch (_) {
+      // Bad scaffold DSL — silently start fresh rather than crashing.
+    }
   }
 
   /// Schedules a debounced save (fires 800 ms after the last canvas change).
@@ -153,7 +193,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           automataMode: widget.level.automataMode,
         ),
       );
-      await widget.progressStore.saveLevelDsl(widget.level.id, dsl);
+      await widget.progressStore.saveLevelDsl(widget.level.id, dsl, widget.difficulty);
     } catch (_) {
       // Non-fatal — best-effort save.
     }
@@ -511,7 +551,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         case EquivalenceStatus.equivalent:
           _isCorrect = true;
           _checkResult = '✓ Correct! Your automaton is equivalent to the target.';
-          await widget.progressStore.markCompleted(widget.level.id);
+          await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
           await _saveNow(); // persist the winning solution immediately
           widget.onCompleted?.call();
           _successCtrl.forward(from: 0);
