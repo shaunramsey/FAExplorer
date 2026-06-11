@@ -1826,8 +1826,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('tutorial_pda'),
     x: 0.81,
     y: 0.80,
-    requiredAutomatonType: RequiredAutomatonType.nfa,
-    tag: 'nfa',
+    tag: 'fa',
   ),
 
   // ═══════════════════════════════════════════════════════════════════════════
