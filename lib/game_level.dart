@@ -372,6 +372,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.04,
     y: 0.50,
     tag: 'intro',
+    alphabet: {'a'},
   ),
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -455,6 +456,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.12,
     y: 0.20,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -482,6 +484,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.12,
     y: 0.40,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -567,6 +570,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.18,
     y: 0.15,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -593,6 +597,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.18,
     y: 0.35,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -738,6 +743,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.24,
     y: 0.30,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -803,6 +809,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.24,
     y: 0.75,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -883,6 +890,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.30,
     y: 0.30,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b', 'c'},
     tag: 'nfa',
   ),
 
@@ -958,6 +966,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.30,
     y: 0.75,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b', 'c'},
     tag: 'nfa',
   ),
 
@@ -1006,6 +1015,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.36,
     y: 0.10,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'0', '1'},
     tag: 'nfa',
   ),
 
@@ -1128,6 +1138,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.36,
     y: 0.75,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -1206,6 +1217,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.41,
     y: 0.70,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -1248,6 +1260,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.46,
     y: 0.65,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -1326,6 +1339,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.51,
     y: 0.65,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'0', '1'},
     tag: 'nfa',
   ),
 
@@ -1395,6 +1409,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.56,
     y: 0.65,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'a', 'b'},
     tag: 'nfa',
   ),
 
@@ -1478,6 +1493,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireAny(['dsl_no_consec_b', 'dsl_no_consec_b_nfa']),
     x: 0.61,
     y: 0.50,
+    alphabet: {'a', 'b'},
     tag: 'boss',
     isBoss: true,
   ),
@@ -1659,6 +1675,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_binary_mod3'),
     x: 0.73,
     y: 0.25,
+    alphabet: {'0', '1'},
     tag: 'boss',
     isBoss: true,
   ),
@@ -1719,6 +1736,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('dsl_binary_mod3'),
     x: 0.73,
     y: 0.75,
+    alphabet: {'0', '1'},
     tag: 'boss',
     isBoss: true,
   ),
@@ -1799,6 +1817,7 @@ const List<GameLevel> kAllLevels = [
     x: 0.81,
     y: 0.20,
     requiredAutomatonType: RequiredAutomatonType.nfa,
+    alphabet: {'"Green Leaf"', '(others)'},
     tag: 'nfa',
   ),
 
@@ -1826,6 +1845,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('tutorial_pda'),
     x: 0.81,
     y: 0.80,
+    alphabet: {'a', 'b', 'c', '…', 'z'},
     tag: 'fa',
   ),
 
@@ -1860,6 +1880,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireAll(['dsl_caterpillar_nfa', 'dsl_halt_accept_y']),
     x: 0.84,
     y: 0.50,
+    alphabet: {'(', ')'},
     tag: 'pda',
   ),
 
@@ -1896,6 +1917,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('pda_balanced_parens'),
     x: 0.87,
     y: 0.50,
+    alphabet: {'a', 'b'},
     tag: 'pda',
   ),
 
@@ -1929,6 +1951,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('pda_anbn'),
     x: 0.89,
     y: 0.50,
+    alphabet: {'a', 'b'},
     tag: 'pda',
   ),
 
@@ -1966,6 +1989,7 @@ const List<GameLevel> kAllLevels = [
     unlockRule: RequireLevel('pda_more_as'),
     x: 0.91,
     y: 0.50,
+    alphabet: {'a', 'b'},
     tag: 'pda',
   ),
 
