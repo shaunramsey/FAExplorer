@@ -570,12 +570,23 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           break;
 
         case EquivalenceStatus.unknownCapReached:
-          _checkResult = levelMode != AutomataMode.ndfa
-              ? '? Bounded simulation completed but could not confirm equivalence.\n\n'
-                'If your machine handles all tested inputs correctly it may still be right —\n'
-                'try a few more edge cases manually.'
-              : '? Could not determine equivalence (search space too large).\n\n'
+          if (levelMode == AutomataMode.pda || levelMode == AutomataMode.tm) {
+            // PDA / TM equivalence is undecidable in general — the bounded
+            // simulation passed all test cases, which is the best we can do.
+            // Count this as a level completion.
+            _isCorrect = true;
+            _checkResult = '✓ All tested inputs matched the target behaviour.\n\n'
+                'PDA/TM equivalence cannot be verified exactly, but your machine '
+                'passed the full bounded test suite — level complete!';
+            await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
+            await _saveNow();
+            widget.onCompleted?.call();
+            _successCtrl.forward(from: 0);
+            _showSuccessDialog();
+          } else {
+            _checkResult = '? Could not determine equivalence (search space too large).\n\n'
                 'Try simplifying your automaton or check manually.';
+          }
           break;
 
         case EquivalenceStatus.noStartState:

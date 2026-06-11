@@ -1751,19 +1751,10 @@ const List<GameLevel> kAllLevels = [
         headline: 'PDA Transition Format',
         body: 'Each PDA transition arrow has the label format:\n\n'
             '  **read, pop | push**\n\n'
-            '• **read** — the input symbol consumed (∅ means consume nothing)\n'
-            '• **pop**  — the stack symbol removed from the top (∅ means pop nothing)\n'
-            '• **push** — the stack symbol added on top (∅ means push nothing)\n\n'
-            'Example: **"a, ∅ | X"** — read "a", don\'t pop, push "X".',
-        illustrationType: TutorialIllustration.none,
-      ),
-      TutorialSlide(
-        headline: 'The ∅ (Empty) Symbol',
-        body: 'In PDA labels, **∅** (empty set symbol) means "nothing":\n\n'
-            '• **read ∅** — consume no input (ε-move on the tape)\n'
-            '• **pop ∅** — don\'t remove anything from the stack\n'
-            '• **push ∅** — don\'t add anything to the stack\n\n'
-            'You can type it as the empty-set character or leave the field blank in the editor.',
+            '• **read** — the input symbol consumed (**~** means consume nothing)\n'
+            '• **pop**  — the stack symbol removed from the top (**~** means pop nothing)\n'
+            '• **push** — the stack symbol added on top (**~** means push nothing)\n\n'
+            'Example: **"a, ~ | X"** — read "a", don\'t pop, push "X".',
         illustrationType: TutorialIllustration.none,
       ),
       TutorialSlide(
