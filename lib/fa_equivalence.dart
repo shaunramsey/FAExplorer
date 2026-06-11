@@ -20,8 +20,11 @@
 // ───────────
 //  • Only NFA (ndfa) mode is supported.  PDAs and TMs are undecidable in
 //    general; the caller is expected to gate on AutomataMode.ndfa.
-//  • The alphabet is inferred from the transition labels of both machines
-//    combined.  ε / ~ / empty labels are treated as epsilon (not a symbol).
+//  • The alphabet is inferred from the concrete (non-wildcard) transition
+//    labels of both machines combined.  ε / ~ / empty labels are treated as
+//    epsilon (not a symbol).  `.` (wildcard) and `.-X` (negation) tokens are
+//    expanded at step-time against the combined alphabet, so they never fire
+//    on symbols outside that set.
 //  • The state-space is exponential in the worst case; a hard cap of 8 000
 //    BFS nodes is applied.  If the cap is hit the result is "unknown".
 //  • The null / ? transition and black-box nodes are NOT modelled here
@@ -96,7 +99,14 @@ EquivalenceResult checkEquivalence({
   final nfa1 = _NfaAdapter(nodes: nodes1, lines: lines1);
   final nfa2 = _NfaAdapter(nodes: nodes2, lines: lines2);
 
-  final alphabet = <String>{...nfa1.alphabet, ...nfa2.alphabet};
+  // Build the combined concrete alphabet from both machines, then share it so
+  // that `.` and `.-X` expand correctly relative to all declared symbols.
+  final alphabet = <String>{
+    ...nfa1.collectConcreteSymbols(),
+    ...nfa2.collectConcreteSymbols(),
+  };
+  nfa1.alphabet = alphabet;
+  nfa2.alphabet = alphabet;
 
   // Initial powerset states after ε-closure of each start node.
   final init1 = nfa1.epsilonClosure({startArrow1.nodeId});
@@ -397,31 +407,62 @@ String _encodeInputTokens(List<String> tokens) {
 //  Lightweight NFA adapter that operates on the existing model classes
 // ─────────────────────────────────────────────────────────────────────────────
 
-final _labelSplit = RegExp(r'[,\n]');
+/// Splits a raw transition label into individual symbol tokens, correctly
+/// handling quoted multi-character tokens such as `"Green Leaf"` and
+/// negation prefixes like `.-"Green Leaf","Bar"`.
+///
+/// Commas and newlines are delimiters only when outside double-quotes.
+List<String> _splitLabel(String label) {
+  final tokens = <String>[];
+  final buf = StringBuffer();
+  bool inQuote = false;
+  for (int i = 0; i < label.length; i++) {
+    final ch = label[i];
+    if (ch == '"') {
+      inQuote = !inQuote;
+      buf.write(ch);
+    } else if (!inQuote && (ch == ',' || ch == '\n')) {
+      final t = buf.toString().trim();
+      if (t.isNotEmpty) tokens.add(t);
+      buf.clear();
+    } else {
+      buf.write(ch);
+    }
+  }
+  final t = buf.toString().trim();
+  if (t.isNotEmpty) tokens.add(t);
+  return tokens;
+}
 
 class _NfaAdapter {
   final Map<String, NodeData> nodes;
   final Map<String, LineData> lines;
 
-  late final Set<String> alphabet;
+  /// The combined alphabet of both NFAs. Set externally by [checkEquivalence]
+  /// after both adapters are constructed, so that `.` and `.-X` expand
+  /// relative to the full symbol set.
+  Set<String> alphabet = {};
 
-  _NfaAdapter({required this.nodes, required this.lines}) {
+  _NfaAdapter({required this.nodes, required this.lines});
+
+  /// Collect every concrete (non-wildcard) input symbol used on transitions.
+  /// `.` and `.-…` tokens are excluded here; they are expanded at step-time
+  /// against [alphabet].
+  Set<String> collectConcreteSymbols() {
     final syms = <String>{};
     for (final line in lines.values) {
-      for (final alt in line.label.split(_labelSplit)) {
-        final s = _normalise(alt);
-        if (s.isNotEmpty && s != '~' && s != '?') {
-          syms.add(s);
-        }
+      for (final raw in _splitLabel(line.label)) {
+        final s = _normalise(raw);
+        if (s.isEmpty || s == '~' || s == '?' || s == '.') continue;
+        if (s.startsWith('.-')) continue;
+        syms.add(s);
       }
     }
-    alphabet = syms;
+    return syms;
   }
 
   static String _normalise(String s) {
     s = s.trim();
-    // Resolve [[TOKEN]] commands to their unicode equivalents the same way
-    // the simulator does, so that ∅, ε, etc. are treated as single symbols.
     if (s.startsWith('[[') && s.endsWith(']]')) {
       final inner = s.substring(2, s.length - 2).trim().toUpperCase();
       return kTokenReplacements[inner] ?? s;
@@ -429,13 +470,50 @@ class _NfaAdapter {
     return s;
   }
 
-  /// ε-transitions: label is empty, '~', or a normalised empty string.
-  bool _isEpsilon(String label) {
-    final n = _normalise(label);
+  /// ε-transitions: label normalises to empty or '~'.
+  bool _isEpsilon(String raw) {
+    final n = _normalise(raw);
     return n.isEmpty || n == '~';
   }
 
-  /// Compute the ε-closure of a set of NFA states.
+  /// For a `.-X,"Y",...` token, returns the set of excluded symbols.
+  /// For a bare `.` the excluded set is empty (matches everything in alphabet).
+  Set<String> _negationExcludes(String token) {
+    if (token == '.') return const {};
+    final rest = token.substring(2); // strip leading '.-'
+    final excludes = <String>{};
+    for (final part in _splitLabel(rest)) {
+      final sym = _stripQuotes(part.trim());
+      if (sym.isNotEmpty) excludes.add(sym);
+    }
+    return excludes;
+  }
+
+  static String _stripQuotes(String s) {
+    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      return s.substring(1, s.length - 1);
+    }
+    return s;
+  }
+
+  /// Returns true if the normalised label token [norm] fires on [symbol].
+  ///
+  /// - Exact match always fires.
+  /// - `.` fires on every symbol in [alphabet].
+  /// - `.-X` fires on every alphabet symbol NOT in the exclusion list.
+  ///   Symbols outside [alphabet] are silently excluded, so `.-y` over
+  ///   alphabet {a,b,c} only fires on {a,b,c}, not on 'y' or 'z'.
+  bool _labelMatchesSymbol(String norm, String symbol) {
+    if (norm == symbol) return true;
+    if (norm == '.' || norm.startsWith('.-')) {
+      if (!alphabet.contains(symbol)) return false;
+      if (norm == '.') return true;
+      return !_negationExcludes(norm).contains(symbol);
+    }
+    return false;
+  }
+
+  /// ε-closure of a set of NFA states.
   Set<String> epsilonClosure(Set<String> states) {
     final closure = <String>{...states};
     final stack = [...states];
@@ -445,11 +523,9 @@ class _NfaAdapter {
       if (node == null || node.isHaltState || node.isBlackBox) continue;
       for (final line in lines.values) {
         if (line.nodeAId != cur) continue;
-        for (final alt in line.label.split(_labelSplit)) {
+        for (final alt in _splitLabel(line.label)) {
           if (_isEpsilon(alt)) {
-            if (closure.add(line.nodeBId)) {
-              stack.add(line.nodeBId);
-            }
+            if (closure.add(line.nodeBId)) stack.add(line.nodeBId);
           }
         }
       }
@@ -457,8 +533,10 @@ class _NfaAdapter {
     return closure;
   }
 
-  /// Given a set of NFA states and a symbol, return the set of states
-  /// reachable by consuming exactly [symbol] (before ε-closure).
+  /// States reachable from [states] by consuming [symbol] (before ε-closure).
+  ///
+  /// An empty result means the machine fell off — the BFS visits the empty
+  /// powerset node, which correctly rejects any remaining input.
   Set<String> step(Set<String> states, String symbol) {
     final result = <String>{};
     for (final cur in states) {
@@ -466,8 +544,8 @@ class _NfaAdapter {
       if (node == null || node.isHaltState || node.isBlackBox) continue;
       for (final line in lines.values) {
         if (line.nodeAId != cur) continue;
-        for (final alt in line.label.split(_labelSplit)) {
-          if (_normalise(alt) == symbol) {
+        for (final alt in _splitLabel(line.label)) {
+          if (_labelMatchesSymbol(_normalise(alt), symbol)) {
             result.add(line.nodeBId);
           }
         }
