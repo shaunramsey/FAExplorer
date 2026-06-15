@@ -119,7 +119,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   /// Restores the user's previous work for this level from SharedPreferences.
   ///
   /// In easy mode, if no saved progress exists yet, the canvas is seeded from
-  /// [GameLevel.easyModeNodes] so the nodes are already placed.
+  /// either [GameLevel.easyModeNodes] (if defined) or from the level's own DSL
+  /// with all transitions stripped — so nodes are pre-placed but the player
+  /// still has to draw the connections.
   Future<void> _loadSavedDsl() async {
     final dsl = widget.progressStore.loadLevelDsl(widget.level.id, widget.difficulty);
     if (dsl != null && dsl.isNotEmpty) {
@@ -144,42 +146,72 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         // Corrupted save — fall through and try the scaffold seed instead.
         _tryApplyEasyScaffold();
       }
-    } else if (widget.difficulty == LevelDifficulty.easy &&
-        widget.level.hasEasyMode) {
-      // No saved progress yet — seed from the node list.
+    } else if (widget.difficulty == LevelDifficulty.easy) {
+      // No saved progress yet — seed the canvas with nodes only.
       _tryApplyEasyScaffold();
     }
     if (mounted) setState(() => _loadingSavedDsl = false);
   }
 
-  /// Seeds the canvas with the easy-mode pre-placed nodes (no transitions).
-  /// Called on a fresh easy-mode start or after a corrupted save.
+  /// Seeds the canvas with pre-placed nodes and no transitions.
+  ///
+  /// Priority:
+  ///   1. [GameLevel.easyModeNodes] — explicit per-level override.
+  ///   2. The level's embedded DSL — nodes (positions, labels, accept/start
+  ///      flags) are imported and all transition lines are discarded.
+  ///
+  /// Called on a fresh easy-mode start or after a corrupted save is detected.
   void _tryApplyEasyScaffold() {
+    // ── Option 1: explicit EasyModeNode list ──────────────────────────────
     final easyNodes = widget.level.easyModeNodes;
-    if (easyNodes == null || easyNodes.isEmpty) return;
+    if (easyNodes != null && easyNodes.isNotEmpty) {
+      final nodes = <String, NodeData>{};
+      StartArrowData? startArrow;
 
-    final nodes = <String, NodeData>{};
-    StartArrowData? startArrow;
+      for (final en in easyNodes) {
+        final node = NodeData(id: en.id, position: Offset(en.x, en.y));
+        node.label = en.label;
+        node.isAccept = en.isAccept;
+        nodes[en.id] = node;
+        if (en.isStart) startArrow = StartArrowData(nodeId: en.id);
+      }
 
-    for (final en in easyNodes) {
-      final node = NodeData(id: en.id, position: Offset(en.x, en.y));
-      node.label = en.label;
-      node.isAccept = en.isAccept;
-      nodes[en.id] = node;
-      if (en.isStart) startArrow = StartArrowData(nodeId: en.id);
+      if (mounted) {
+        setState(() {
+          _nodes
+            ..clear()
+            ..addAll(nodes);
+          _lines.clear(); // no transitions pre-placed
+          _startArrow = startArrow;
+          _nodeCounter = nodes.length;
+          _lineCounter = 0;
+        });
+      }
+      return;
     }
 
-    if (mounted) {
-      setState(() {
-        _nodes
-          ..clear()
-          ..addAll(nodes);
-        // No transitions pre-placed — the player draws those themselves.
-        _lines.clear();
-        _startArrow = startArrow;
-        _nodeCounter = nodes.length;
-        _lineCounter = 0;
-      });
+    // ── Option 2: derive scaffold from the level's embedded DSL ───────────
+    if (widget.level.dsl.isEmpty) return; // nothing to seed from
+
+    try {
+      final gs = DslCodec.importFromDsl(widget.level.dsl);
+
+      // Keep nodes and start arrow; drop all transition lines.
+      if (mounted) {
+        setState(() {
+          _nodes
+            ..clear()
+            ..addAll(gs.nodes);
+          _lines.clear(); // intentionally stripped for easy mode
+          _startArrow = gs.startArrow;
+          // Counter starts at the number of nodes so new IDs never collide
+          // with the pre-placed ones (n0, n1, …).
+          _nodeCounter = gs.nodes.length;
+          _lineCounter = 0;
+        });
+      }
+    } catch (_) {
+      // DSL parse failed — leave canvas blank rather than crash.
     }
   }
 
@@ -938,7 +970,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         _checkResult = null;
                         _isCorrect = false;
                       });
-                      widget.progressStore.clearLevelDsl(widget.level.id);
+                      widget.progressStore.clearLevelDsl(
+                        widget.level.id,
+                        widget.difficulty,
+                      );
+                      // In easy mode, re-seed the scaffold after clearing so
+                      // nodes reappear at their original positions.
+                      if (widget.difficulty == LevelDifficulty.easy) {
+                        _tryApplyEasyScaffold();
+                      }
                     },
                     style: FilledButton.styleFrom(
                       backgroundColor: Theme.of(context).colorScheme.error,
