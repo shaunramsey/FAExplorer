@@ -68,6 +68,52 @@ class HelpOverlay extends StatelessWidget {
                 Text('[[/abc]] → ã̸b̸c̸  (slashed letters)', style: TextStyle(color: theme.textLight)),
                 const SizedBox(height: 12),
                 Text(
+                  'TM Multi-tape (conjunctive)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: theme.accent,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '1:aXR,b1,3:01S',
+                  style: TextStyle(color: theme.textLight, fontFamily: 'CourierPrime'),
+                ),
+                Text(
+                  '  b1 — tape 1 read fires → also writes tape 3\n'
+                  '  (secondary read not checked)',
+                  style: TextStyle(
+                    color: theme.textMid,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '1:aXR,b2,2:01S',
+                  style: TextStyle(color: theme.textLight, fontFamily: 'CourierPrime'),
+                ),
+                Text(
+                  '  b2 — both tapes must match simultaneously\n'
+                  '  (classic parallel multi-tape step)',
+                  style: TextStyle(
+                    color: theme.textMid,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Defaults: single tape, independent NTM branches per line.',
+                  style: TextStyle(
+                    color: theme.textDim,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
                   'Tip: Commands can be typed directly inside node and line labels.',
                   style: TextStyle(
                     color: theme.textMid,

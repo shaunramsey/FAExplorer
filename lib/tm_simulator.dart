@@ -8,16 +8,24 @@ import 'widgets/automata_drawer.dart' show AutomataMode;
 // ─────────────────────────────────────────────────────────────────────────────
 //  TM Transition label parsing
 //
-//  Format:  read , write , direction
+//  Format:  [tape:] read , write , direction
+//    tape      — optional 1-based tape index this transition reads/writes/moves.
+//                 Defaults to tape 1 when omitted (so all pre-existing labels
+//                 keep working unchanged).
 //    read      — the tape symbol currently under the head; ∅ (or ~) matches blank
 //    write     — the symbol to write; ∅ (or ~) writes a blank
 //    direction — R (move right), L (move left), S (stay)
 //
-//  Multiple alternatives on one transition are separated by newlines.
+//  Multiple alternatives on one transition are separated by newlines. Each
+//  alternative may target a different tape independently, e.g.:
+//      1:aXR
+//      2:b1S
 //
-//  3-character shorthand (no separators) is also accepted:
-//    aXR   →  read=a  write=X  direction=R
-//    ∅∅S   →  blank-read, blank-write, stay
+//  3-character shorthand (no read/write/dir separators) is also accepted, with
+//  the same optional tape prefix:
+//    aXR     →  tape=1, read=a  write=X  direction=R
+//    2:aXR   →  tape=2, read=a  write=X  direction=R
+//    ∅∅S     →  tape=1, blank-read, blank-write, stay
 //
 //  The blank symbol used on the tape is `∅` (kBlank).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,6 +40,11 @@ class TmTransition {
   final String read;
   final String write;
   final TmDirection direction;
+
+  /// 1-based index of the tape this transition reads from, writes to, and
+  /// moves the head on. Defaults to 1 when no `N:` prefix is present.
+  final int tapeIndex;
+
   /// True when the label is `~` (or all tildes): unconditional jump that
   /// neither reads, writes, nor moves the head.
   final bool isEpsilon;
@@ -40,6 +53,7 @@ class TmTransition {
     required this.read,
     required this.write,
     required this.direction,
+    this.tapeIndex = 1,
     this.isEpsilon = false,
   });
 }
@@ -47,13 +61,41 @@ class TmTransition {
 /// Parse a single transition alternative string into a [TmTransition].
 TmTransition parseTmLabel(String raw) {
   String preprocessed = raw.replaceAll('\\0', kBlank);
-  final s = parseTokenText(preprocessed.trim());
+  String s = parseTokenText(preprocessed.trim());
   if (s.isEmpty) {
     return TmTransition(read: kBlank, write: kBlank, direction: TmDirection.stay);
   }
 
   // All-tilde label → unconditional epsilon jump (no read/write/move).
   if (s.isNotEmpty && s.runes.every((r) => r == '~'.codeUnitAt(0))) {
+    return TmTransition(
+      read: '', write: '', direction: TmDirection.stay, isEpsilon: true,
+    );
+  }
+
+  // Optional leading "N:" tape-index prefix. Only consumed when N is a
+  // positive integer and is immediately followed by ':' — this keeps any
+  // label that happens to contain ':' for other reasons (none currently do)
+  // from being misread, and ensures omitting the prefix is always safe.
+  int tapeIndex = 1;
+  final prefixMatch = RegExp(r'^(\d+):(.*)$').firstMatch(s);
+  if (prefixMatch != null) {
+    final n = int.tryParse(prefixMatch.group(1)!);
+    if (n != null && n >= 1) {
+      tapeIndex = n;
+      s = prefixMatch.group(2)!.trim();
+    }
+  }
+
+  if (s.isEmpty) {
+    return TmTransition(
+      read: kBlank, write: kBlank, direction: TmDirection.stay, tapeIndex: tapeIndex,
+    );
+  }
+
+  // After stripping a tape prefix, an all-tilde remainder is still an
+  // unconditional epsilon jump (tape index is irrelevant in that case).
+  if (s.runes.every((r) => r == '~'.codeUnitAt(0))) {
     return TmTransition(
       read: '', write: '', direction: TmDirection.stay, isEpsilon: true,
     );
@@ -66,7 +108,7 @@ TmTransition parseTmLabel(String raw) {
       final read  = _normSym(parts[0]);
       final write = _normSym(parts[1]);
       final dir   = _parseDir(parts[2]);
-      return TmTransition(read: read, write: write, direction: dir);
+      return TmTransition(read: read, write: write, direction: dir, tapeIndex: tapeIndex);
     }
   }
 
@@ -76,11 +118,11 @@ TmTransition parseTmLabel(String raw) {
     final read  = _normSym(String.fromCharCode(runes[0]));
     final write = _normSym(String.fromCharCode(runes[1]));
     final dir   = _parseDir(String.fromCharCode(runes[2]));
-    return TmTransition(read: read, write: write, direction: dir);
+    return TmTransition(read: read, write: write, direction: dir, tapeIndex: tapeIndex);
   }
 
   // Fallback
-  return TmTransition(read: _normSym(s), write: _normSym(s), direction: TmDirection.stay);
+  return TmTransition(read: _normSym(s), write: _normSym(s), direction: TmDirection.stay, tapeIndex: tapeIndex);
 }
 
 /// Normalize a tape symbol.
@@ -97,6 +139,110 @@ TmDirection _parseDir(String s) {
     case 'L': return TmDirection.left;
     default:  return TmDirection.stay;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Multi-tape conjunctive transition  (b1 / b2 syntax)
+//
+//  Line label format (single alternative):
+//
+//    primaryOp,bN,secondaryOp
+//
+//  where primaryOp and secondaryOp each use the same syntax as a normal
+//  single-tape transition alternative (shorthand or long form, with optional
+//  N: tape prefix):
+//
+//    1:aXR,b1,3:a1S   — tape 1 read must match; tape 3 written unconditionally
+//    1:aXR,b2,2:01S   — both tapes must match (classic parallel multi-tape step)
+//
+//  bN marker must appear between two non-empty tape operations (index ≥ 1).
+//
+//  Default behaviour (no bN): each newline-separated alternative is an
+//  independent NTM branch exactly as before. All existing labels are unaffected.
+//
+//  ─── Behavior semantics ─────────────────────────────────────────────────────
+//  b1  crossWrite  — read primary tape only.  If the primary read matches,
+//                    apply the primary write+move AND write to the secondary
+//                    tape (the secondary's read symbol is NOT checked).
+//
+//  b2  parallelRead — read primary AND secondary tapes simultaneously.
+//                    The transition fires only when BOTH read symbols match.
+//                    Both writes and both head moves are then applied atomically.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// How the two parts of a compound (multi-tape) transition relate.
+enum TmMultiBehavior {
+  /// `b1` — primary tape read fires; secondary tape is written unconditionally
+  /// (its read symbol is not checked).
+  crossWrite,
+
+  /// `b2` — both tape read conditions must match simultaneously before
+  /// either write is applied.
+  parallelRead,
+}
+
+/// Wraps one (or two) [TmTransition] operations that are applied atomically
+/// on a single transition arrow.
+///
+/// When [secondary] is `null` this is identical to a plain single-tape
+/// [TmTransition]; the [behavior] field is irrelevant in that case.
+class TmCompoundTransition {
+  final TmTransition primary;
+  final TmTransition? secondary;
+  final TmMultiBehavior behavior;
+
+  const TmCompoundTransition({
+    required this.primary,
+    this.secondary,
+    this.behavior = TmMultiBehavior.crossWrite,
+  });
+
+  bool get isMultiTape => secondary != null;
+}
+
+/// Parse a single transition-alternative string (one line of a label) into a
+/// [TmCompoundTransition].
+///
+/// Detects the `primaryOp,bN,secondaryOp` multi-tape format: the `bN` marker
+/// (exactly `b1` or `b2`) must appear between two non-empty parts when the
+/// label is split by commas.  Every existing single-tape label is unaffected
+/// because no normal TM token matches `^b[12]$` in isolation.
+///
+/// The primary and secondary raw strings are each forwarded to [parseTmLabel],
+/// so they can use any format that function already understands (shorthand
+/// `1:aXR`, long `1:a,X,R`, tape-prefixed, ε, etc.).
+TmCompoundTransition parseTmCompoundLabel(String raw) {
+  final parts = raw.trim().split(',');
+
+  // Scan for a `b1` / `b2` marker that has at least one part before it and
+  // at least one part after it.  We require the primary raw to have at least
+  // 3 characters (or contain a colon) to avoid false-positive matches like
+  // `a,b1,R` where `b1` would be intended as a write symbol.
+  for (int i = 1; i < parts.length - 1; i++) {
+    final marker = parts[i].trim();
+    if (!RegExp(r'^b[12]$').hasMatch(marker)) continue;
+
+    final primaryRaw   = parts.sublist(0, i).join(',').trim();
+    final secondaryRaw = parts.sublist(i + 1).join(',').trim();
+
+    // Sanity-check: both sides must look like real tape operations
+    // (≥3 chars or tape-prefixed) so we don't misparse `a,b1,R`.
+    final looksLikeOp = (String s) => s.contains(':') || s.length >= 3;
+    if (!looksLikeOp(primaryRaw) || !looksLikeOp(secondaryRaw)) continue;
+
+    final behavior = marker == 'b2'
+        ? TmMultiBehavior.parallelRead
+        : TmMultiBehavior.crossWrite;
+
+    return TmCompoundTransition(
+      primary:   parseTmLabel(primaryRaw),
+      secondary: parseTmLabel(secondaryRaw),
+      behavior:  behavior,
+    );
+  }
+
+  // No bN marker found → plain single-tape transition (fully backward-compatible).
+  return TmCompoundTransition(primary: parseTmLabel(raw));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,6 +271,15 @@ class TmTape {
       cells: cells,
       headOffset: 1,
     );
+  }
+
+  /// Builds an empty tape (used for tapes 2..N, which start with nothing
+  /// written on them).
+  ///
+  /// Layout: [∅] — a single blank cell. headOffset = 0, so absolutePos(0) = 0
+  /// and the head starts sitting on that blank cell.
+  factory TmTape.empty() {
+    return const TmTape(cells: [kBlank], headOffset: 0);
   }
 
   /// Read the symbol at absolute tape position [pos].
@@ -205,21 +360,84 @@ class TmTape {
 
 class TmConfig {
   final String nodeId;
-  final int headPos;      // absolute index into tape.cells — where the head IS now (post-move)
-  final int readHeadPos;  // absolute index that was READ to fire the transition (pre-move, for display)
-  final TmTape tape;
+
+  /// One tape per configured tape slot (tapes[0] = tape 1, tapes[1] = tape 2, …).
+  final List<TmTape> tapes;
+
+  /// Absolute index into tapes[i].cells — where the head on tape i+1 IS now
+  /// (post-move). Same length/order as [tapes].
+  final List<int> headPositions;
+
+  /// Absolute index that was READ on tape i+1 to fire the transition
+  /// (pre-move, for display). Same length/order as [tapes].
+  final List<int> readHeadPositions;
+
   final String usedLineId;
 
   const TmConfig({
     required this.nodeId,
-    required this.headPos,
-    required this.readHeadPos,
-    required this.tape,
+    required this.tapes,
+    required this.headPositions,
+    required this.readHeadPositions,
     required this.usedLineId,
   });
 
-  /// Key used for loop / duplicate detection.
-  String get key => '$nodeId:$headPos:${tape.key}';
+  /// Convenience accessors for tape 1 — used throughout the UI and by the
+  /// single-tape black-box machinery. tapes[0] is always tape 1.
+  TmTape get tape => tapes[0];
+  int get headPos => headPositions[0];
+  int get readHeadPos => readHeadPositions[0];
+
+  /// Key used for loop / duplicate detection — includes every tape's
+  /// content and head position so configs that differ only on tape 2+ are
+  /// treated as distinct.
+  String get key {
+    final parts = <String>[nodeId];
+    for (int i = 0; i < tapes.length; i++) {
+      parts.add('${headPositions[i]}:${tapes[i].key}');
+    }
+    return parts.join('|');
+  }
+
+  /// Returns a copy of this config with tape [tapeIndex] (1-based) replaced
+  /// by [newTape], and its head/read-head positions updated. All other tapes
+  /// are carried over unchanged.
+  TmConfig withTape(
+    int tapeIndex,
+    TmTape newTape, {
+    required int headPos,
+    required int readHeadPos,
+    String? usedLineId,
+    String? nodeId,
+  }) {
+    final i = tapeIndex - 1;
+    final newTapes = List<TmTape>.from(tapes);
+    final newHeads = List<int>.from(headPositions);
+    final newReadHeads = List<int>.from(readHeadPositions);
+    newTapes[i] = newTape;
+    newHeads[i] = headPos;
+    newReadHeads[i] = readHeadPos;
+    return TmConfig(
+      nodeId: nodeId ?? this.nodeId,
+      tapes: newTapes,
+      headPositions: newHeads,
+      readHeadPositions: newReadHeads,
+      usedLineId: usedLineId ?? this.usedLineId,
+    );
+  }
+
+  /// Returns a copy of this config with a new [nodeId] / [usedLineId] but the
+  /// same tapes and head positions (used for epsilon transitions and
+  /// black-box hops, which don't move any head).
+  TmConfig retarget({required String nodeId, required String usedLineId}) {
+    return TmConfig(
+      nodeId: nodeId,
+      tapes: tapes,
+      headPositions: List<int>.from(headPositions),
+      readHeadPositions: List<int>.from(headPositions),
+      usedLineId: usedLineId,
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,12 +499,14 @@ class TmSimulator {
 
   /// Number of tapes this TM uses.
   ///
-  /// The simulator itself always uses a single tape internally; this field is
-  /// used purely as UI metadata so the black-box tape-routing dialog knows how
-  /// many tape slots are available to assign to each black-box node.
+  /// Each configuration carries one [TmTape] per slot (tapes[0] = tape 1,
+  /// tapes[1] = tape 2, …). Tape 1 always starts pre-loaded with the input;
+  /// tapes 2..N start empty. Transitions address a tape via an optional
+  /// `N:` prefix on their label (see [parseTmLabel]); transitions without a
+  /// prefix act on tape 1, so existing single-tape graphs are unaffected.
   ///
-  /// Defaults to 1. Incrementing this exposes additional tape-index options in
-  /// the [BlackBoxTapeEditDialog] without changing simulation behaviour.
+  /// Defaults to 1. Call [rebuildGraph] (or [rebuild]) after changing this so
+  /// the initial configuration is reconstructed with the new tape count.
   int tapeCount = 1;
 
   // ── Active highlights ──────────────────────────────────────────────────
@@ -423,11 +643,19 @@ class TmSimulator {
     }
 
     final initialTape = TmTape.fromTokens(tokens);
+    final initialTapes = <TmTape>[initialTape];
+    final initialHeads = <int>[initialTape.absolutePos(0)];
+    final effectiveTapeCount = tapeCount < 1 ? 1 : tapeCount;
+    for (int i = 1; i < effectiveTapeCount; i++) {
+      final empty = TmTape.empty();
+      initialTapes.add(empty);
+      initialHeads.add(empty.absolutePos(0));
+    }
     final initialConfig = TmConfig(
       nodeId: startArrow.nodeId,
-      headPos: initialTape.absolutePos(0),
-      readHeadPos: initialTape.absolutePos(0),
-      tape: initialTape,
+      tapes: initialTapes,
+      headPositions: initialHeads,
+      readHeadPositions: List<int>.from(initialHeads),
       usedLineId: '',
     );
 
@@ -461,6 +689,40 @@ class TmSimulator {
     return !canAdvance;
   }
 
+  /// Runs [node]'s inner machine (if it is a black box) against the tape it
+  /// is configured to read from, and splices the result into the tape it is
+  /// configured to write to. Other tapes pass through unchanged.
+  ///
+  /// Returns `null` if the black box rejects (so the caller should drop this
+  /// branch). For non-black-box nodes, returns [config] unchanged.
+  ///
+  /// [node.blackBoxReadTape] / [node.blackBoxWriteTape] are 1-based and
+  /// clamped to the valid tape range — out-of-range values fall back to tape 1.
+  TmConfig? _applyBlackBox(NodeData node, TmConfig config) {
+    if (!node.isBlackBox) return config;
+
+    final tapeCountForConfig = config.tapes.length;
+    final readTape = node.blackBoxReadTape.clamp(1, tapeCountForConfig);
+    final writeTape = node.blackBoxWriteTape.clamp(1, tapeCountForConfig);
+
+    final blackBox = _runBlackBoxOnTape(
+      node,
+      config.tapes[readTape - 1],
+      headPos: config.headPositions[readTape - 1],
+    );
+    if (!blackBox.accepted) return null;
+
+    final outputTape = TmTape.fromTokens(blackBox.outputTokens);
+    final outputHeadPos = outputTape.absolutePos(blackBox.outputHeadPos);
+
+    return config.withTape(
+      writeTape,
+      outputTape,
+      headPos: outputHeadPos,
+      readHeadPos: outputHeadPos,
+    );
+  }
+
   /// True if at least one non-halted configuration has an enabled transition.
   bool get canAdvance {
     if (steps.isEmpty) return false;
@@ -472,32 +734,35 @@ class TmSimulator {
       if (node == null) continue;
       if (node.isHaltAccept || node.isHaltReject) continue;
 
-      var effectiveConfig = config;
-      if (node.isBlackBox) {
-        final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
-        if (!blackBox.accepted) continue;
-        final outputTape = TmTape.fromTokens(blackBox.outputTokens);
-        final headPos = outputTape.absolutePos(blackBox.outputHeadPos);
-        effectiveConfig = TmConfig(
-          nodeId: config.nodeId,
-          headPos: headPos,
-          readHeadPos: headPos,
-          tape: outputTape,
-          usedLineId: config.usedLineId,
-        );
-      }
-
-      final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
-      final cellSym = headSym.isEmpty ? kBlank : headSym;
+      final effectiveConfig = _applyBlackBox(node, config);
+      if (effectiveConfig == null) continue;
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
         for (final altRaw in line.label.split('\n')) {
-          final t = parseTmLabel(altRaw);
-          if (!t.isEpsilon) {
-            final readSym = t.read.isEmpty ? kBlank : t.read;
-            if (readSym != cellSym) continue;
+          final compound = parseTmCompoundLabel(altRaw);
+          final t = compound.primary;
+          if (t.isEpsilon) return true;
+          if (t.tapeIndex < 1 || t.tapeIndex > effectiveConfig.tapes.length) continue;
+          final headSym = effectiveConfig.tapes[t.tapeIndex - 1]
+              .read(effectiveConfig.headPositions[t.tapeIndex - 1]);
+          final cellSym = headSym.isEmpty ? kBlank : headSym;
+          final readSym = t.read.isEmpty ? kBlank : t.read;
+          if (readSym != cellSym) continue;
+
+          // For b2 (parallelRead): the secondary tape must also match.
+          if (compound.isMultiTape &&
+              compound.behavior == TmMultiBehavior.parallelRead) {
+            final s = compound.secondary!;
+            if (s.tapeIndex < 1 ||
+                s.tapeIndex > effectiveConfig.tapes.length) continue;
+            final sHead = effectiveConfig.headPositions[s.tapeIndex - 1];
+            final sSym  = effectiveConfig.tapes[s.tapeIndex - 1].read(sHead);
+            final sCell = sSym.isEmpty ? kBlank : sSym;
+            final sRead = s.read.isEmpty ? kBlank : s.read;
+            if (sRead != sCell) continue;
           }
+
           return true;
         }
       }
@@ -530,70 +795,53 @@ class TmSimulator {
       // Halt states carry forward unchanged (so they remain visible).
       // Normal accept states are NOT halted — they continue to fire transitions.
       if (node.isHaltAccept || node.isHaltReject) {
-        final carried = TmConfig(
-          nodeId: config.nodeId,
-          headPos: config.headPos,
-          readHeadPos: config.headPos, // halted: display current position
-          tape: config.tape,
-          usedLineId: config.usedLineId,
-        );
+        final carried = config.retarget(nodeId: config.nodeId, usedLineId: config.usedLineId);
         final k = carried.key;
         if (seenKeys.add(k)) nextConfigs.add(carried);
         continue;
       }
 
-      var effectiveConfig = config;
-      if (node.isBlackBox) {
-        final blackBox = _runBlackBoxOnTape(node, config.tape, headPos: config.headPos);
-        if (!blackBox.accepted) {
-          continue;
-        }
-        final outputTape = TmTape.fromTokens(blackBox.outputTokens);
-        final headPos = outputTape.absolutePos(blackBox.outputHeadPos);
-        effectiveConfig = TmConfig(
-          nodeId: config.nodeId,
-          headPos: headPos,
-          readHeadPos: headPos,
-          tape: outputTape,
-          usedLineId: config.usedLineId,
-        );
+      final effectiveConfig = _applyBlackBox(node, config);
+      if (effectiveConfig == null) {
+        continue;
       }
-
-      final headSym = effectiveConfig.tape.read(effectiveConfig.headPos);
-      final cellSym = headSym.isEmpty ? kBlank : headSym;
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
 
         for (final altRaw in line.label.split('\n')) {
-          final t = parseTmLabel(altRaw);
-          final readSym = t.read.isEmpty ? kBlank : t.read;
-
-          if (!t.isEpsilon && readSym != cellSym) continue;
+          final compound = parseTmCompoundLabel(altRaw);
+          final t = compound.primary;
 
           final TmConfig next;
           if (node.isBlackBox || t.isEpsilon) {
             // Blackbox nodes and epsilon transitions: no write or move.
             // For blackbox nodes all tape work was done inside the blackbox.
-            // For epsilon (~) transitions the head and tape are left as-is.
-            next = TmConfig(
-              nodeId: line.nodeBId,
-              headPos: effectiveConfig.headPos,
-              readHeadPos: effectiveConfig.headPos,
-              tape: effectiveConfig.tape,
-              usedLineId: line.id,
-            );
+            // For epsilon (~) transitions every tape and head is left as-is.
+            next = effectiveConfig.retarget(nodeId: line.nodeBId, usedLineId: line.id);
+          } else if (compound.isMultiTape) {
+            // ── Multi-tape conjunctive transition (b1 / b2) ──────────────
+            final result = _applyCompoundTm(compound, effectiveConfig, line.nodeBId, line.id);
+            if (result == null) continue;
+            next = result;
           } else {
+            if (t.tapeIndex < 1 || t.tapeIndex > effectiveConfig.tapes.length) continue;
+            final tapeIdx = t.tapeIndex - 1;
+            final activeTape = effectiveConfig.tapes[tapeIdx];
+            final activeHeadPos = effectiveConfig.headPositions[tapeIdx];
+
+            final headSym = activeTape.read(activeHeadPos);
+            final cellSym = headSym.isEmpty ? kBlank : headSym;
+            final readSym = t.read.isEmpty ? kBlank : t.read;
+            if (readSym != cellSym) continue;
+
             // Apply write.
             final writeSym = t.write.isEmpty ? kBlank : t.write;
-            final newTape = effectiveConfig.tape.write(
-              effectiveConfig.headPos,
-              writeSym,
-            );
+            final newTape = activeTape.write(activeHeadPos, writeSym);
 
             // Apply head move. Adjust for any left-extension the write may have introduced.
-            final headShift = newTape.headOffset - effectiveConfig.tape.headOffset;
-            int newHeadPos = effectiveConfig.headPos + headShift;
+            final headShift = newTape.headOffset - activeTape.headOffset;
+            int newHeadPos = activeHeadPos + headShift;
             switch (t.direction) {
               case TmDirection.right:
                 newHeadPos += 1;
@@ -606,7 +854,7 @@ class TmSimulator {
             }
 
             // Extend tape if the head moved beyond either end.
-            final readPosPreMove = effectiveConfig.headPos + headShift;
+            final readPosPreMove = activeHeadPos + headShift;
             final extended = newTape.extendToInclude(newHeadPos);
             final extendedTape = extended.tape;
             final extraShift = extended.shift;
@@ -614,12 +862,13 @@ class TmSimulator {
             final adjustedHeadPos = newHeadPos + extraShift;
             final adjustedReadPos = readPosPreMove + extraShift;
 
-            next = TmConfig(
-              nodeId: line.nodeBId,
+            next = effectiveConfig.withTape(
+              t.tapeIndex,
+              extendedTape,
               headPos: adjustedHeadPos,
               readHeadPos: adjustedReadPos, // position that was read (pre-move)
-              tape: extendedTape,
               usedLineId: line.id,
+              nodeId: line.nodeBId,
             );
           }
           final k = next.key;
@@ -646,6 +895,108 @@ class TmSimulator {
     ));
     noMovesTerminal = false;
     return true;
+  }
+
+  /// Apply a compound (multi-tape) transition atomically.
+  ///
+  /// Returns the new [TmConfig] on success, or `null` if the transition's
+  /// read conditions are not satisfied (so the caller can `continue` the
+  /// branch-expansion loop).
+  ///
+  /// For [TmMultiBehavior.crossWrite] (`b1`):
+  ///   - Primary tape read must match.
+  ///   - If it does, primary write+move AND secondary write+move are applied.
+  ///   - The secondary tape's read symbol is **not** checked.
+  ///
+  /// For [TmMultiBehavior.parallelRead] (`b2`):
+  ///   - BOTH primary and secondary read symbols must match simultaneously.
+  ///   - If both match, both writes and head moves are applied atomically.
+  ///
+  /// When [compound.primary] and [compound.secondary] target the same tape
+  /// index, the secondary write takes effect last (overwriting the primary
+  /// write at that cell). This edge-case should be avoided in practice.
+  TmConfig? _applyCompoundTm(
+    TmCompoundTransition compound,
+    TmConfig config,
+    String targetNodeId,
+    String lineId,
+  ) {
+    final t = compound.primary;
+    final s = compound.secondary!;
+
+    // ── Guard: tape indices must be in range ───────────────────────────
+    if (t.tapeIndex < 1 || t.tapeIndex > config.tapes.length) return null;
+    if (s.tapeIndex < 1 || s.tapeIndex > config.tapes.length) return null;
+
+    // ── Check primary read ─────────────────────────────────────────────
+    final pIdx  = t.tapeIndex - 1;
+    final pTape = config.tapes[pIdx];
+    final pHead = config.headPositions[pIdx];
+    final pSym  = pTape.read(pHead);
+    final pCell = pSym.isEmpty ? kBlank : pSym;
+    final pRead = t.read.isEmpty ? kBlank : t.read;
+    if (pRead != pCell) return null;
+
+    // ── For b2 (parallelRead): also check secondary read ───────────────
+    if (compound.behavior == TmMultiBehavior.parallelRead) {
+      final sIdx  = s.tapeIndex - 1;
+      final sTape = config.tapes[sIdx];
+      final sHead = config.headPositions[sIdx];
+      final sSym  = sTape.read(sHead);
+      final sCell = sSym.isEmpty ? kBlank : sSym;
+      final sRead = s.read.isEmpty ? kBlank : s.read;
+      if (sRead != sCell) return null;
+    }
+
+    // ── Apply primary write + move ──────────────────────────────────────
+    final pWrite  = t.write.isEmpty ? kBlank : t.write;
+    var newPTape  = pTape.write(pHead, pWrite);
+    final pShift  = newPTape.headOffset - pTape.headOffset;
+    int newPHead  = pHead + pShift;
+    switch (t.direction) {
+      case TmDirection.right: newPHead += 1; break;
+      case TmDirection.left:  newPHead -= 1; break;
+      case TmDirection.stay:  break;
+    }
+    final pExt    = newPTape.extendToInclude(newPHead);
+    newPTape      = pExt.tape;
+    final adjPHead = newPHead  + pExt.shift;
+    final adjPRead = (pHead + pShift) + pExt.shift;
+
+    // ── Apply secondary write + move ────────────────────────────────────
+    // Always snapshot the ORIGINAL tape so that if primary and secondary
+    // happen to target the same tape, the primary write doesn't silently
+    // influence the secondary's starting state.
+    final sIdx    = s.tapeIndex - 1;
+    final sTapeOrig = config.tapes[sIdx];
+    final sHead   = config.headPositions[sIdx];
+    final sWrite  = s.write.isEmpty ? kBlank : s.write;
+    var newSTape  = sTapeOrig.write(sHead, sWrite);
+    final sShift  = newSTape.headOffset - sTapeOrig.headOffset;
+    int newSHead  = sHead + sShift;
+    switch (s.direction) {
+      case TmDirection.right: newSHead += 1; break;
+      case TmDirection.left:  newSHead -= 1; break;
+      case TmDirection.stay:  break;
+    }
+    final sExt    = newSTape.extendToInclude(newSHead);
+    newSTape      = sExt.tape;
+    final adjSHead = newSHead  + sExt.shift;
+    final adjSRead = (sHead + sShift) + sExt.shift;
+
+    // ── Build the new config ────────────────────────────────────────────
+    // Apply primary first, then secondary (secondary wins if same tape index).
+    var next = config.withTape(
+      t.tapeIndex, newPTape,
+      headPos: adjPHead, readHeadPos: adjPRead,
+      usedLineId: lineId, nodeId: targetNodeId,
+    );
+    next = next.withTape(
+      s.tapeIndex, newSTape,
+      headPos: adjSHead, readHeadPos: adjSRead,
+      usedLineId: lineId,
+    );
+    return next;
   }
 
   /// Undo the most recently appended step snapshot, if possible.
