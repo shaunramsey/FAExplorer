@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../widgets/app_theme.dart';
 import '../models.dart';
 import '../dsl_code.dart';
+import '../latex_export.dart';
 import '../pda_simulator.dart';
 import '../saved_export.dart';
 import '../simulator.dart';
@@ -19,6 +20,7 @@ void showExportDialog(
   required Map<String, NodeData> nodes,
   required Map<String, LineData> lines,
   required StartArrowData? startArrow,
+  required GraphState graphState,
   required void Function(String name, String dsl) onSave,
 }) {
   final theme = AppThemeNotifier.read(context);
@@ -96,6 +98,13 @@ void showExportDialog(
             Navigator.pop(ctx);
           },
           child: const Text('Export SVG'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(ctx);
+            showLatexExportDialog(context, graphState: graphState);
+          },
+          child: const Text('Export LaTeX'),
         ),
         TextButton(
           onPressed: () {
@@ -230,7 +239,7 @@ void showExportHistoryDialog(
   BuildContext context, {
   required List<SavedExport> savedExports,
   required String? Function(String dsl) onImportDsl,
-  required void Function(SavedExport blackBox) onInsertBlackBox,
+  required void Function(SavedExport export) onInsertBlackBox,
   required void Function() onListChanged,
 }) {
   final theme = AppThemeNotifier.read(context);
@@ -303,17 +312,18 @@ void showExportHistoryDialog(
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (save.isBlackBox)
-                                IconButton(
-                                  icon: Icon(Icons.add_box_outlined,
-                                      color: theme.textMid),
-                                  tooltip: 'Insert as black box',
-                                  onPressed: () {
-                                    Navigator.of(ctx).pop();
-                                    onInsertBlackBox(save);
-                                  },
-                                ),
-                              if (!save.isBlackBox)
+                              // Available for all exports: inserts a black box
+                              // node onto the canvas backed by this saved DSL.
+                              IconButton(
+                                icon: Icon(Icons.add_box_outlined,
+                                    color: theme.textMid),
+                                tooltip: 'Insert as black box node',
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  onInsertBlackBox(save);
+                                },
+                              ),
+                              if (!save.isBlackBox) ...[
                                 IconButton(
                                   icon: Icon(
                                       Icons.input_rounded,
@@ -368,6 +378,23 @@ void showExportHistoryDialog(
                                     );
                                   },
                                 ),
+                                IconButton(
+                                  icon: Icon(Icons.code,
+                                      color: theme.textMid),
+                                  tooltip: 'Export as LaTeX',
+                                  onPressed: () {
+                                    try {
+                                      final gs = DslCodec.importFromDsl(save.dsl);
+                                      showLatexExportDialog(context, graphState: gs);
+                                    } catch (e) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(SnackBar(
+                                        content: Text('LaTeX export error: $e'),
+                                      ));
+                                    }
+                                  },
+                                ),
+                              ],
                               IconButton(
                                 icon: Icon(Icons.edit, color: theme.textMid),
                                 onPressed: () {

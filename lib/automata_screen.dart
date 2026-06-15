@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'models.dart';
 import 'data/automata_session_store.dart';
@@ -429,13 +430,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   void _showExportDialog() {
     showExportDialog(
-      context,
-      dsl: _exportToDsl(),
-      savedExportCount: _savedExports.length,
-      nodes: _nodes,
-      lines: _lines,
-      startArrow: _startArrow,
-      onSave: (name, dsl) {
+  context,
+  dsl: _exportToDsl(),
+  savedExportCount: _savedExports.length,
+  nodes: _nodes,
+  lines: _lines,
+  startArrow: _startArrow,
+  graphState: _graphState,
+  onSave: (name, dsl) {
         setState(() {
           _savedExports.insert(0, SavedExport(name: name, dsl: dsl));
         });
@@ -465,12 +467,161 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     });
   }
 
+
+  /// Inserts a black-box node onto the canvas backed by [save]'s DSL.
+  ///
+  /// The node is placed at a default position offset so it does not stack on
+  /// top of existing nodes.  The canvas is NOT replaced — the new node is
+  /// added alongside whatever is already there.
+  void _insertAsBlackBoxNode(SavedExport save) {
+    setState(() {
+      final id = _nextId('n');
+
+      // Place the node in a sensible default position, offset from existing
+      // nodes so it does not land exactly on top of them.
+      Offset position = const Offset(300, 300);
+      if (_nodes.isNotEmpty) {
+        final last = _nodes.values.last;
+        position = last.position + const Offset(120, 0);
+      }
+
+      final node = NodeData(id: id, position: position);
+      node.label = save.name;
+      node.isBlackBox = true;
+      node.blackBoxDsl = save.dsl;
+
+      _nodes[id] = node;
+    });
+    _schedulePersist();
+  }
+
+  /// Opens a dialog letting the user configure which tape a black-box reads
+  /// from and which tape it writes to.
+  void _showBlackBoxTapeDialog(NodeData node) {
+    int readTape  = node.blackBoxReadTape;
+    int writeTape = node.blackBoxWriteTape;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            Widget tapeSpinner({
+              required String label,
+              required int value,
+              required ValueChanged<int> onChanged,
+            }) {
+              return Row(
+                children: [
+                  SizedBox(
+                    width: 88,
+                    child: Text(
+                      label,
+                      style: GoogleFonts.courierPrime(
+                        fontSize: 13,
+                        color: Theme.of(ctx).colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.remove, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: value > 1
+                        ? () => setLocal(() => onChanged(value - 1))
+                        : null,
+                  ),
+                  SizedBox(
+                    width: 32,
+                    child: Text(
+                      '$value',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.courierPrime(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(ctx).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: value < 9
+                        ? () => setLocal(() => onChanged(value + 1))
+                        : null,
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              title: Text(
+                'Black-box tape assignment',
+                style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '"${node.label.isEmpty ? node.id : node.label}"',
+                    style: GoogleFonts.courierPrime(
+                      fontSize: 12,
+                      color: Theme.of(ctx).colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  tapeSpinner(
+                    label: 'Read tape:',
+                    value: readTape,
+                    onChanged: (v) => readTape = v,
+                  ),
+                  const SizedBox(height: 8),
+                  tapeSpinner(
+                    label: 'Write tape:',
+                    value: writeTape,
+                    onChanged: (v) => writeTape = v,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Long-press any black-box to reopen this dialog.',
+                    style: GoogleFonts.courierPrime(
+                      fontSize: 10,
+                      color: Theme.of(ctx).colorScheme.onSurface.withOpacity(0.45),
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    setState(() {
+                      node.blackBoxReadTape  = readTape;
+                      node.blackBoxWriteTape = writeTape;
+                    });
+                    _schedulePersist();
+                    Navigator.of(ctx).pop();
+                  },
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showExportHistory() {
     showExportHistoryDialog(
       context,
       savedExports: _savedExports,
       onImportDsl: _importFromDsl,
-      onInsertBlackBox: (savedExport) => _importFromDsl(savedExport.dsl),
+      onInsertBlackBox: _insertAsBlackBoxNode,
       onListChanged: () {
         setState(() {});
         _schedulePersist();
@@ -1046,6 +1197,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                       _deleteNode(node.id);
                     });
                   },
+
+                  onBlackBoxTapeEdit: node.isBlackBox
+                      ? () => _showBlackBoxTapeDialog(node)
+                      : null,
                 ),
               ),
             ],

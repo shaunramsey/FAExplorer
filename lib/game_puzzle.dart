@@ -18,7 +18,9 @@ import 'package:provider/provider.dart';
 import 'widgets/app_theme.dart';
 
 import 'game_level.dart';
+// LevelDifficulty is also declared in game_level.dart — no extra import needed.
 import 'game_progress_store.dart';
+import 'tutorial_screen.dart';
 import 'dsl_code.dart';
 import 'fa_equivalence.dart';
 import 'models.dart';
@@ -35,11 +37,19 @@ class GamePuzzleScreen extends StatefulWidget {
   final GameProgressStore progressStore;
   final VoidCallback? onCompleted;
 
+  /// The difficulty the player chose when opening this level.
+  ///
+  /// [LevelDifficulty.hard] (default) — blank canvas, original behaviour.
+  /// [LevelDifficulty.easy]           — canvas is pre-seeded with nodes from
+  ///                                    [GameLevel.easyScaffoldDsl].
+  final LevelDifficulty difficulty;
+
   const GamePuzzleScreen({
     super.key,
     required this.level,
     required this.progressStore,
     this.onCompleted,
+    this.difficulty = LevelDifficulty.hard,
   });
 
   @override
@@ -107,9 +117,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   // ── persistence helpers ─────────────────────────────────────────────────
 
   /// Restores the user's previous work for this level from SharedPreferences.
+  ///
+  /// In easy mode, if no saved progress exists yet, the canvas is seeded from
+  /// either [GameLevel.easyModeNodes] (if defined) or from the level's own DSL
+  /// with all transitions stripped — so nodes are pre-placed but the player
+  /// still has to draw the connections.
   Future<void> _loadSavedDsl() async {
-    final dsl = widget.progressStore.loadLevelDsl(widget.level.id);
+    final dsl = widget.progressStore.loadLevelDsl(widget.level.id, widget.difficulty);
     if (dsl != null && dsl.isNotEmpty) {
+      // Restore existing in-progress save.
       try {
         final gs = DslCodec.importFromDsl(dsl);
         if (mounted) {
@@ -127,10 +143,76 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           });
         }
       } catch (_) {
-        // Corrupted save — silently ignore and start fresh.
+        // Corrupted save — fall through and try the scaffold seed instead.
+        _tryApplyEasyScaffold();
       }
+    } else if (widget.difficulty == LevelDifficulty.easy) {
+      // No saved progress yet — seed the canvas with nodes only.
+      _tryApplyEasyScaffold();
     }
     if (mounted) setState(() => _loadingSavedDsl = false);
+  }
+
+  /// Seeds the canvas with pre-placed nodes and no transitions.
+  ///
+  /// Priority:
+  ///   1. [GameLevel.easyModeNodes] — explicit per-level override.
+  ///   2. The level's embedded DSL — nodes (positions, labels, accept/start
+  ///      flags) are imported and all transition lines are discarded.
+  ///
+  /// Called on a fresh easy-mode start or after a corrupted save is detected.
+  void _tryApplyEasyScaffold() {
+    // ── Option 1: explicit EasyModeNode list ──────────────────────────────
+    final easyNodes = widget.level.easyModeNodes;
+    if (easyNodes != null && easyNodes.isNotEmpty) {
+      final nodes = <String, NodeData>{};
+      StartArrowData? startArrow;
+
+      for (final en in easyNodes) {
+        final node = NodeData(id: en.id, position: Offset(en.x, en.y));
+        node.label = en.label;
+        node.isAccept = en.isAccept;
+        nodes[en.id] = node;
+        if (en.isStart) startArrow = StartArrowData(nodeId: en.id);
+      }
+
+      if (mounted) {
+        setState(() {
+          _nodes
+            ..clear()
+            ..addAll(nodes);
+          _lines.clear(); // no transitions pre-placed
+          _startArrow = startArrow;
+          _nodeCounter = nodes.length;
+          _lineCounter = 0;
+        });
+      }
+      return;
+    }
+
+    // ── Option 2: derive scaffold from the level's embedded DSL ───────────
+    if (widget.level.dsl.isEmpty) return; // nothing to seed from
+
+    try {
+      final gs = DslCodec.importFromDsl(widget.level.dsl);
+
+      // Keep nodes and start arrow; drop all transition lines.
+      if (mounted) {
+        setState(() {
+          _nodes
+            ..clear()
+            ..addAll(gs.nodes);
+          _lines.clear(); // intentionally stripped for easy mode
+          _startArrow = gs.startArrow;
+          // Counter starts at the number of nodes so new IDs never collide
+          // with the pre-placed ones (n0, n1, …).
+          _nodeCounter = gs.nodes.length;
+          _lineCounter = 0;
+        });
+      }
+    } catch (_) {
+      // DSL parse failed — leave canvas blank rather than crash.
+    }
   }
 
   /// Schedules a debounced save (fires 800 ms after the last canvas change).
@@ -152,7 +234,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           automataMode: widget.level.automataMode,
         ),
       );
-      await widget.progressStore.saveLevelDsl(widget.level.id, dsl);
+      await widget.progressStore.saveLevelDsl(widget.level.id, dsl, widget.difficulty);
     } catch (_) {
       // Non-fatal — best-effort save.
     }
@@ -426,8 +508,12 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
       // 2. If the level specifies a required automaton type (DFA vs NFA), check
       // it now — BEFORE running the (more expensive) equivalence check.
+      // In easy mode, this check is skipped when the level sets
+      // easyModeBypassTypeCheck = true, allowing any FA type.
       final requiredType = widget.level.requiredAutomatonType;
-      if (requiredType != null) {
+      final skipTypeCheck = widget.difficulty == LevelDifficulty.easy &&
+          widget.level.easyModeBypassTypeCheck;
+      if (requiredType != null && !skipTypeCheck) {
         final typeResult = AutomatonTypeChecker.check(
           nodes: _nodes,
           lines: _lines,
@@ -510,7 +596,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         case EquivalenceStatus.equivalent:
           _isCorrect = true;
           _checkResult = '✓ Correct! Your automaton is equivalent to the target.';
-          await widget.progressStore.markCompleted(widget.level.id);
+          await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
           await _saveNow(); // persist the winning solution immediately
           widget.onCompleted?.call();
           _successCtrl.forward(from: 0);
@@ -529,12 +615,23 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           break;
 
         case EquivalenceStatus.unknownCapReached:
-          _checkResult = levelMode != AutomataMode.ndfa
-              ? '? Bounded simulation completed but could not confirm equivalence.\n\n'
-                'If your machine handles all tested inputs correctly it may still be right —\n'
-                'try a few more edge cases manually.'
-              : '? Could not determine equivalence (search space too large).\n\n'
+          if (levelMode == AutomataMode.pda || levelMode == AutomataMode.tm) {
+            // PDA / TM equivalence is undecidable in general — the bounded
+            // simulation passed all test cases, which is the best we can do.
+            // Count this as a level completion.
+            _isCorrect = true;
+            _checkResult = '✓ All tested inputs matched the target behaviour.\n\n'
+                'PDA/TM equivalence cannot be verified exactly, but your machine '
+                'passed the full bounded test suite — level complete!';
+            await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
+            await _saveNow();
+            widget.onCompleted?.call();
+            _successCtrl.forward(from: 0);
+            _showSuccessDialog();
+          } else {
+            _checkResult = '? Could not determine equivalence (search space too large).\n\n'
                 'Try simplifying your automaton or check manually.';
+          }
           break;
 
         case EquivalenceStatus.noStartState:
@@ -570,12 +667,36 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   @override
   Widget build(BuildContext context) {
+    // If somehow a tutorial level is opened via GamePuzzleScreen, redirect it.
+    if (widget.level.isTutorial) {
+      return TutorialScreen(
+        level: widget.level,
+        progressStore: widget.progressStore,
+        onCompleted: widget.onCompleted,
+      );
+    }
     final theme = context.watch<AppThemeNotifier>();
     return Scaffold(
       backgroundColor: theme.bg,
       appBar: AppBar(
-        title: Text(widget.level.title,
-            style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.level.title,
+                style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
+            Text(
+              widget.difficulty.displayName.toUpperCase(),
+              style: GoogleFonts.orbitron(
+                fontSize: 9,
+                letterSpacing: 3,
+                color: widget.difficulty.isHard
+                    ? const Color(0xFFFFB300)
+                    : const Color(0xFF4CAF50),
+              ),
+            ),
+          ],
+        ),
         leading: BackButton(
           onPressed: () => Navigator.of(context).pop(),
         ),
@@ -853,7 +974,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         _checkResult = null;
                         _isCorrect = false;
                       });
-                      widget.progressStore.clearLevelDsl(widget.level.id);
+                      widget.progressStore.clearLevelDsl(
+                        widget.level.id,
+                        widget.difficulty,
+                      );
+                      // In easy mode, re-seed the scaffold after clearing so
+                      // nodes reappear at their original positions.
+                      if (widget.difficulty == LevelDifficulty.easy) {
+                        _tryApplyEasyScaffold();
+                      }
                     },
                     style: FilledButton.styleFrom(
                       backgroundColor: Theme.of(context).colorScheme.error,

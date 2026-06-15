@@ -23,6 +23,9 @@ class Node extends StatefulWidget {
 
   final bool highlighted;
 
+  /// Called when the user long-presses a black-box node to edit its tape indices.
+  final VoidCallback? onBlackBoxTapeEdit;
+
   const Node({
     super.key,
     required this.data,
@@ -36,6 +39,7 @@ class Node extends StatefulWidget {
     required this.deleteMode,
     this.onDelete,
     this.highlighted = false,
+    this.onBlackBoxTapeEdit,
   });
 
   @override
@@ -185,6 +189,11 @@ class _NodeState extends State<Node> {
       left: widget.data.position.dx,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
+        onLongPress: () {
+          if (isBlackBox && !widget.deleteMode && !widget.interactionLocked) {
+            widget.onBlackBoxTapeEdit?.call();
+          }
+        },
         onTap: () {
           if (widget.interactionLocked) return;
           if (widget.deleteMode) {
@@ -326,8 +335,63 @@ class _NodeState extends State<Node> {
                   ),
                 ),
               ),
+
+              // Tape badge — shown only for black-box nodes
+              if (isBlackBox)
+                Positioned(
+                  bottom: 4,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: IgnorePointer(
+                      child: BlackBoxTapeBadge(
+                        readTape: widget.data.blackBoxReadTape,
+                        writeTape: widget.data.blackBoxWriteTape,
+                        borderColor: borderColor,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _TapeBadge — small R:N W:N chip shown at the bottom of a black-box node
+// ─────────────────────────────────────────────────────────────────────────────
+
+class BlackBoxTapeBadge extends StatelessWidget {
+  const BlackBoxTapeBadge({
+    super.key,
+    required this.readTape,
+    required this.writeTape,
+    required this.borderColor,
+  });
+
+  final int readTape;
+  final int writeTape;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.bg.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: borderColor.withOpacity(0.55), width: 1),
+      ),
+      child: Text(
+        'R:$readTape  W:$writeTape',
+        style: GoogleFonts.courierPrime(
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+          color: borderColor.withOpacity(0.85),
         ),
       ),
     );
