@@ -279,6 +279,16 @@ class TmSimulator {
   /// - step == maxStep → steps.last
   int get maxStep => steps.isEmpty ? -1 : steps.length - 2;
 
+  /// Number of tapes this TM uses.
+  ///
+  /// The simulator itself always uses a single tape internally; this field is
+  /// used purely as UI metadata so the black-box tape-routing dialog knows how
+  /// many tape slots are available to assign to each black-box node.
+  ///
+  /// Defaults to 1. Incrementing this exposes additional tape-index options in
+  /// the [BlackBoxTapeEditDialog] without changing simulation behaviour.
+  int tapeCount = 1;
+
   // ── Active highlights ──────────────────────────────────────────────────
 
   Set<String> get activeNodes {

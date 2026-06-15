@@ -138,6 +138,12 @@ class DslCodec {
           out.add('  ${dslLine}');
         }
         out.add('}');
+        if (n.blackBoxReadTape != 1) {
+          out.add('${n.id} blackbox read tape = ${n.blackBoxReadTape}');
+        }
+        if (n.blackBoxWriteTape != 1) {
+          out.add('${n.id} blackbox write tape = ${n.blackBoxWriteTape}');
+        }
       }
     }
     if (g.nodes.isNotEmpty) out.add('');
@@ -462,6 +468,40 @@ class DslCodec {
         final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
         node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
+        continue;
+      }
+
+      // ── nN blackbox read tape = N ────────────────────────────────────────
+      final bbReadTapeMatch = RegExp(r'^(n\d+)\s+blackbox\s+read\s+tape\s*=\s*(\d+)$', caseSensitive: false).firstMatch(line);
+      if (bbReadTapeMatch != null) {
+        final id = bbReadTapeMatch.group(1)!;
+        final tapeNum = int.tryParse(bbReadTapeMatch.group(2)!) ?? 1;
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
+        node.isBlackBox = true;
+        node.blackBoxReadTape = tapeNum < 1 ? 1 : tapeNum;
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
+        continue;
+      }
+
+      // ── nN blackbox write tape = N ───────────────────────────────────────
+      final bbWriteTapeMatch = RegExp(r'^(n\d+)\s+blackbox\s+write\s+tape\s*=\s*(\d+)$', caseSensitive: false).firstMatch(line);
+      if (bbWriteTapeMatch != null) {
+        final id = bbWriteTapeMatch.group(1)!;
+        final tapeNum = int.tryParse(bbWriteTapeMatch.group(2)!) ?? 1;
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
+        node.isBlackBox = true;
+        node.blackBoxWriteTape = tapeNum < 1 ? 1 : tapeNum;
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
         }

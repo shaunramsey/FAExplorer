@@ -26,6 +26,10 @@ class Node extends StatefulWidget {
   /// Called when the user long-presses a black-box node to edit its tape indices.
   final VoidCallback? onBlackBoxTapeEdit;
 
+  /// Called when the user taps a black-box node to edit the inner machine
+  /// (DSL/description) it runs against the tape.
+  final VoidCallback? onBlackBoxEdit;
+
   const Node({
     super.key,
     required this.data,
@@ -40,6 +44,7 @@ class Node extends StatefulWidget {
     this.onDelete,
     this.highlighted = false,
     this.onBlackBoxTapeEdit,
+    this.onBlackBoxEdit,
   });
 
   @override
@@ -348,6 +353,42 @@ class _NodeState extends State<Node> {
                         readTape: widget.data.blackBoxReadTape,
                         writeTape: widget.data.blackBoxWriteTape,
                         borderColor: borderColor,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Edit-program button — shown only for black-box nodes. Tapping
+              // opens a dialog where the user can view/change the inner
+              // machine (DSL) and description this black box runs against
+              // the tape it reads and writes.
+              if (isBlackBox && !widget.deleteMode && !widget.interactionLocked)
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Tooltip(
+                    message: 'Edit black-box program',
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: widget.lineMode
+                          ? null
+                          : () => widget.onBlackBoxEdit?.call(),
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: theme.bg.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(
+                            color: borderColor.withOpacity(0.55),
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.edit_note,
+                          size: 14,
+                          color: borderColor.withOpacity(0.85),
+                        ),
                       ),
                     ),
                   ),
