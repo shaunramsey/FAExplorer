@@ -23,12 +23,17 @@ class Node extends StatefulWidget {
 
   final bool highlighted;
 
-  /// Called when the user long-presses a black-box node to edit its tape indices.
+  /// Called when the user taps the tape-routing button on a black-box node.
   final VoidCallback? onBlackBoxTapeEdit;
 
-  /// Called when the user taps a black-box node to edit the inner machine
-  /// (DSL/description) it runs against the tape.
+  /// Called when the user taps the edit-program button on a black-box node.
   final VoidCallback? onBlackBoxEdit;
+
+  /// Total number of tapes the TM is currently configured with. Used by the
+  /// node to show a mismatch warning on the tape badge when the node's
+  /// [NodeData.blackBoxReadTape] or [NodeData.blackBoxWriteTape] is out of
+  /// range. Defaults to 1 (no warning shown in non-TM modes).
+  final int tapeCount;
 
   const Node({
     super.key,
@@ -45,6 +50,7 @@ class Node extends StatefulWidget {
     this.highlighted = false,
     this.onBlackBoxTapeEdit,
     this.onBlackBoxEdit,
+    this.tapeCount = 1,
   });
 
   @override
@@ -194,11 +200,6 @@ class _NodeState extends State<Node> {
       left: widget.data.position.dx,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onLongPress: () {
-          if (isBlackBox && !widget.deleteMode && !widget.interactionLocked) {
-            widget.onBlackBoxTapeEdit?.call();
-          }
-        },
         onTap: () {
           if (widget.interactionLocked) return;
           if (widget.deleteMode) {
@@ -341,56 +342,64 @@ class _NodeState extends State<Node> {
                 ),
               ),
 
-              // Tape badge — shown only for black-box nodes
+              // ── Black-box bottom bar ─────────────────────────────────
+              // Shows a tape badge + two tappable action buttons so both
+              // actions are discoverable without relying on hidden gestures.
               if (isBlackBox)
                 Positioned(
                   bottom: 4,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: IgnorePointer(
-                      child: BlackBoxTapeBadge(
-                        readTape: widget.data.blackBoxReadTape,
-                        writeTape: widget.data.blackBoxWriteTape,
-                        borderColor: borderColor,
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Edit-program button — shown only for black-box nodes. Tapping
-              // opens a dialog where the user can view/change the inner
-              // machine (DSL) and description this black box runs against
-              // the tape it reads and writes.
-              if (isBlackBox && !widget.deleteMode && !widget.interactionLocked)
-                Positioned(
-                  top: 4,
+                  left: 4,
                   right: 4,
-                  child: Tooltip(
-                    message: 'Edit black-box program',
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: widget.lineMode
-                          ? null
-                          : () => widget.onBlackBoxEdit?.call(),
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: theme.bg.withOpacity(0.85),
-                          borderRadius: BorderRadius.circular(5),
-                          border: Border.all(
-                            color: borderColor.withOpacity(0.55),
-                            width: 1,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Tape badge (tappable → tape routing dialog)
+                      Flexible(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: (!widget.deleteMode &&
+                                  !widget.interactionLocked &&
+                                  !widget.lineMode)
+                              ? widget.onBlackBoxTapeEdit
+                              : null,
+                          child: BlackBoxTapeBadge(
+                            readTape: widget.data.blackBoxReadTape,
+                            writeTape: widget.data.blackBoxWriteTape,
+                            tapeCount: widget.tapeCount,
+                            borderColor: borderColor,
                           ),
                         ),
-                        child: Icon(
-                          Icons.edit_note,
-                          size: 14,
-                          color: borderColor.withOpacity(0.85),
-                        ),
                       ),
-                    ),
+
+                      // Edit-program button
+                      if (!widget.deleteMode && !widget.interactionLocked)
+                        Tooltip(
+                          message: 'Edit program',
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: widget.lineMode
+                                ? null
+                                : widget.onBlackBoxEdit,
+                            child: Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: theme.bg.withOpacity(0.85),
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(
+                                  color: borderColor.withOpacity(0.55),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.edit_note,
+                                size: 14,
+                                color: borderColor.withOpacity(0.85),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
             ],
@@ -402,7 +411,14 @@ class _NodeState extends State<Node> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  _TapeBadge — small R:N W:N chip shown at the bottom of a black-box node
+//  BlackBoxTapeBadge  (improved)
+//
+//  Changes:
+//   • Accepts [tapeCount] and shows an amber warning icon when the configured
+//     read or write tape index exceeds the number of tapes the TM has.
+//   • Shows a settings icon hint so the badge looks tappable (the parent
+//     wraps it in a GestureDetector when not in delete/line mode).
+//   • Background tints amber on mismatch for additional visibility.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BlackBoxTapeBadge extends StatelessWidget {
@@ -411,29 +427,66 @@ class BlackBoxTapeBadge extends StatelessWidget {
     required this.readTape,
     required this.writeTape,
     required this.borderColor,
+    this.tapeCount = 1,
   });
 
   final int readTape;
   final int writeTape;
   final Color borderColor;
 
+  /// Total number of TM tapes. Used to detect out-of-range assignments.
+  final int tapeCount;
+
+  bool get _mismatch =>
+      readTape > tapeCount || writeTape > tapeCount;
+
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
+    const warningColor = Color(0xFFFF9E40);
+
+    final bg = _mismatch
+        ? warningColor.withOpacity(0.18)
+        : theme.bg.withOpacity(0.85);
+    final border = _mismatch
+        ? warningColor.withOpacity(0.7)
+        : borderColor.withOpacity(0.55);
+    final textColor = _mismatch ? warningColor : borderColor.withOpacity(0.85);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.bg.withOpacity(0.85),
+        color: bg,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: borderColor.withOpacity(0.55), width: 1),
+        border: Border.all(color: border, width: 1),
       ),
-      child: Text(
-        'R:$readTape  W:$writeTape',
-        style: GoogleFonts.courierPrime(
-          fontSize: 9,
-          fontWeight: FontWeight.bold,
-          color: borderColor.withOpacity(0.85),
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_mismatch)
+            const Padding(
+              padding: EdgeInsets.only(right: 3),
+              child: Icon(
+                Icons.warning_amber_rounded,
+                size: 9,
+                color: warningColor,
+              ),
+            ),
+          Text(
+            'R:$readTape  W:$writeTape',
+            style: GoogleFonts.courierPrime(
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              color: textColor,
+            ),
+          ),
+          const SizedBox(width: 3),
+          Icon(
+            Icons.tune,
+            size: 9,
+            color: textColor.withOpacity(0.65),
+          ),
+        ],
       ),
     );
   }

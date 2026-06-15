@@ -497,12 +497,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   /// Opens a dialog letting the user configure which tape a black-box reads
-  /// from and which tape it writes to.
+  /// from and which tape it writes to. Passes the live [TmSimulator] so the
+  /// dialog can show the current tape content for each slot.
   Future<void> _showBlackBoxTapeDialog(NodeData node) async {
     final changed = await BlackBoxTapeEditDialog.show(
       context,
       node: node,
       tapeCount: _tmSimulator.tapeCount,
+      simulator: _tmSimulator,
     );
     if (changed == true) {
       setState(() {});
@@ -512,9 +514,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   /// Opens a dialog letting the user view/edit the inner machine (DSL) and
   /// description that a black-box node runs against the tape it reads and
-  /// writes.
+  /// writes. Provides an inline shortcut to the tape-routing dialog.
   Future<void> _showBlackBoxEditDialog(NodeData node) async {
-    final changed = await BlackBoxEditDialog.show(context, node: node);
+    final changed = await BlackBoxEditDialog.show(
+      context,
+      node: node,
+      onOpenTapeRouting: () => _showBlackBoxTapeDialog(node),
+    );
     if (changed == true) {
       setState(() {
         _refreshSimulation();
@@ -1112,6 +1118,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   onBlackBoxEdit: node.isBlackBox
                       ? () => _showBlackBoxEditDialog(node)
                       : null,
+
+                  tapeCount: _automataMode == AutomataMode.tm
+                      ? _tmSimulator.tapeCount
+                      : 1,
                 ),
               ),
             ],
