@@ -31,6 +31,12 @@ class StringSimulatorPanel extends StatefulWidget {
     required this.onClose,
     required this.onTextChanged,
     required this.onStepChanged,
+    this.tapeNames = const [],
+    this.activeTapeIndex = 0,
+    this.onTapeSelected,
+    this.onTapeAdded,
+    this.onTapeRemoved,
+    this.onTapeRenamed,
   });
 
   final GlobalKey boundaryKey;
@@ -42,6 +48,27 @@ class StringSimulatorPanel extends StatefulWidget {
   final VoidCallback onClose;
   final VoidCallback onTextChanged;
   final VoidCallback onStepChanged;
+
+  /// Names of all available tapes (e.g. ["Tape 1", "Tape 2"]).
+  /// If this list has fewer than 2 entries, the tab strip is hidden
+  /// (single-tape mode), preserving the original layout.
+  final List<String> tapeNames;
+
+  /// Index of the currently active tape within [tapeNames].
+  final int activeTapeIndex;
+
+  /// Called when the user taps a tape tab to switch to it.
+  final ValueChanged<int>? onTapeSelected;
+
+  /// Called when the user taps the "add tape" button. Should append a new
+  /// tape and make it active.
+  final VoidCallback? onTapeAdded;
+
+  /// Called when the user removes the tape at the given index.
+  final ValueChanged<int>? onTapeRemoved;
+
+  /// Called when the user renames the tape at the given index to the given name.
+  final void Function(int index, String name)? onTapeRenamed;
 
   @override
   State<StringSimulatorPanel> createState() => _StringSimulatorPanelState();
@@ -58,6 +85,10 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   final ScrollController _tapeScroll = ScrollController();
   final List<GlobalKey> _chipKeys = [];
+
+  // ── string history ────────────────────────────────────────────────────────
+  final List<String> _strings = [''];
+  int _stringIndex = 0;
 
   @override
   void initState() {
@@ -257,6 +288,50 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     });
   }
 
+  // ── string history navigation ─────────────────────────────────────────────
+
+  void _saveCurrentString() {
+    _strings[_stringIndex] = widget.controller.text;
+  }
+
+  void _applyString(int newIndex) {
+    _saveCurrentString();
+    setState(() => _stringIndex = newIndex);
+    widget.controller.text = _strings[_stringIndex];
+    _stopPlayback();
+    widget.onTextChanged();
+  }
+
+  void _prevString() {
+    if (_stringIndex > 0) _applyString(_stringIndex - 1);
+  }
+
+  void _nextString() {
+    _saveCurrentString();
+    if (_stringIndex < _strings.length - 1) {
+      _applyString(_stringIndex + 1);
+    } else {
+      setState(() {
+        _strings.add('');
+        _stringIndex = _strings.length - 1;
+      });
+      widget.controller.text = '';
+      _stopPlayback();
+      widget.onTextChanged();
+    }
+  }
+
+  void _deleteCurrentString() {
+    if (_strings.length <= 1) return;
+    setState(() {
+      _strings.removeAt(_stringIndex);
+      if (_stringIndex >= _strings.length) _stringIndex = _strings.length - 1;
+    });
+    widget.controller.text = _strings[_stringIndex];
+    _stopPlayback();
+    widget.onTextChanged();
+  }
+
   // ── result ────────────────────────────────────────────────────────────────
 
   SimResult? get _currentResult {
@@ -416,42 +491,95 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Input field
-                    TextField(
-                      controller: widget.controller,
-                      onChanged: (_) {
-                        _stopPlayback();
-                        widget.onTextChanged();
-                      },
-                      style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textLight),
-                      cursorColor: theme.accent,
-                      decoration: InputDecoration(
-                        hintText: 'Input string…',
-                        hintStyle: GoogleFonts.courierPrime(
-                          color: theme.textDim,
-                          fontSize: 13,
+                    // Input field with string navigation arrows
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _StringNavArrow(
+                          icon: Icons.arrow_left,
+                          tooltip: 'Previous string',
+                          enabled: _stringIndex > 0,
+                          onPressed: _prevString,
                         ),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 7,
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: TextField(
+                            controller: widget.controller,
+                            onChanged: (v) {
+                              _strings[_stringIndex] = v;
+                              _stopPlayback();
+                              widget.onTextChanged();
+                            },
+                            style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textLight),
+                            cursorColor: theme.accent,
+                            decoration: InputDecoration(
+                              hintText: 'Input string…',
+                              hintStyle: GoogleFonts.courierPrime(
+                                color: theme.textDim,
+                                fontSize: 13,
+                              ),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 7,
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFF080D14),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: BorderSide(color: theme.borderMid),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: BorderSide(color: theme.borderMid),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                                borderSide: BorderSide(color: theme.accent, width: 1.5),
+                              ),
+                            ),
+                          ),
                         ),
-                        filled: true,
-                        fillColor: const Color(0xFF080D14),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: theme.borderMid),
+                        const SizedBox(width: 2),
+                        _StringNavArrow(
+                          icon: Icons.arrow_right,
+                          tooltip: _stringIndex < _strings.length - 1
+                              ? 'Next string'
+                              : 'Add new string',
+                          enabled: true,
+                          onPressed: _nextString,
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: theme.borderMid),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: theme.accent, width: 1.5),
-                        ),
-                      ),
+                      ],
                     ),
+
+                    // String counter + delete
+                    if (_strings.length > 1) ...[
+                      const SizedBox(height: 3),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '${_stringIndex + 1} / ${_strings.length}',
+                            style: GoogleFonts.courierPrime(
+                              fontSize: 10,
+                              color: theme.textDim,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            onTap: _deleteCurrentString,
+                            child: Tooltip(
+                              message: 'Delete this string',
+                              child: Icon(
+                                Icons.close,
+                                size: 11,
+                                color: theme.textDim,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
 
                     // Token/Tape display
                     if (isTmMode && tapeView != null) ...[
@@ -623,8 +751,51 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Small transport icon button
+//  String navigation arrow button
 // ─────────────────────────────────────────────────────────────────────────────
+class _StringNavArrow extends StatelessWidget {
+  const _StringNavArrow({
+    required this.icon,
+    required this.tooltip,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: enabled ? onPressed : null,
+        child: Container(
+          width: 22,
+          height: 30,
+          decoration: BoxDecoration(
+            color: enabled
+                ? theme.surface
+                : theme.bg,
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(
+              color: enabled ? theme.borderMid : theme.borderMid.withOpacity(0.4),
+              width: 1,
+            ),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: enabled ? theme.textMid : theme.textDim.withOpacity(0.35),
+          ),
+        ),
+      ),
+    );
+  }
+}
 class _TransportBtn extends StatelessWidget {
   const _TransportBtn({
     required this.icon,
