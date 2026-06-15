@@ -508,8 +508,12 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
       // 2. If the level specifies a required automaton type (DFA vs NFA), check
       // it now — BEFORE running the (more expensive) equivalence check.
+      // In easy mode, this check is skipped when the level sets
+      // easyModeBypassTypeCheck = true, allowing any FA type.
       final requiredType = widget.level.requiredAutomatonType;
-      if (requiredType != null) {
+      final skipTypeCheck = widget.difficulty == LevelDifficulty.easy &&
+          widget.level.easyModeBypassTypeCheck;
+      if (requiredType != null && !skipTypeCheck) {
         final typeResult = AutomatonTypeChecker.check(
           nodes: _nodes,
           lines: _lines,

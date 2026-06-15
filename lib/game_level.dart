@@ -271,6 +271,18 @@ class GameLevel {
   /// Whether this level supports [LevelDifficulty.easy] mode with scaffolding.
   bool get hasEasyMode => easyModeNodes != null && easyModeNodes!.isNotEmpty;
 
+  /// When true, the [requiredAutomatonType] constraint is relaxed in easy mode:
+  /// the player may submit any finite automaton (DFA or NFA) and the type check
+  /// is skipped entirely.  The language-equivalence check still runs as normal.
+  ///
+  /// This is useful for levels that require a DFA on hard mode (teaching the
+  /// deterministic construction) but want to give easy-mode players the freedom
+  /// to solve the puzzle with whichever FA style they prefer.
+  ///
+  /// Has no effect when [requiredAutomatonType] is null (the level already
+  /// accepts any FA type) or when the player is playing on hard mode.
+  final bool easyModeBypassTypeCheck;
+
   const GameLevel({
     required this.id,
     required this.title,
@@ -288,6 +300,7 @@ class GameLevel {
     this.tutorialSlides = const [],
     this.isBoss = false,
     this.easyModeNodes,
+    this.easyModeBypassTypeCheck = false,
   });
 }
 
@@ -628,6 +641,11 @@ const List<GameLevel> kAllLevels = [
     requiredAutomatonType: RequiredAutomatonType.nfa,
     alphabet: {'a', 'b'},
     tag: 'nfa',
+    easyModeBypassTypeCheck: true,
+    easyModeNodes: [
+      EasyModeNode(id: 'n0', label: 'A', x: 400.0, y: 360.0, isStart: true),
+      EasyModeNode(id: 'n1', label: 'B', x: 760.0, y: 360.0, isAccept: true),
+    ],
   ),
 
   GameLevel(
