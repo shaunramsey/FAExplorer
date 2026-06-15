@@ -50,6 +50,12 @@ class NodeData {
   String blackBoxDescription;
   String blackBoxDsl;
 
+  /// 1-based index of the tape this black-box reads from.
+  int blackBoxReadTape;
+
+  /// 1-based index of the tape this black-box writes to / edits.
+  int blackBoxWriteTape;
+
   final Set<String> connectedLineIds = {};
 
   NodeData({
@@ -62,6 +68,8 @@ class NodeData {
     this.isBlackBox = false,
     this.blackBoxDescription = '',
     this.blackBoxDsl = '',
+    this.blackBoxReadTape = 1,
+    this.blackBoxWriteTape = 1,
   });
 
   bool get isHaltState => isHaltAccept || isHaltReject;
