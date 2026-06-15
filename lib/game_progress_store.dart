@@ -54,9 +54,20 @@ class GameProgressStore {
   // ── Write ─────────────────────────────────────────────────────────────────
 
   Future<void> markCompleted(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async {
+    // Always write to the requested difficulty.
     final current = loadCompletedLevels(difficulty);
     current.add(levelId);
     await _save(current, difficulty);
+
+    // Completing on Hard is a strict superset of Easy — grant Easy too so the
+    // player doesn't see an unearned gap in their badges.
+    if (difficulty == LevelDifficulty.hard) {
+      final easy = loadCompletedLevels(LevelDifficulty.easy);
+      if (!easy.contains(levelId)) {
+        easy.add(levelId);
+        await _save(easy, LevelDifficulty.easy);
+      }
+    }
   }
 
   Future<void> markIncomplete(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async {

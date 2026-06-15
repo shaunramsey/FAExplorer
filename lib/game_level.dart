@@ -135,7 +135,7 @@ class RequireExpression extends UnlockRule {
 ///
 /// [easy]  — scaffold nodes are pre-placed on the canvas (connections still
 ///           need to be drawn by the player).  Only available when the level
-///           defines [GameLevel.easyScaffoldDsl].
+///           defines [GameLevel.easyModeNodes].
 ///
 /// [hard]  — blank canvas; the player builds everything from scratch.
 ///           This is the original behaviour and is always available.
@@ -151,6 +151,53 @@ enum LevelDifficulty {
 
   bool get isEasy => this == LevelDifficulty.easy;
   bool get isHard => this == LevelDifficulty.hard;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  EasyModeNode
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single pre-placed state node for easy-mode puzzles.
+///
+/// [GamePuzzleScreen] converts these into [NodeData] instances at the correct
+/// canvas positions before the player interacts with the level.
+/// Transitions are intentionally absent — the player draws those themselves.
+///
+/// Example (a two-state DFA over {a, b}):
+/// ```dart
+/// easyModeNodes: [
+///   EasyModeNode(id: 'n0', label: 'q0', x: 160, y: 300, isStart: true),
+///   EasyModeNode(id: 'n1', label: 'q1', x: 480, y: 300, isAccept: true),
+/// ]
+/// ```
+class EasyModeNode {
+  const EasyModeNode({
+    required this.id,
+    required this.label,
+    required this.x,
+    required this.y,
+    this.isAccept = false,
+    this.isStart = false,
+  });
+
+  /// Stable node identifier matching the `nN` prefix convention (e.g. `'n0'`).
+  final String id;
+
+  /// State label shown inside the node circle.
+  final String label;
+
+  /// Horizontal canvas position in logical pixels.
+  final double x;
+
+  /// Vertical canvas position in logical pixels.
+  final double y;
+
+  /// True → double-ring accept state.
+  final bool isAccept;
+
+  /// True → the start arrow points at this node.
+  /// At most one node per level should have this set.
+  final bool isStart;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,20 +259,17 @@ class GameLevel {
   ///   • All other layers may contain AT MOST 4 levels.
   final bool isBoss;
 
-  /// Optional DSL that pre-populates the canvas when the player chooses
-  /// [LevelDifficulty.easy].
+  /// Pre-placed node layout for easy mode.
   ///
-  /// The scaffold should contain the correct set of nodes (already positioned)
-  /// but **no transitions** — the player still has to wire them up.  The start
-  /// arrow and accept-state markings may optionally be included as additional
-  /// hints.
+  /// When non-null, [GamePuzzleScreen] seeds the canvas with these nodes
+  /// (positions, labels, accept/start flags) before the player's first move.
+  /// The player only needs to draw the transitions.
   ///
-  /// When this field is empty the level does not offer an easy mode and
-  /// [LevelDifficulty.hard] is the only option.
-  final String easyScaffoldDsl;
+  /// When null, easy mode behaves identically to hard mode (blank canvas).
+  final List<EasyModeNode>? easyModeNodes;
 
-  /// Whether this level supports [LevelDifficulty.easy] mode.
-  bool get hasEasyMode => easyScaffoldDsl.isNotEmpty;
+  /// Whether this level supports [LevelDifficulty.easy] mode with scaffolding.
+  bool get hasEasyMode => easyModeNodes != null && easyModeNodes!.isNotEmpty;
 
   const GameLevel({
     required this.id,
@@ -243,7 +287,7 @@ class GameLevel {
     this.isTutorial = false,
     this.tutorialSlides = const [],
     this.isBoss = false,
-    this.easyScaffoldDsl = '',
+    this.easyModeNodes,
   });
 }
 

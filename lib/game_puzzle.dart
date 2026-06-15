@@ -119,7 +119,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   /// Restores the user's previous work for this level from SharedPreferences.
   ///
   /// In easy mode, if no saved progress exists yet, the canvas is seeded from
-  /// [GameLevel.easyScaffoldDsl] so the nodes are already placed.
+  /// [GameLevel.easyModeNodes] so the nodes are already placed.
   Future<void> _loadSavedDsl() async {
     final dsl = widget.progressStore.loadLevelDsl(widget.level.id, widget.difficulty);
     if (dsl != null && dsl.isNotEmpty) {
@@ -145,32 +145,41 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         _tryApplyEasyScaffold();
       }
     } else if (widget.difficulty == LevelDifficulty.easy &&
-        widget.level.easyScaffoldDsl.isNotEmpty) {
-      // No saved progress yet — seed from the scaffold.
+        widget.level.hasEasyMode) {
+      // No saved progress yet — seed from the node list.
       _tryApplyEasyScaffold();
     }
     if (mounted) setState(() => _loadingSavedDsl = false);
   }
 
-  /// Applies the easy-mode scaffold DSL to the canvas (nodes only; connections
-  /// are intentionally stripped so the player has to draw them).
+  /// Seeds the canvas with the easy-mode pre-placed nodes (no transitions).
+  /// Called on a fresh easy-mode start or after a corrupted save.
   void _tryApplyEasyScaffold() {
-    try {
-      final gs = DslCodec.importFromDsl(widget.level.easyScaffoldDsl);
-      if (mounted) {
-        setState(() {
-          _nodes
-            ..clear()
-            ..addAll(gs.nodes);
-          // Strip all connections — the player draws those themselves.
-          _lines.clear();
-          _startArrow = gs.startArrow;
-          _nodeCounter = _nodes.length;
-          _lineCounter = 0;
-        });
-      }
-    } catch (_) {
-      // Bad scaffold DSL — silently start fresh rather than crashing.
+    final easyNodes = widget.level.easyModeNodes;
+    if (easyNodes == null || easyNodes.isEmpty) return;
+
+    final nodes = <String, NodeData>{};
+    StartArrowData? startArrow;
+
+    for (final en in easyNodes) {
+      final node = NodeData(id: en.id, position: Offset(en.x, en.y));
+      node.label = en.label;
+      node.isAccept = en.isAccept;
+      nodes[en.id] = node;
+      if (en.isStart) startArrow = StartArrowData(nodeId: en.id);
+    }
+
+    if (mounted) {
+      setState(() {
+        _nodes
+          ..clear()
+          ..addAll(nodes);
+        // No transitions pre-placed — the player draws those themselves.
+        _lines.clear();
+        _startArrow = startArrow;
+        _nodeCounter = nodes.length;
+        _lineCounter = 0;
+      });
     }
   }
 

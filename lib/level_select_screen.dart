@@ -328,10 +328,11 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         ),
       );
     } else {
-      // If the player selected Easy but this level has no scaffold, fall back
-      // to Hard so the canvas isn't just an empty hard-mode screen mislabelled.
-      final effectiveDifficulty =
-          (_difficulty.isEasy && !level.hasEasyMode) ? LevelDifficulty.hard : _difficulty;
+      // Always honour the player's selected difficulty. Levels without an
+      // easy-mode scaffold (level.hasEasyMode == false) simply start from a
+      // blank canvas in Easy too — GamePuzzleScreen already handles that case
+      // by skipping scaffold seeding while still using Easy's save/completion
+      // keys, so progress is tracked correctly under the chosen difficulty.
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -339,7 +340,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
             level: level,
             progressStore: widget.progressStore,
             onCompleted: _reload,
-            difficulty: effectiveDifficulty,
+            difficulty: _difficulty,
           ),
         ),
       );
