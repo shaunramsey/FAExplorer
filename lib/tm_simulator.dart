@@ -551,10 +551,18 @@ class TmSimulator {
   TmTape? get currentTape => _primaryConfig?.tape;
   int get currentHeadPos => _primaryConfig?.headPos ?? 0;
 
-  ({List<String> cells, int headIndex, int originOffset})? get tapeView {
+  ({List<String> cells, int headIndex, int originOffset})? get tapeView =>
+      tapeViewForTape(1);
+
+  /// Returns the tape-strip view for tape [tapeIndex] (1-based), or `null`
+  /// when there is no current snapshot.  This is the multi-tape-aware
+  /// replacement for the old [tapeView] getter, which was hardcoded to tape 1.
+  ({List<String> cells, int headIndex, int originOffset})? tapeViewForTape(
+      int tapeIndex) {
     final config = _primaryConfig;
     if (config == null) return null;
-    final tape = config.tape;
+    final i = (tapeIndex - 1).clamp(0, config.tapes.length - 1);
+    final tape = config.tapes[i];
     const pad = 3;
     final cells = <String>[];
     final startPos = -pad;
@@ -563,9 +571,8 @@ class TmSimulator {
       final abs = tape.absolutePos(rel);
       cells.add((abs >= 0 && abs < tape.cells.length) ? tape.cells[abs] : kBlank);
     }
-    // Highlight the cell that was READ to produce this step (pre-move position),
-    // not the post-move position where the head will read next.
-    final displayHeadPos = config.readHeadPos;
+    // Highlight the cell that was READ to produce this step (pre-move position).
+    final displayHeadPos = config.readHeadPositions[i];
     return (
       cells: cells,
       headIndex: displayHeadPos - tape.absolutePos(startPos),

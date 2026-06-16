@@ -87,6 +87,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   late final PdaSimulator _pdaSimulator;     // ← NEW
   late final TmSimulator _tmSimulator;       // ← TM
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
+
+  /// Which tape tab is active in the string-simulator panel (0-based).
+  /// Only meaningful in TM mode with more than one tape.
+  int _activeTapeIndex = 0;
   Timer? _persistTimer;
   bool _persistenceReady = false;
   bool _loadingPrefs = true;
@@ -887,6 +891,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onModeChanged: (mode) {
           setState(() {
             _automataMode = mode;
+            _activeTapeIndex = 0; // reset tape selection on mode switch
             _simRebuild();
             if (mode == AutomataMode.pda) {
               _pdaSimulator.step = _simulator.step;
@@ -1151,6 +1156,49 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   setState(() {});
                   _schedulePersist();
                 },
+                tapeNames: _automataMode == AutomataMode.tm
+                    ? List.generate(
+                        _tmSimulator.tapeCount,
+                        (i) => 'Tape ${i + 1}',
+                      )
+                    : const [],
+                activeTapeIndex: _activeTapeIndex,
+                onTapeSelected: (i) => setState(() => _activeTapeIndex = i),
+                onTapeAdded: _automataMode == AutomataMode.tm
+                    ? () {
+                        setState(() {
+                          _tmSimulator.tapeCount += 1;
+                          _activeTapeIndex = _tmSimulator.tapeCount - 1;
+                        });
+                        _simRebuild();
+                        _schedulePersist();
+                      }
+                    : null,
+                onTapeRemoved: _automataMode == AutomataMode.tm &&
+                        _tmSimulator.tapeCount > 1
+                    ? (int i) {
+                        setState(() {
+                          _tmSimulator.tapeCount =
+                              (_tmSimulator.tapeCount - 1).clamp(1, 99);
+                          if (_activeTapeIndex >= _tmSimulator.tapeCount) {
+                            _activeTapeIndex = _tmSimulator.tapeCount - 1;
+                          }
+                          // Clamp any black-box nodes whose tape routing is
+                          // now out of range after the tape was removed.
+                          for (final node in _nodes.values) {
+                            if (!node.isBlackBox) continue;
+                            if (node.blackBoxReadTape > _tmSimulator.tapeCount) {
+                              node.blackBoxReadTape = _tmSimulator.tapeCount;
+                            }
+                            if (node.blackBoxWriteTape > _tmSimulator.tapeCount) {
+                              node.blackBoxWriteTape = _tmSimulator.tapeCount;
+                            }
+                          }
+                        });
+                        _simRebuild();
+                        _schedulePersist();
+                      }
+                    : null,
               ),
 
             // ── PDA Stack Panel ────────────────────────────────────────
