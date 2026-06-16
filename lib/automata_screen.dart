@@ -90,6 +90,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   /// Which tape tab is active in the string-simulator panel (0-based).
   /// Only meaningful in TM mode with more than one tape.
   int _activeTapeIndex = 0;
+
+  /// Input strings for tapes 2, 3, … (index 0 = tape 2, index 1 = tape 3, …).
+  /// Each controller holds what the user typed for that tape.
+  /// The list grows/shrinks with [_tmSimulator.tapeCount].
+  final List<TextEditingController> _tapeControllers = [];
   Timer? _persistTimer;
   bool _persistenceReady = false;
   bool _loadingPrefs = true;
@@ -302,7 +307,19 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _activeTapeIndex = _tmSimulator.tapeCount - 1;
       }
     }
-    _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
+    // Ensure _tapeControllers has exactly (tapeCount - 1) entries.
+    while (_tapeControllers.length < _tmSimulator.tapeCount - 1) {
+      _tapeControllers.add(TextEditingController());
+    }
+    while (_tapeControllers.length > _tmSimulator.tapeCount - 1) {
+      _tapeControllers.removeLast().dispose();
+    }
+    final additionalInputs = _tapeControllers.map((c) => c.text).toList();
+    _tmSimulator.rebuild(
+      _simController.text,
+      startArrow: _startArrow,
+      additionalTapeInputs: additionalInputs,
+    );
   }
 
   void _cancelRubberBand() {
@@ -432,6 +449,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _simController.removeListener(_schedulePersist);
     _focusNode.dispose();
     _simController.dispose();
+    for (final c in _tapeControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -1216,12 +1236,20 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                       )
                     : const [],
                 activeTapeIndex: _activeTapeIndex,
+                additionalTapeControllers: _automataMode == AutomataMode.tm
+                    ? _tapeControllers
+                    : const [],
+                onTapeInputChanged: () {
+                  setState(() => _simRebuild());
+                  _schedulePersist();
+                },
                 onTapeSelected: (i) => setState(() => _activeTapeIndex = i),
                 onTapeAdded: _automataMode == AutomataMode.tm
                     ? () {
                         setState(() {
                           _tmSimulator.tapeCount += 1;
                           _activeTapeIndex = _tmSimulator.tapeCount - 1;
+                          // _simRebuild will grow _tapeControllers to match.
                         });
                         _simRebuild();
                         _schedulePersist();

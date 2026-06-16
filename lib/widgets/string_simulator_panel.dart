@@ -33,6 +33,8 @@ class StringSimulatorPanel extends StatefulWidget {
     required this.onStepChanged,
     this.tapeNames = const [],
     this.activeTapeIndex = 0,
+    this.additionalTapeControllers = const [],
+    this.onTapeInputChanged,
     this.onTapeSelected,
     this.onTapeAdded,
     this.onTapeRemoved,
@@ -56,6 +58,15 @@ class StringSimulatorPanel extends StatefulWidget {
 
   /// Index of the currently active tape within [tapeNames].
   final int activeTapeIndex;
+
+  /// Controllers for the input strings of tapes 2, 3, … (index 0 = tape 2).
+  /// When non-empty, the active non-tape-1 tab shows an input field so the
+  /// user can type a separate starting string for that tape.
+  final List<TextEditingController> additionalTapeControllers;
+
+  /// Called whenever a per-tape input field changes so the parent can
+  /// rebuild the simulation with the new additional tape content.
+  final VoidCallback? onTapeInputChanged;
 
   /// Called when the user taps a tape tab to switch to it.
   final ValueChanged<int>? onTapeSelected;
@@ -689,6 +700,53 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                 ),
                               ],
                             ],
+                          ),
+                        ),
+                      ],
+                      // ── Per-tape input field (tapes 2+) ─────────────
+                      // Shown when the selected tab is a non-tape-1 tape
+                      // and we have a controller for it.
+                      if (widget.activeTapeIndex > 0 &&
+                          widget.activeTapeIndex - 1 <
+                              widget.additionalTapeControllers.length) ...[
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: widget.additionalTapeControllers[
+                              widget.activeTapeIndex - 1],
+                          onChanged: (_) {
+                            widget.onTapeInputChanged?.call();
+                          },
+                          style: GoogleFonts.courierPrime(
+                              fontSize: 13, color: theme.textLight),
+                          cursorColor: theme.accent,
+                          decoration: InputDecoration(
+                            hintText: widget.activeTapeIndex < widget.tapeNames.length
+                                ? '${widget.tapeNames[widget.activeTapeIndex]} input…'
+                                : 'Tape input…',
+                            hintStyle: GoogleFonts.courierPrime(
+                              color: theme.textDim,
+                              fontSize: 13,
+                            ),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 7,
+                            ),
+                            filled: true,
+                            fillColor: const Color(0xFF080D14),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide(color: theme.borderMid),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide(color: theme.borderMid),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide:
+                                  BorderSide(color: theme.accent, width: 1.5),
+                            ),
                           ),
                         ),
                       ],

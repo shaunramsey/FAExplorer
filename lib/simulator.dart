@@ -473,13 +473,28 @@ class AutomataSimulator {
         }
 
         // If the black box (or normal config) has consumed all tokens, it
-        // cannot fire a normal consuming transition — but it CAN take a null
-        // (`?`) epsilon jump.  Forward it into nextConfigs so _epsilonClosure
-        // can pick up those null transitions.  Mark consumedAny=true because
-        // the black box itself did consume input.
+        // cannot fire a normal consuming transition — but it CAN take outgoing
+        // transitions (treated as unconditional hops) because the black box
+        // itself did the consumption.  Follow every outgoing line from the
+        // black-box node as an epsilon hop so chaining works without requiring
+        // ~ labels after the black box.  Also add the effective config itself
+        // so _epsilonClosure can pick up any null/epsilon transitions on the
+        // black-box node.
         if (effective.inputPos >= effective.tokens.length) {
           if (node.isBlackBox) {
             consumedAny = true;
+            // Follow every outgoing line as an unconditional hop.
+            for (final line in lines.values) {
+              if (line.nodeAId != effective.nodeId) continue;
+              nextConfigs.add(_SimConfig(
+                nodeId: line.nodeBId,
+                tokens: effective.tokens,
+                inputPos: effective.inputPos,
+              ));
+              stepLines.add(line.id);
+            }
+            // Also add the effective config itself so epsilon/null transitions
+            // on the BB node are picked up by _epsilonClosure.
             nextConfigs.add(effective);
           }
           continue;
