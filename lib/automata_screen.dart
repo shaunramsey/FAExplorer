@@ -26,7 +26,6 @@ import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
 import 'tm_simulator.dart';
 import 'widgets/tm_config_panel.dart';
-import 'widgets/black_box_tape_dialog.dart';
 import 'widgets/black_box_input_dialog.dart';
 
 class AutomataScreen extends StatefulWidget {
@@ -500,30 +499,15 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _schedulePersist();
   }
 
-  /// Opens a dialog letting the user configure which tape a black-box reads
-  /// from and which tape it writes to. Passes the live [TmSimulator] so the
-  /// dialog can show the current tape content for each slot.
-  Future<void> _showBlackBoxTapeDialog(NodeData node) async {
-    final changed = await BlackBoxTapeEditDialog.show(
-      context,
-      node: node,
-      tapeCount: _tmSimulator.tapeCount,
-      simulator: _tmSimulator,
-    );
-    if (changed == true) {
-      setState(() {});
-      _schedulePersist();
-    }
-  }
-
   /// Opens a dialog letting the user view/edit the inner machine (DSL) and
-  /// description that a black-box node runs against the tape it reads and
-  /// writes. Provides an inline shortcut to the tape-routing dialog.
+  /// description that a black-box node runs against the tape(s) it touches.
+  /// Tape routing is now encoded directly in the outgoing line labels
+  /// (RWD triples per tape, e.g. aXRa1R), so there is no separate
+  /// tape-routing dialog — only the DSL editor is needed here.
   Future<void> _showBlackBoxEditDialog(NodeData node) async {
     final changed = await BlackBoxEditDialog.show(
       context,
       node: node,
-      onOpenTapeRouting: () => _showBlackBoxTapeDialog(node),
     );
     if (changed == true) {
       setState(() {
@@ -1116,17 +1100,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                     });
                   },
 
-                  onBlackBoxTapeEdit: node.isBlackBox
-                      ? () => _showBlackBoxTapeDialog(node)
-                      : null,
-
                   onBlackBoxEdit: node.isBlackBox
                       ? () => _showBlackBoxEditDialog(node)
                       : null,
-
-                  tapeCount: _automataMode == AutomataMode.tm
-                      ? _tmSimulator.tapeCount
-                      : 1,
                 ),
               ),
             ],
@@ -1182,17 +1158,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                               (_tmSimulator.tapeCount - 1).clamp(1, 99);
                           if (_activeTapeIndex >= _tmSimulator.tapeCount) {
                             _activeTapeIndex = _tmSimulator.tapeCount - 1;
-                          }
-                          // Clamp any black-box nodes whose tape routing is
-                          // now out of range after the tape was removed.
-                          for (final node in _nodes.values) {
-                            if (!node.isBlackBox) continue;
-                            if (node.blackBoxReadTape > _tmSimulator.tapeCount) {
-                              node.blackBoxReadTape = _tmSimulator.tapeCount;
-                            }
-                            if (node.blackBoxWriteTape > _tmSimulator.tapeCount) {
-                              node.blackBoxWriteTape = _tmSimulator.tapeCount;
-                            }
                           }
                         });
                         _simRebuild();

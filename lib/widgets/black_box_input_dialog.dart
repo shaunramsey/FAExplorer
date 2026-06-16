@@ -351,10 +351,10 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'The inner machine reads the tape starting at this '
-                        'black box\'s read head position and writes its '
-                        'result back to the write tape. Configure tape '
-                        'routing via the button above.',
+                        'Tape routing is encoded in the outgoing line labels '
+                        'as RWD triples per tape — e.g. aXRa1R means '
+                        '"tape 1: read a, write X, Right; tape 2: read a, '
+                        'write 1, Right". No separate tape-routing dialog needed.',
                         style: TextStyle(
                             fontSize: 11, color: theme.textMid, height: 1.4),
                       ),

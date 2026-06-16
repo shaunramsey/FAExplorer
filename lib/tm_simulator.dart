@@ -246,6 +246,142 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Black-box line label  (multi-tape direct format)
+//
+//  Lines **leaving** a black-box node use a compact per-tape notation instead
+//  of the inner-DSL approach.  Each newline-separated alternative is a
+//  concatenation of exactly N triples (one per tape, left-to-right):
+//
+//      RWD   where R = read symbol, W = write symbol, D = direction (R/L/S)
+//
+//  `~` in any position is a wildcard / no-op:
+//    • R position: `~` matches any symbol on that tape (don't check).
+//    • W position: `~` means "write nothing" — leave the tape cell unchanged.
+//    • D position: `~` is treated as Stay (S).
+//
+//  Examples (2-tape machine):
+//    aaRaYS  — tape1: read a, write a, Right; tape2: read a, write Y, Stay
+//    bbL~~S  — tape1: read b, write b, Left;  tape2: wildcard, no-write, Stay
+//
+//  A label is detected as blackbox-direct when:
+//    1. It comes from a line whose source node is a black box.
+//    2. After stripping whitespace it is exactly 3*N runes (N ≥ 1).
+//    3. The last rune of each triple is a valid direction (R/L/S/~).
+//
+//  If detection fails the alternative is treated as epsilon (no-op transition).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One per-tape operation parsed from a blackbox-direct label.
+class BbTapeOp {
+  /// The symbol to match on this tape's head cell. Empty string = wildcard
+  /// (matches any symbol, including blank).
+  final String read;
+
+  /// The symbol to write. Empty string = no-op (leave the cell unchanged).
+  final String write;
+
+  /// Head movement after the write.
+  final TmDirection direction;
+
+  /// Whether the read is a wildcard (~).
+  final bool isWildcard;
+
+  const BbTapeOp({
+    required this.read,
+    required this.write,
+    required this.direction,
+    required this.isWildcard,
+  });
+}
+
+/// A parsed blackbox-direct transition alternative: one [BbTapeOp] per tape.
+class BbDirectTransition {
+  /// One entry per tape (index 0 = tape 1, …).
+  final List<BbTapeOp> ops;
+
+  const BbDirectTransition(this.ops);
+
+  int get tapeCount => ops.length;
+}
+
+/// Try to parse a single blackbox-direct alternative string.
+///
+/// The tape count is **inferred** from the label: a valid label is exactly
+/// 3*N runes where N ≥ 1 and every third rune (direction) is R/L/S/~.
+/// For example `aXRa1R` is 6 runes → 2 tapes; `aXRa1RbYS` is 9 runes → 3 tapes.
+///
+/// The optional [maxTapes] argument can be supplied to cap the inferred tape
+/// count when the simulator has fewer tapes than the label implies — it is
+/// only used as an upper bound and does **not** cause rejection when the label
+/// encodes more tapes (the extra ops are simply ignored at apply-time via the
+/// guard in [_applyBbDirectTransition]).
+///
+/// Returns `null` when the string does not conform to the 3*N-rune format.
+///
+/// This is the per-alternative parser.  To split a full line label (which
+/// may contain multiple comma- or newline-separated alternatives) use
+/// [splitBbDirectAlternatives] first.
+BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes]) {
+  final s = raw.trim();
+  if (s.isEmpty) return null;
+
+  final runes = s.runes.toList();
+  // Must be a multiple of 3.
+  if (runes.length % 3 != 0) return null;
+
+  final inferredTapeCount = runes.length ~/ 3;
+  if (inferredTapeCount < 1) return null;
+
+  // Validate every direction rune before committing.
+  for (int i = 0; i < inferredTapeCount; i++) {
+    final dChar = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
+    if (dChar != 'R' && dChar != 'L' && dChar != 'S' && dChar != '~') {
+      return null;
+    }
+  }
+
+  final ops = <BbTapeOp>[];
+  for (int i = 0; i < inferredTapeCount; i++) {
+    final rChar = String.fromCharCode(runes[i * 3]);
+    final wChar = String.fromCharCode(runes[i * 3 + 1]);
+    final dChar = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
+
+    final isWildcard = rChar == '~';
+    final readSym = isWildcard ? '' : _normSym(rChar);
+    final writeSym = wChar == '~' ? '' : _normSym(wChar);  // empty = no-op
+    final dir = _parseDir(dChar);
+
+    ops.add(BbTapeOp(
+      read: readSym,
+      write: writeSym,
+      direction: dir,
+      isWildcard: isWildcard,
+    ));
+  }
+
+  return BbDirectTransition(ops);
+}
+
+/// Split a blackbox outgoing-line label into individual alternatives.
+///
+/// Normal (non-blackbox) transition alternatives are separated by `\n`.
+/// Blackbox-direct labels additionally allow `,` as a separator because
+/// each alternative is a fixed-width `3*N`-rune block and commas never
+/// appear inside a valid alternative.  Both separators produce the same
+/// NTM branching behaviour — each alternative is tried independently.
+///
+/// Empty tokens after splitting are discarded.
+List<String> splitBbDirectAlternatives(String label) {
+  // Replace commas with newlines, then split on newlines.
+  return label
+      .replaceAll(',', '\n')
+      .split('\n')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  TM tape (immutable snapshot)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -486,8 +622,6 @@ class TmSimulator {
   /// - accept if any config is in a normal accept state
   /// - reject otherwise
   bool noMovesTerminal = false;
-  final Map<String, ({bool accepted, List<String> outputTokens, int outputHeadPos})>
-      _blackBoxResultCache = {};
 
   /// Maximum valid value for [step] given the current [steps] list.
   ///
@@ -508,6 +642,12 @@ class TmSimulator {
   /// Defaults to 1. Call [rebuildGraph] (or [rebuild]) after changing this so
   /// the initial configuration is reconstructed with the new tape count.
   int tapeCount = 1;
+    /// Cache of black-box execution results.
+  final Map<String, ({
+    bool accepted,
+    List<String> outputTokens,
+    int outputHeadPos,
+  })> _blackBoxResultCache = {};
 
   // ── Active highlights ──────────────────────────────────────────────────
 
@@ -595,10 +735,6 @@ class TmSimulator {
       for (final c in last.configs) {
         final node = nodes[c.nodeId];
         if (node == null) continue;
-        if (node.isBlackBox) {
-          final blackBox = _runBlackBoxOnTape(node, c.tape, headPos: c.headPos);
-          if (!blackBox.accepted) continue;
-        }
         if (node.isHaltReject) continue;
         if (node.isAccept) return TmResult.accept;
       }
@@ -631,7 +767,6 @@ class TmSimulator {
 
   void rebuild(String input, {StartArrowData? startArrow}) {
     tokens = _tokenize(input);
-    _blackBoxResultCache.clear();
     _build(startArrow: startArrow);
     if (step >= steps.length) step = steps.length - 1;
   }
@@ -696,38 +831,19 @@ class TmSimulator {
     return !canAdvance;
   }
 
-  /// Runs [node]'s inner machine (if it is a black box) against the tape it
-  /// is configured to read from, and splices the result into the tape it is
-  /// configured to write to. Other tapes pass through unchanged.
+  /// For black-box nodes the tape operations are now encoded directly in the
+  /// outgoing line labels (blackbox-direct format: one RWD triple per tape).
+  /// This method is retained as a no-op pass-through so call sites in
+  /// [canAdvance] and [computeNext] continue to compile unchanged — for
+  /// black-box nodes we simply return [config] as-is and let the line-label
+  /// handler ([_applyBbDirectTransition]) do the actual tape work.
   ///
-  /// Returns `null` if the black box rejects (so the caller should drop this
-  /// branch). For non-black-box nodes, returns [config] unchanged.
-  ///
-  /// [node.blackBoxReadTape] / [node.blackBoxWriteTape] are 1-based and
-  /// clamped to the valid tape range — out-of-range values fall back to tape 1.
+  /// For non-black-box nodes, returns [config] unchanged (same as before).
   TmConfig? _applyBlackBox(NodeData node, TmConfig config) {
-    if (!node.isBlackBox) return config;
-
-    final tapeCountForConfig = config.tapes.length;
-    final readTape = node.blackBoxReadTape.clamp(1, tapeCountForConfig);
-    final writeTape = node.blackBoxWriteTape.clamp(1, tapeCountForConfig);
-
-    final blackBox = _runBlackBoxOnTape(
-      node,
-      config.tapes[readTape - 1],
-      headPos: config.headPositions[readTape - 1],
-    );
-    if (!blackBox.accepted) return null;
-
-    final outputTape = TmTape.fromTokens(blackBox.outputTokens);
-    final outputHeadPos = outputTape.absolutePos(blackBox.outputHeadPos);
-
-    return config.withTape(
-      writeTape,
-      outputTape,
-      headPos: outputHeadPos,
-      readHeadPos: outputHeadPos,
-    );
+    // Black-box nodes no longer run an inner DSL machine; their outgoing line
+    // labels carry all tape operations directly in the RWD-per-tape format.
+    // Just pass the config through so computeNext can handle the line labels.
+    return config;
   }
 
   /// True if at least one non-halted configuration has an enabled transition.
@@ -746,7 +862,33 @@ class TmSimulator {
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
-        for (final altRaw in line.label.split('\n')) {
+        // ── Black-box direct format (RWD per tape) ─────────────────────────
+        // Tape count is inferred from the label (3 runes per tape), not from
+        // effectiveConfig.tapes.length — so `aXRa1R` works as a 2-tape label
+        // even when the TM was declared with more tapes configured globally.
+        final alts = node.isBlackBox
+            ? splitBbDirectAlternatives(line.label)
+            : line.label.split('\n');
+        for (final altRaw in alts) {
+          if (node.isBlackBox) {
+            final bb = parseBbDirectLabel(altRaw);
+            if (bb == null) continue; // malformed label — skip
+            // Only check tapes that the label actually encodes.
+            final checkCount = bb.tapeCount.clamp(0, effectiveConfig.tapes.length);
+            var allMatch = true;
+            for (int ti = 0; ti < checkCount; ti++) {
+              final op = bb.ops[ti];
+              if (op.isWildcard) continue;
+              final headSym = effectiveConfig.tapes[ti]
+                  .read(effectiveConfig.headPositions[ti]);
+              final cellSym = headSym.isEmpty ? kBlank : headSym;
+              final readSym = op.read.isEmpty ? kBlank : op.read;
+              if (readSym != cellSym) { allMatch = false; break; }
+            }
+            if (allMatch) return true;
+            continue;
+          }
+          // ── Normal / compound transitions ───────────────────────────────
           final compound = parseTmCompoundLabel(altRaw);
           final t = compound.primary;
           if (t.isEpsilon) return true;
@@ -816,15 +958,30 @@ class TmSimulator {
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
 
+        // ── Black-box direct format (RWD per tape) ──────────────────────────
+        if (node.isBlackBox) {
+          for (final altRaw in splitBbDirectAlternatives(line.label)) {
+            // Tape count inferred from label length (3 runes per tape).
+            final bb = parseBbDirectLabel(altRaw);
+            if (bb == null) continue; // malformed — skip
+            final result = _applyBbDirectTransition(bb, effectiveConfig, line.nodeBId, line.id);
+            if (result == null) continue;
+            final k = result.key;
+            if (seenKeys.add(k)) {
+              nextConfigs.add(result);
+              nextLines.add(line.id);
+            }
+          }
+          continue;
+        }
+
         for (final altRaw in line.label.split('\n')) {
           final compound = parseTmCompoundLabel(altRaw);
           final t = compound.primary;
 
           final TmConfig next;
-          if (node.isBlackBox || t.isEpsilon) {
-            // Blackbox nodes and epsilon transitions: no write or move.
-            // For blackbox nodes all tape work was done inside the blackbox.
-            // For epsilon (~) transitions every tape and head is left as-is.
+          if (t.isEpsilon) {
+            // Epsilon (~) transitions: leave every tape and head as-is.
             next = effectiveConfig.retarget(nodeId: line.nodeBId, usedLineId: line.id);
           } else if (compound.isMultiTape) {
             // ── Multi-tape conjunctive transition (b1 / b2) ──────────────
@@ -1003,6 +1160,102 @@ class TmSimulator {
       headPos: adjSHead, readHeadPos: adjSRead,
       usedLineId: lineId,
     );
+    return next;
+  }
+
+  /// Apply a blackbox-direct transition ([BbDirectTransition]) to [config].
+  ///
+  /// Each [BbTapeOp] in [bb.ops] maps to a tape (index 0 = tape 1, …).
+  ///
+  /// Read matching:
+  ///   - [BbTapeOp.isWildcard] → always matches (skip the read check).
+  ///   - Otherwise the cell under the head must equal [BbTapeOp.read].
+  ///
+  /// Write semantics:
+  ///   - [BbTapeOp.write] is non-empty → write that symbol.
+  ///   - [BbTapeOp.write] is empty     → leave the cell unchanged (no-write).
+  ///
+  /// Returns the new [TmConfig] if all non-wildcard reads match, or `null`
+  /// when the transition cannot fire (so the caller can `continue`).
+  TmConfig? _applyBbDirectTransition(
+    BbDirectTransition bb,
+    TmConfig config,
+    String targetNodeId,
+    String lineId,
+  ) {
+    // ── Guard: clamp to available tapes (label may encode fewer OR more tapes
+    //    than the simulator currently has; only apply ops for tapes that exist).
+    final applyCount = bb.tapeCount.clamp(0, config.tapes.length);
+
+    // ── Phase 1: check all non-wildcard reads (only for tapes we will apply) ──
+    for (int ti = 0; ti < applyCount; ti++) {
+      final op = bb.ops[ti];
+      if (op.isWildcard) continue;
+      final headSym = config.tapes[ti].read(config.headPositions[ti]);
+      final cellSym = headSym.isEmpty ? kBlank : headSym;
+      final readSym = op.read.isEmpty ? kBlank : op.read;
+      if (readSym != cellSym) return null;
+    }
+
+    // ── Phase 2: apply all writes + moves atomically ─────────────────────
+    // Start from the current config and accumulate tape mutations one by one.
+    TmConfig next = TmConfig(
+      nodeId: targetNodeId,
+      tapes: List<TmTape>.from(config.tapes),
+      headPositions: List<int>.from(config.headPositions),
+      readHeadPositions: List<int>.from(config.headPositions),
+      usedLineId: lineId,
+    );
+
+    for (int ti = 0; ti < applyCount; ti++) {
+      final op = bb.ops[ti];
+      final tape = next.tapes[ti];
+      final headPos = next.headPositions[ti];
+
+      // Write (or keep unchanged).
+      TmTape newTape;
+      if (op.write.isEmpty) {
+        // no-write: keep the cell, but we may still need to extend for move.
+        newTape = tape;
+      } else {
+        final writeSym = op.write;
+        newTape = tape.write(headPos, writeSym);
+      }
+
+      // Account for any left-extension the write introduced.
+      final shift = newTape.headOffset - tape.headOffset;
+      int newHead = headPos + shift;
+      final readPos = newHead; // position that was read (pre-move)
+
+      switch (op.direction) {
+        case TmDirection.right: newHead += 1; break;
+        case TmDirection.left:  newHead -= 1; break;
+        case TmDirection.stay:  break;
+      }
+
+      // Extend if the head moved off either end.
+      final extended = newTape.extendToInclude(newHead);
+      newTape = extended.tape;
+      final extraShift = extended.shift;
+      final adjHead = newHead + extraShift;
+      final adjRead = readPos + extraShift;
+
+      // Mutate next in-place for this tape slot.
+      final newTapes = List<TmTape>.from(next.tapes);
+      final newHeads = List<int>.from(next.headPositions);
+      final newReadHeads = List<int>.from(next.readHeadPositions);
+      newTapes[ti] = newTape;
+      newHeads[ti] = adjHead;
+      newReadHeads[ti] = adjRead;
+      next = TmConfig(
+        nodeId: next.nodeId,
+        tapes: newTapes,
+        headPositions: newHeads,
+        readHeadPositions: newReadHeads,
+        usedLineId: next.usedLineId,
+      );
+    }
+
     return next;
   }
 

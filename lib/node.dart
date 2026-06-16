@@ -343,34 +343,18 @@ class _NodeState extends State<Node> {
               ),
 
               // ── Black-box bottom bar ─────────────────────────────────
-              // Shows a tape badge + two tappable action buttons so both
-              // actions are discoverable without relying on hidden gestures.
+              // Shows the edit-program button so the inner DSL remains
+              // accessible. Tape routing is now encoded directly in outgoing
+              // line labels (RWD triples per tape) so the old R:/W: badge
+              // and tape-routing dialog are no longer needed here.
               if (isBlackBox)
                 Positioned(
                   bottom: 4,
                   left: 4,
                   right: 4,
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      // Tape badge (tappable → tape routing dialog)
-                      Flexible(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: (!widget.deleteMode &&
-                                  !widget.interactionLocked &&
-                                  !widget.lineMode)
-                              ? widget.onBlackBoxTapeEdit
-                              : null,
-                          child: BlackBoxTapeBadge(
-                            readTape: widget.data.blackBoxReadTape,
-                            writeTape: widget.data.blackBoxWriteTape,
-                            tapeCount: widget.tapeCount,
-                            borderColor: borderColor,
-                          ),
-                        ),
-                      ),
-
                       // Edit-program button
                       if (!widget.deleteMode && !widget.interactionLocked)
                         Tooltip(
@@ -410,84 +394,5 @@ class _NodeState extends State<Node> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  BlackBoxTapeBadge  (improved)
-//
-//  Changes:
-//   • Accepts [tapeCount] and shows an amber warning icon when the configured
-//     read or write tape index exceeds the number of tapes the TM has.
-//   • Shows a settings icon hint so the badge looks tappable (the parent
-//     wraps it in a GestureDetector when not in delete/line mode).
-//   • Background tints amber on mismatch for additional visibility.
-// ─────────────────────────────────────────────────────────────────────────────
-
-class BlackBoxTapeBadge extends StatelessWidget {
-  const BlackBoxTapeBadge({
-    super.key,
-    required this.readTape,
-    required this.writeTape,
-    required this.borderColor,
-    this.tapeCount = 1,
-  });
-
-  final int readTape;
-  final int writeTape;
-  final Color borderColor;
-
-  /// Total number of TM tapes. Used to detect out-of-range assignments.
-  final int tapeCount;
-
-  bool get _mismatch =>
-      readTape > tapeCount || writeTape > tapeCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-    const warningColor = Color(0xFFFF9E40);
-
-    final bg = _mismatch
-        ? warningColor.withOpacity(0.18)
-        : theme.bg.withOpacity(0.85);
-    final border = _mismatch
-        ? warningColor.withOpacity(0.7)
-        : borderColor.withOpacity(0.55);
-    final textColor = _mismatch ? warningColor : borderColor.withOpacity(0.85);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: border, width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_mismatch)
-            const Padding(
-              padding: EdgeInsets.only(right: 3),
-              child: Icon(
-                Icons.warning_amber_rounded,
-                size: 9,
-                color: warningColor,
-              ),
-            ),
-          Text(
-            'R:$readTape  W:$writeTape',
-            style: GoogleFonts.courierPrime(
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              color: textColor,
-            ),
-          ),
-          const SizedBox(width: 3),
-          Icon(
-            Icons.tune,
-            size: 9,
-            color: textColor.withOpacity(0.65),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// (BlackBoxTapeBadge removed — tape routing is now encoded directly in
+//  blackbox outgoing line labels as RWD triples per tape, e.g. aXRa1R.)
