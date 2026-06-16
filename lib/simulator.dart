@@ -322,14 +322,23 @@ class AutomataSimulator {
       end--;
     }
 
-    final outputTokens =
-        start >= end ? const <String>[] : cells.sublist(start, end);
+    // Normalize cell values: the inner TM tape stores blanks as kBlank='∅',
+    // but the outer FA simulator represents blanks as '' (empty string).
+    // Without this, any cell the inner TM wrote as blank would appear as the
+    // literal '∅' token in the reconstructed outer token list, breaking
+    // downstream matching.  Non-blank symbols are passed through unchanged.
+    final outputTokens = start >= end
+        ? const <String>[]
+        : cells.sublist(start, end).map((c) => (c.isEmpty || c == kBlank) ? '' : c).toList();
 
     // Translate the absolute head position to an index in outputTokens.
-    // Clamp so it always points at a valid position (or 0 for an empty tape).
+    // Allow one-past-end (== outputTokens.length) so that a head that moved
+    // off the right edge of the non-blank content (A→B→C→ case) is not
+    // snapped back onto the last symbol.  The outer sim treats an inputPos
+    // equal to tokens.length as "all input consumed", which is exactly right.
     int outputHeadPos = 0;
     if (outputTokens.isNotEmpty) {
-      outputHeadPos = (rawHeadPos - start).clamp(0, outputTokens.length - 1);
+      outputHeadPos = (rawHeadPos - start).clamp(0, outputTokens.length);
     }
 
     return (outputTokens: outputTokens, outputHeadPos: outputHeadPos);

@@ -241,6 +241,55 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
     );
   }
 
+  // No bN marker found.
+  // ── Compact multi-tape shorthand ─────────────────────────────────────────
+  // A label that is exactly 3*N runes (N ≥ 2) where every third rune is a
+  // valid direction character (R/L/S/~) is interpreted as N consecutive
+  // single-tape 3-rune triples, one per tape (tape 1, tape 2, …).
+  //
+  // Examples:
+  //   aXRa1L  → tape 1: aXR,  tape 2: a1L
+  //   aXRa1Lb2S → tape 1: aXR, tape 2: a1L, tape 3: b2S
+  //
+  // This lets inner-DSL TM transitions be written in the same compact style
+  // as blackbox-direct labels without needing explicit N: tape prefixes.
+  // Only triggered when the string has no commas and no tape prefix (both of
+  // which are handled by the bN path and parseTmLabel above).
+  final compactRunes = raw.trim().runes.toList();
+  if (compactRunes.length >= 6 && compactRunes.length % 3 == 0 && !raw.contains(':')) {
+    final tapeCount = compactRunes.length ~/ 3;
+    bool allDirsValid = true;
+    for (int i = 0; i < tapeCount; i++) {
+      final dChar = String.fromCharCode(compactRunes[i * 3 + 2]).toUpperCase();
+      if (dChar != 'R' && dChar != 'L' && dChar != 'S' && dChar != '~') {
+        allDirsValid = false;
+        break;
+      }
+    }
+    if (allDirsValid) {
+      // Parse the first triple as the primary (tape 1).
+      final primaryRaw = String.fromCharCodes(compactRunes.sublist(0, 3));
+      final primary = parseTmLabel(primaryRaw); // tape index = 1 by default
+      if (tapeCount == 2) {
+        final secondaryRaw = String.fromCharCodes(compactRunes.sublist(3, 6));
+        final secondaryBase = parseTmLabel(secondaryRaw);
+        final secondary = TmTransition(
+          read: secondaryBase.read,
+          write: secondaryBase.write,
+          direction: secondaryBase.direction,
+          tapeIndex: 2,
+          isEpsilon: secondaryBase.isEpsilon,
+        );
+        return TmCompoundTransition(
+          primary: primary,
+          secondary: secondary,
+          behavior: TmMultiBehavior.crossWrite,
+        );
+      }
+      // For 3+ tapes: users should use N: prefixes.
+    }
+  }
+
   // No bN marker found → plain single-tape transition (fully backward-compatible).
   return TmCompoundTransition(primary: parseTmLabel(raw));
 }
@@ -277,7 +326,8 @@ class BbTapeOp {
   /// (matches any symbol, including blank).
   final String read;
 
-  /// The symbol to write. Empty string = no-op (leave the cell unchanged).
+  /// The symbol to write. Empty string = write blank (∅).
+  /// Ignored when [noWrite] is true.
   final String write;
 
   /// Head movement after the write.
@@ -286,11 +336,16 @@ class BbTapeOp {
   /// Whether the read is a wildcard (~).
   final bool isWildcard;
 
+  /// When true, the write position contained `~` meaning "leave the cell
+  /// unchanged" (no-op write). This is distinct from writing blank (∅).
+  final bool noWrite;
+
   const BbTapeOp({
     required this.read,
     required this.write,
     required this.direction,
     required this.isWildcard,
+    this.noWrite = false,
   });
 }
 
@@ -348,7 +403,11 @@ BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes]) {
 
     final isWildcard = rChar == '~';
     final readSym = isWildcard ? '' : _normSym(rChar);
-    final writeSym = wChar == '~' ? '' : _normSym(wChar);  // empty = no-op
+
+    // `~` in write position = no-write (leave cell unchanged).
+    // Any other symbol (including `∅`) = write that symbol (∅ → blank '').
+    final noWrite = wChar == '~';
+    final writeSym = noWrite ? '' : _normSym(wChar);
     final dir = _parseDir(dChar);
 
     ops.add(BbTapeOp(
@@ -356,6 +415,7 @@ BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes]) {
       write: writeSym,
       direction: dir,
       isWildcard: isWildcard,
+      noWrite: noWrite,
     ));
   }
 
@@ -642,11 +702,13 @@ class TmSimulator {
   /// Defaults to 1. Call [rebuildGraph] (or [rebuild]) after changing this so
   /// the initial configuration is reconstructed with the new tape count.
   int tapeCount = 1;
-    /// Cache of black-box execution results.
+  /// Cache of black-box execution results keyed by node-id + all tape contents
+  /// + all head positions.  Avoids re-running the inner DSL machine when the
+  /// outer TM revisits the same black-box node with identical tape state.
   final Map<String, ({
     bool accepted,
-    List<String> outputTokens,
-    int outputHeadPos,
+    List<List<String>> outputTapes,
+    List<int> outputHeadPositions,
   })> _blackBoxResultCache = {};
 
   // ── Active highlights ──────────────────────────────────────────────────
@@ -711,8 +773,10 @@ class TmSimulator {
       final abs = tape.absolutePos(rel);
       cells.add((abs >= 0 && abs < tape.cells.length) ? tape.cells[abs] : kBlank);
     }
-    // Highlight the cell that was READ to produce this step (pre-move position).
-    final displayHeadPos = config.readHeadPositions[i];
+    // Highlight the current head position (post-move) so the tape strip shows
+    // WHERE THE HEAD IS NOW, not where it last read from.  The config panel
+    // uses readHeadPositions separately for its "last read" annotation.
+    final displayHeadPos = config.headPositions[i];
     return (
       cells: cells,
       headIndex: displayHeadPos - tape.absolutePos(startPos),
@@ -765,9 +829,16 @@ class TmSimulator {
 
   // ── Build ──────────────────────────────────────────────────────────────
 
-  void rebuild(String input, {StartArrowData? startArrow}) {
+  void rebuild(
+    String input, {
+    StartArrowData? startArrow,
+    /// Initial content for tapes 2, 3, … (index 0 = tape 2, index 1 = tape 3, …).
+    /// Each string is tokenised exactly like the tape-1 input.
+    /// Tapes not covered by this list start empty (backward-compatible default).
+    List<String> additionalTapeInputs = const [],
+  }) {
     tokens = _tokenize(input);
-    _build(startArrow: startArrow);
+    _build(startArrow: startArrow, additionalTapeInputs: additionalTapeInputs);
     if (step >= steps.length) step = steps.length - 1;
   }
 
@@ -776,7 +847,10 @@ class TmSimulator {
     if (step >= steps.length) step = steps.length - 1;
   }
 
-  void _build({StartArrowData? startArrow}) {
+  void _build({
+    StartArrowData? startArrow,
+    List<String> additionalTapeInputs = const [],
+  }) {
     steps.clear();
     noMovesTerminal = false;
 
@@ -831,19 +905,268 @@ class TmSimulator {
     return !canAdvance;
   }
 
-  /// For black-box nodes the tape operations are now encoded directly in the
-  /// outgoing line labels (blackbox-direct format: one RWD triple per tape).
-  /// This method is retained as a no-op pass-through so call sites in
-  /// [canAdvance] and [computeNext] continue to compile unchanged — for
-  /// black-box nodes we simply return [config] as-is and let the line-label
-  /// handler ([_applyBbDirectTransition]) do the actual tape work.
+  /// Executes the inner DSL machine stored in [node.blackBoxDsl] against the
+  /// outer TM's current tape configuration, and returns an updated [TmConfig]
+  /// with all tapes rewritten to reflect the inner machine's output.
   ///
-  /// For non-black-box nodes, returns [config] unchanged (same as before).
+  /// The inner machine is a full TM (NFA/PDA/TM depending on the DSL header).
+  /// It receives the **full content** of every outer tape as its input tapes:
+  ///   • tape 1 of the inner machine ← outer tape 1
+  ///   • tape 2 of the inner machine ← outer tape 2 (if configured)
+  ///   • … and so on up to the inner machine's tape count
+  ///
+  /// After the inner machine halts-accept, each output tape is spliced back
+  /// into the corresponding outer tape slot.  Tapes that the inner machine
+  /// does not touch (because it has fewer tapes than the outer TM) are carried
+  /// over from the original outer config unchanged.
+  ///
+  /// Returns `null` when:
+  ///   • The node is not a black-box (caller should never reach this path).
+  ///   • The inner machine rejects — the outer NTM branch dies.
+  ///   • The DSL is empty or malformed.
+  ///
+  /// For non-black-box nodes this method is never called; the caller guards
+  /// with [node.isBlackBox] before invoking.
   TmConfig? _applyBlackBox(NodeData node, TmConfig config) {
-    // Black-box nodes no longer run an inner DSL machine; their outgoing line
-    // labels carry all tape operations directly in the RWD-per-tape format.
-    // Just pass the config through so computeNext can handle the line labels.
-    return config;
+    if (!node.isBlackBox) return config;
+
+    final dsl = node.blackBoxDsl.trim();
+    if (dsl.isEmpty) return null; // no DSL → branch dies
+
+    // Build a cache key that covers all tape contents + all head positions so
+    // re-entering the same black-box with identical state reuses the result.
+    final cacheKey = _buildBlackBoxCacheKey(node, config);
+    final cached = _blackBoxResultCache[cacheKey];
+    if (cached != null) {
+      if (!cached.accepted) return null;
+      return _rebuildConfigFromBlackBoxResult(cached, config);
+    }
+
+    try {
+      final graph = DslCodec.importFromDsl(dsl);
+      final result = _executeBlackBoxDsl(graph, config);
+      _blackBoxResultCache[cacheKey] = result;
+      if (!result.accepted) return null;
+      return _rebuildConfigFromBlackBoxResult(result, config);
+    } catch (_) {
+      _blackBoxResultCache[cacheKey] = (
+        accepted: false,
+        outputTapes: const [],
+        outputHeadPositions: const [],
+      );
+      return null;
+    }
+  }
+
+  // ── Cache key that covers all tapes + all head positions ────────────────
+
+  String _buildBlackBoxCacheKey(NodeData node, TmConfig config) {
+    final parts = <String>[node.id];
+    for (int i = 0; i < config.tapes.length; i++) {
+      parts.add('${config.headPositions[i]}:${config.tapes[i].key}');
+    }
+    return parts.join('|');
+  }
+
+  // ── Run the inner DSL machine against the full outer config ─────────────
+
+  ({
+    bool accepted,
+    List<List<String>> outputTapes,
+    List<int> outputHeadPositions,
+  }) _executeBlackBoxDsl(GraphState graph, TmConfig outerConfig) {
+    // Build per-tape trimmed token lists and relative head positions from the
+    // outer config to hand to the inner machine.
+    final outerTapeCount = outerConfig.tapes.length;
+
+    // Helper: trim a TmTape to its non-blank content and translate the
+    // absolute head position to a 0-based index in that trimmed list.
+    ({List<String> tokens, int headRel}) _tapeToInput(int tapeIdx) {
+      final tape = outerConfig.tapes[tapeIdx];
+      final absHead = outerConfig.headPositions[tapeIdx];
+      final tokens = _trimTapeTokens(tape);
+      // Locate where the non-blank region starts in the raw cells so we can
+      // translate the absolute head position to a relative one.
+      final cells = tape.cells;
+      int trimStart = 0;
+      while (trimStart < cells.length &&
+          (cells[trimStart].isEmpty || cells[trimStart] == kBlank)) {
+        trimStart++;
+      }
+      final headRel = (absHead - trimStart).clamp(0, tokens.isEmpty ? 0 : tokens.length);
+      return (tokens: tokens, headRel: headRel);
+    }
+
+    switch (graph.automataMode) {
+      // ── NFA: single-tape, no rewrite ──────────────────────────────────────
+      case AutomataMode.ndfa: {
+        final t0 = _tapeToInput(0);
+        final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
+        sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);
+        if (sim.finalResult() != SimResult.accept) {
+          return (accepted: false, outputTapes: const [], outputHeadPositions: const []);
+        }
+        // NFA: head advances past the entire consumed tape 1; other tapes unchanged.
+        final outTapes = <List<String>>[];
+        final outHeads = <int>[];
+        for (int i = 0; i < outerTapeCount; i++) {
+          final t = _tapeToInput(i);
+          outTapes.add(t.tokens);
+          outHeads.add(i == 0 ? t.tokens.length : t.headRel);
+        }
+        return (accepted: true, outputTapes: outTapes, outputHeadPositions: outHeads);
+      }
+
+      // ── PDA: single-tape, no rewrite ──────────────────────────────────────
+      case AutomataMode.pda: {
+        final t0 = _tapeToInput(0);
+        final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
+        sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);
+        if (sim.finalResult() != PdaSimResult.accept) {
+          return (accepted: false, outputTapes: const [], outputHeadPositions: const []);
+        }
+        final outTapes = <List<String>>[];
+        final outHeads = <int>[];
+        for (int i = 0; i < outerTapeCount; i++) {
+          final t = _tapeToInput(i);
+          outTapes.add(t.tokens);
+          outHeads.add(i == 0 ? t.tokens.length : t.headRel);
+        }
+        return (accepted: true, outputTapes: outTapes, outputHeadPositions: outHeads);
+      }
+
+      // ── Inner TM: multi-tape aware ────────────────────────────────────────
+      case AutomataMode.tm: {
+        // Determine how many tapes the inner machine needs.  It can use at
+        // most as many tapes as the outer machine has, but may use fewer.
+        // We set the inner tapeCount to the outer tapeCount so that `N:` tape
+        // prefixes in the inner DSL labels correctly address outer tapes 2+.
+        final innerTapeCount = outerTapeCount;
+
+        final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
+        sim.tapeCount = innerTapeCount;
+
+        // Load tape 1 of the inner machine with the outer tape 1 content.
+        // After rebuild(), the inner simulator builds the initial config with
+        // tapeCount tapes, all starting empty except tape 1 (= the input).
+        final t0 = _tapeToInput(0);
+        sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);
+
+        // Overwrite the initial config's extra tapes with the outer tapes 2..N.
+        // rebuild() always produces exactly one config in steps[0].
+        if (sim.steps.isNotEmpty && sim.steps[0].configs.isNotEmpty && innerTapeCount > 1) {
+          final initConfig = sim.steps[0].configs[0];
+          TmConfig updated = initConfig;
+          for (int i = 1; i < innerTapeCount; i++) {
+            final outerTk = _tapeToInput(i);
+            final innerTape = TmTape.fromTokens(outerTk.tokens);
+            // Position the inner head at the same relative position as the
+            // outer head so the inner machine starts scanning the right cell.
+            final innerHead = innerTape.absolutePos(outerTk.headRel.clamp(0, outerTk.tokens.length));
+            updated = updated.withTape(
+              i + 1,
+              innerTape,
+              headPos: innerHead,
+              readHeadPos: innerHead,
+            );
+          }
+          sim.steps[0] = TmStepSnapshot(
+            configs: [updated],
+            usedLineIds: sim.steps[0].usedLineIds,
+          );
+        }
+
+        // Run to completion.
+        while (sim.computeNext()) {}
+
+        if (sim.result != TmResult.accept) {
+          return (accepted: false, outputTapes: const [], outputHeadPositions: const []);
+        }
+
+        // Find the halt-accept config.
+        TmConfig? haltConfig;
+        if (sim.steps.isNotEmpty) {
+          for (final c in sim.steps.last.configs) {
+            if (sim.nodes[c.nodeId]?.isHaltAccept == true) {
+              haltConfig = c;
+              break;
+            }
+          }
+          haltConfig ??= sim.steps.last.configs.firstOrNull;
+        }
+        if (haltConfig == null) {
+          return (accepted: false, outputTapes: const [], outputHeadPositions: const []);
+        }
+
+        // Extract trimmed output tokens and translated head positions for
+        // every tape the inner machine operated on.
+        final outTapes = <List<String>>[];
+        final outHeads = <int>[];
+        for (int i = 0; i < innerTapeCount; i++) {
+          if (i >= haltConfig.tapes.length) {
+            // Inner machine had fewer tapes — carry outer tape unchanged.
+            final ot = _tapeToInput(i);
+            outTapes.add(ot.tokens);
+            outHeads.add(ot.headRel);
+          } else {
+            final innerTape = haltConfig.tapes[i];
+            final innerHead = haltConfig.headPositions[i];
+            final tokens = _trimTapeTokens(innerTape);
+            // Translate absolute inner head to relative position in trimmed tokens.
+            final cells = innerTape.cells;
+            int trimStart = 0;
+            while (trimStart < cells.length &&
+                (cells[trimStart].isEmpty || cells[trimStart] == kBlank)) {
+              trimStart++;
+            }
+            final headRel = (innerHead - trimStart).clamp(0, tokens.length);
+            outTapes.add(tokens);
+            outHeads.add(headRel);
+          }
+        }
+        return (accepted: true, outputTapes: outTapes, outputHeadPositions: outHeads);
+      }
+    }
+  }
+
+  // ── Rebuild the outer TmConfig from inner-machine output ────────────────
+
+  TmConfig _rebuildConfigFromBlackBoxResult(
+    ({
+      bool accepted,
+      List<List<String>> outputTapes,
+      List<int> outputHeadPositions,
+    }) result,
+    TmConfig originalConfig,
+  ) {
+    // Start from the original config (preserves node id, usedLineId, etc.)
+    // and overwrite each tape slot with the inner machine's output.
+    TmConfig updated = originalConfig;
+    final outerCount = originalConfig.tapes.length;
+    final innerCount = result.outputTapes.length;
+
+    for (int i = 0; i < outerCount; i++) {
+      if (i >= innerCount) break; // inner machine had fewer tapes — leave unchanged
+
+      final tokens = result.outputTapes[i];
+      final headRel = result.outputHeadPositions[i];
+
+      final newTape = TmTape.fromTokens(tokens);
+      // TmTape.fromTokens lays out: [∅, tok0, tok1, …, tokN, ∅] with headOffset=1.
+      // absolutePos(headRel) maps the relative head back to an absolute index.
+      // Clamp to [0, cells.length-1] so we never reference an out-of-bounds cell.
+      final absHead = newTape.absolutePos(headRel)
+          .clamp(0, newTape.cells.length - 1);
+
+      updated = updated.withTape(
+        i + 1, // withTape is 1-based
+        newTape,
+        headPos: absHead,
+        readHeadPos: absHead,
+      );
+    }
+
+    return updated;
   }
 
   /// True if at least one non-halted configuration has an enabled transition.
@@ -862,33 +1185,16 @@ class TmSimulator {
 
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
-        // ── Black-box direct format (RWD per tape) ─────────────────────────
-        // Tape count is inferred from the label (3 runes per tape), not from
-        // effectiveConfig.tapes.length — so `aXRa1R` works as a 2-tape label
-        // even when the TM was declared with more tapes configured globally.
-        final alts = node.isBlackBox
-            ? splitBbDirectAlternatives(line.label)
-            : line.label.split('\n');
-        for (final altRaw in alts) {
-          if (node.isBlackBox) {
-            final bb = parseBbDirectLabel(altRaw);
-            if (bb == null) continue; // malformed label — skip
-            // Only check tapes that the label actually encodes.
-            final checkCount = bb.tapeCount.clamp(0, effectiveConfig.tapes.length);
-            var allMatch = true;
-            for (int ti = 0; ti < checkCount; ti++) {
-              final op = bb.ops[ti];
-              if (op.isWildcard) continue;
-              final headSym = effectiveConfig.tapes[ti]
-                  .read(effectiveConfig.headPositions[ti]);
-              final cellSym = headSym.isEmpty ? kBlank : headSym;
-              final readSym = op.read.isEmpty ? kBlank : op.read;
-              if (readSym != cellSym) { allMatch = false; break; }
-            }
-            if (allMatch) return true;
-            continue;
-          }
-          // ── Normal / compound transitions ───────────────────────────────
+        // ── Black-box DSL node ───────────────────────────────────────────────
+        // _applyBlackBox runs the inner DSL unconditionally (it returns null
+        // only when the DSL rejects).  effectiveConfig is non-null here, so
+        // the inner machine accepted — any outgoing line means we can advance.
+        if (node.isBlackBox) {
+          return true;
+        }
+
+        // ── Normal / compound transitions ────────────────────────────────────
+        for (final altRaw in line.label.split('\n')) {
           final compound = parseTmCompoundLabel(altRaw);
           final t = compound.primary;
           if (t.isEpsilon) return true;
@@ -958,19 +1264,22 @@ class TmSimulator {
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
 
-        // ── Black-box direct format (RWD per tape) ──────────────────────────
+        // ── Black-box DSL node ──────────────────────────────────────────────
+        // _applyBlackBox (called above) already ran the inner DSL machine and
+        // rewrote all tapes.  The outgoing line is used only to determine
+        // which target state to hop to — no further tape operations are
+        // applied here.  Every outgoing line from the black-box node fires as
+        // an unconditional epsilon hop so the user can route the post-DSL
+        // config to whichever target state they connect.
         if (node.isBlackBox) {
-          for (final altRaw in splitBbDirectAlternatives(line.label)) {
-            // Tape count inferred from label length (3 runes per tape).
-            final bb = parseBbDirectLabel(altRaw);
-            if (bb == null) continue; // malformed — skip
-            final result = _applyBbDirectTransition(bb, effectiveConfig, line.nodeBId, line.id);
-            if (result == null) continue;
-            final k = result.key;
-            if (seenKeys.add(k)) {
-              nextConfigs.add(result);
-              nextLines.add(line.id);
-            }
+          final hopped = effectiveConfig.retarget(
+            nodeId: line.nodeBId,
+            usedLineId: line.id,
+          );
+          final k = hopped.key;
+          if (seenKeys.add(k)) {
+            nextConfigs.add(hopped);
+            nextLines.add(line.id);
           }
           continue;
         }
@@ -1212,13 +1521,16 @@ class TmSimulator {
       final tape = next.tapes[ti];
       final headPos = next.headPositions[ti];
 
-      // Write (or keep unchanged).
+      // Write (or leave unchanged).
+      // op.noWrite=true  → `~` in write position: leave the cell unchanged.
+      // op.noWrite=false → write op.write (which may be '' meaning blank ∅).
       TmTape newTape;
-      if (op.write.isEmpty) {
-        // no-write: keep the cell, but we may still need to extend for move.
+      if (op.noWrite) {
+        // no-write: keep the cell unchanged; may still extend for move.
         newTape = tape;
       } else {
-        final writeSym = op.write;
+        // write op.write; empty string means write blank (∅).
+        final writeSym = op.write.isEmpty ? kBlank : op.write;
         newTape = tape.write(headPos, writeSym);
       }
 
@@ -1313,206 +1625,7 @@ class TmSimulator {
     return kTokenReplacements[inner] ?? token;
   }
 
-  /// Run the black-box inner machine on the cells of [tape] starting at
-  /// [headPos] (the outer TM's current head position).
-  ///
-  /// The inner machine only sees the slice  tape[headPos..]  (leading and
-  /// trailing blanks stripped).  On success the outer tape is reconstructed
-  /// as  tape[0..headPos)  +  innerOutput  +  tape[headPos+sliceLen..]  and
-  /// [outputHeadPos] is the absolute position in that reconstructed tape where
-  /// the inner machine left its head.
-  ///
-  /// The cache key includes [headPos] so that the same node visited at
-  /// different head positions produces separate cache entries.
-  ({bool accepted, List<String> outputTokens, int outputHeadPos}) _runBlackBoxOnTape(
-    NodeData node,
-    TmTape tape, {
-    int? headPos,
-  }) {
-    // Use the supplied headPos, or fall back to the tape's logical origin (for
-    // callers that haven't been updated yet / non-blackbox nodes).
-    final int effectiveHeadPos = headPos ?? tape.absolutePos(0);
-
-    if (!node.isBlackBox) {
-      final fullTokens = _trimTapeTokens(tape);
-      // Translate absolute effectiveHeadPos to an index in the trimmed list.
-      final cells = tape.cells;
-      int trimStart = 0;
-      while (trimStart < cells.length &&
-          (cells[trimStart].isEmpty || cells[trimStart] == kBlank)) {
-        trimStart++;
-      }
-      final relativeHeadPos =
-          (effectiveHeadPos - trimStart).clamp(0, fullTokens.isEmpty ? 0 : fullTokens.length - 1);
-      return (accepted: true, outputTokens: fullTokens, outputHeadPos: relativeHeadPos);
-    }
-
-    // Extract the full tape as non-blank tokens so we can slice from headPos.
-    final allCells = tape.cells;
-    // Convert absolute headPos to an index in allCells (it already is absolute).
-    // Build a list of (absoluteIndex, symbol) pairs for non-blank cells so we
-    // can locate the slice boundary.
-    //
-    // The "slice" the inner machine sees is: everything at or after effectiveHeadPos
-    // up to the end of the non-blank region.
-    int tapeNonBlankEnd = allCells.length;
-    while (tapeNonBlankEnd > 0 &&
-        (allCells[tapeNonBlankEnd - 1].isEmpty ||
-            allCells[tapeNonBlankEnd - 1] == kBlank)) {
-      tapeNonBlankEnd--;
-    }
-    // The slice start is effectiveHeadPos (clamped into the valid range).
-    final sliceStart = effectiveHeadPos.clamp(0, tapeNonBlankEnd);
-    final sliceEnd = tapeNonBlankEnd;
-    final slicedCells = sliceStart < sliceEnd
-        ? allCells.sublist(sliceStart, sliceEnd)
-        : const <String>[];
-    // Strip trailing blanks from the slice (leading blanks are already gone
-    // because we start exactly at the head).
-    final inputTokens = slicedCells
-        .map((c) => (c.isEmpty || c == kBlank) ? '' : c)
-        .toList();
-    // Remove any leading/trailing empties from the inner input so the inner
-    // machine gets a clean tape.
-    int iStart = 0, iEnd = inputTokens.length;
-    while (iStart < iEnd && inputTokens[iStart].isEmpty) iStart++;
-    while (iEnd > iStart && inputTokens[iEnd - 1].isEmpty) iEnd--;
-    final cleanInput = iStart < iEnd ? inputTokens.sublist(iStart, iEnd) : const <String>[];
-
-    final cacheKey = '${node.id}:$effectiveHeadPos:${cleanInput.join('\u0001')}';
-    final cached = _blackBoxResultCache[cacheKey];
-    if (cached != null) return cached;
-
-    final dsl = node.blackBoxDsl.trim();
-    if (dsl.isEmpty) {
-      return _blackBoxResultCache[cacheKey] = (
-        accepted: false,
-        outputTokens: const <String>[],
-        outputHeadPos: effectiveHeadPos,
-      );
-    }
-
-    // Helper: reconstruct the full token list and translate the inner head pos
-    // back to an absolute position in the outer tape.
-    ({List<String> outputTokens, int outputHeadPos}) _splice(
-      List<String> innerOutput,
-      int innerHeadRelative,
-    ) {
-      // Cells before the slice (the part the outer TM already processed).
-      final before = sliceStart > 0
-          ? allCells
-              .sublist(0, sliceStart)
-              .map((c) => (c.isEmpty || c == kBlank) ? '' : c)
-              .toList()
-          : const <String>[];
-      // Cells after the slice (untouched by the inner machine).
-      final after = sliceEnd < allCells.length
-          ? allCells
-              .sublist(sliceEnd)
-              .map((c) => (c.isEmpty || c == kBlank) ? '' : c)
-              .toList()
-          : const <String>[];
-
-      final full = [...before, ...innerOutput, ...after];
-      // Strip overall leading/trailing blanks to get the trimmed token list.
-      int fs = 0, fe = full.length;
-      while (fs < fe && full[fs].isEmpty) fs++;
-      while (fe > fs && full[fe - 1].isEmpty) fe--;
-      final trimmed = fs < fe ? full.sublist(fs, fe) : const <String>[];
-
-      // Absolute head pos in the reconstructed tape = before.length + innerHeadRelative.
-      final absHead = before.length + innerHeadRelative;
-      // Translate to an index in the trimmed list.
-      // Allow one-past-end (== trimmed.length) so a head that moved off the
-      // right edge of the non-blank content is not snapped back onto the last
-      // symbol.  TmTape.fromTokens wraps the token list with a leading and a
-      // trailing blank, so absolutePos(trimmed.length) correctly resolves to
-      // the trailing blank cell.
-      final relHead = (absHead - fs).clamp(0, trimmed.length);
-      return (outputTokens: trimmed, outputHeadPos: relHead);
-    }
-
-    try {
-      final graph = DslCodec.importFromDsl(dsl);
-      switch (graph.automataMode) {
-        case AutomataMode.ndfa:
-          final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
-          sim.rebuild(cleanInput.join(), startArrow: graph.startArrow);
-          final accepted = sim.finalResult() == SimResult.accept;
-          if (!accepted) {
-            return _blackBoxResultCache[cacheKey] = (
-              accepted: false,
-              outputTokens: const <String>[],
-              outputHeadPos: effectiveHeadPos,
-            );
-          }
-          // NFA: no tape rewrite; head advances past the consumed slice.
-          final spliced = _splice(cleanInput, cleanInput.length);
-          return _blackBoxResultCache[cacheKey] = (
-            accepted: true,
-            outputTokens: spliced.outputTokens,
-            outputHeadPos: spliced.outputHeadPos,
-          );
-        case AutomataMode.pda:
-          final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
-          sim.rebuild(cleanInput.join(), startArrow: graph.startArrow);
-          final accepted = sim.finalResult() == PdaSimResult.accept;
-          if (!accepted) {
-            return _blackBoxResultCache[cacheKey] = (
-              accepted: false,
-              outputTokens: const <String>[],
-              outputHeadPos: effectiveHeadPos,
-            );
-          }
-          final splicedPda = _splice(cleanInput, cleanInput.length);
-          return _blackBoxResultCache[cacheKey] = (
-            accepted: true,
-            outputTokens: splicedPda.outputTokens,
-            outputHeadPos: splicedPda.outputHeadPos,
-          );
-        case AutomataMode.tm:
-          final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
-          sim.rebuild(cleanInput.join(), startArrow: graph.startArrow);
-          while (sim.computeNext()) {}
-          if (sim.result != TmResult.accept) {
-            return _blackBoxResultCache[cacheKey] = (
-              accepted: false,
-              outputTokens: const <String>[],
-              outputHeadPos: effectiveHeadPos,
-            );
-          }
-          // Do NOT use sim.currentTape — it goes through the step cursor
-          // (sim.step == -1) and returns the *initial* tape.  Pull the
-          // halt-accept config directly from the final snapshot instead.
-          TmConfig? haltConfig;
-          if (sim.steps.isNotEmpty) {
-            for (final c in sim.steps.last.configs) {
-              if (sim.nodes[c.nodeId]?.isHaltAccept == true) {
-                haltConfig = c;
-                break;
-              }
-            }
-            haltConfig ??= sim.steps.last.configs.firstOrNull;
-          }
-          final innerHeadRelative = _computeOutputHeadPos(haltConfig);
-          final innerOutput = _trimTapeTokens(haltConfig?.tape);
-          final splicedTm = _splice(innerOutput, innerHeadRelative);
-          return _blackBoxResultCache[cacheKey] = (
-            accepted: true,
-            outputTokens: splicedTm.outputTokens,
-            outputHeadPos: splicedTm.outputHeadPos,
-          );
-      }
-    } catch (_) {
-      return _blackBoxResultCache[cacheKey] = (
-        accepted: false,
-        outputTokens: const <String>[],
-        outputHeadPos: effectiveHeadPos,
-      );
-    }
-  }
-
-  List<String> _trimTapeTokens(TmTape? tape) {
+    List<String> _trimTapeTokens(TmTape? tape) {
     if (tape == null) return const <String>[];
     final normalized = tape.cells.map((c) => c == kBlank ? '' : c).toList();
     int start = 0;

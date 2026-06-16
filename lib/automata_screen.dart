@@ -216,6 +216,72 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     }
   }
 
+  /// Scans all transition labels and black-box DSLs in the current graph to
+  /// find the highest tape index referenced anywhere, then returns that value
+  /// (minimum 1).  This drives [TmSimulator.tapeCount] so the simulator always
+  /// allocates enough tapes even when the user hasn't manually added them via
+  /// the tape tab strip.
+  int _autoDetectTapeCount() {
+    int maxTape = 1;
+
+    // Helper: extract the highest tape index mentioned in a single label string
+    // using the same formats the simulator parsers accept.
+    void scanLabel(String label) {
+      if (label.trim().isEmpty) return;
+
+      for (final raw in label.split('\n')) {
+        final s = raw.trim();
+        if (s.isEmpty) continue;
+
+        // bN compound format: "1:aXR,b2,2:01S" — scan for N: prefixes.
+        final prefixes = RegExp(r'(\d+):').allMatches(s);
+        for (final m in prefixes) {
+          final n = int.tryParse(m.group(1)!);
+          if (n != null && n > maxTape) maxTape = n;
+        }
+
+        // Compact 3*N shorthand without tape prefixes: aXRa1L = 2 tapes.
+        // Only count this when there are no N: prefixes and no commas (to
+        // avoid misinterpreting bN compound labels).
+        if (!s.contains(':') && !s.contains(',')) {
+          final runes = s.runes.toList();
+          if (runes.length >= 6 && runes.length % 3 == 0) {
+            bool allDirsValid = true;
+            final inferredTapes = runes.length ~/ 3;
+            for (int i = 0; i < inferredTapes; i++) {
+              final d = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
+              if (d != 'R' && d != 'L' && d != 'S' && d != '~') {
+                allDirsValid = false;
+                break;
+              }
+            }
+            if (allDirsValid && inferredTapes > maxTape) maxTape = inferredTapes;
+          }
+        }
+      }
+    }
+
+    for (final line in _lines.values) {
+      scanLabel(line.label);
+    }
+
+    // Also scan DSLs inside black-box nodes — their labels count toward the
+    // outer tape count because _executeBlackBoxDsl sets tapeCount = outerTapeCount.
+    for (final node in _nodes.values) {
+      if (!node.isBlackBox || node.blackBoxDsl.trim().isEmpty) continue;
+      try {
+        final graph = DslCodec.importFromDsl(node.blackBoxDsl);
+        for (final innerLine in graph.lines.values) {
+          scanLabel(innerLine.label);
+        }
+      } catch (_) {
+        // Malformed DSL — ignore.
+      }
+    }
+
+    return maxTape;
+  }
+
   void _simRebuild() {
     _simulator.rebuild(_simController.text, startArrow: _startArrow);
     if (_simulator.step > _simulator.tokens.length) {
@@ -224,6 +290,17 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _pdaSimulator.rebuild(_simController.text, startArrow: _startArrow);
     if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
       _pdaSimulator.step = _pdaSimulator.tokens.length;
+    }
+    // Auto-detect required tape count from the graph so the simulator always
+    // has enough tapes even if the user hasn't manually added them via the UI.
+    // Only raise the count; never silently lower it below what the user set.
+    final detectedTapes = _autoDetectTapeCount();
+    if (detectedTapes > _tmSimulator.tapeCount) {
+      _tmSimulator.tapeCount = detectedTapes;
+      // Also clamp the active tape index so the UI tab stays valid.
+      if (_activeTapeIndex >= _tmSimulator.tapeCount) {
+        _activeTapeIndex = _tmSimulator.tapeCount - 1;
+      }
     }
     _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
   }
