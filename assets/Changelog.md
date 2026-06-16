@@ -1,3 +1,6 @@
+# June 16th, 2026
+* Fixed some issues with blackboxes and multitape logic
+
 # June 15th, 2026
 * Fixed issues with easy mode not properly launching
 * Added in the ability for blackboxes to edit the tape they are not reading and vice versa
