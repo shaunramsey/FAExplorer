@@ -1216,7 +1216,7 @@ class TmSimulator {
           for (final alt in splitBbDirectAlternatives(label)) {
             if (alt.isEmpty || alt == '~') return true; // epsilon alt
             final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length);
-            if (bb == null) return true; // unrecognised format → epsilon
+            if (bb == null) continue; // malformed label — not a fireable transition
             // Check non-wildcard reads.
             bool allMatch = true;
             final applyCount = bb.tapeCount.clamp(0, effectiveConfig.tapes.length);
@@ -1349,16 +1349,9 @@ class TmSimulator {
 
               final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length);
               if (bb == null) {
-                // Unrecognised format — treat as epsilon hop.
-                final hopped = effectiveConfig.retarget(
-                  nodeId: line.nodeBId,
-                  usedLineId: line.id,
-                );
-                final k = hopped.key;
-                if (seenKeys.add(k)) {
-                  nextConfigs.add(hopped);
-                  nextLines.add(line.id);
-                }
+                // Unrecognised / malformed format — skip this alternative.
+                // Do NOT fire an unconditional hop; the label is meant to guard
+                // the transition and we have no valid condition to evaluate.
                 continue;
               }
 
@@ -1401,8 +1394,10 @@ class TmSimulator {
 
             final headSym = activeTape.read(activeHeadPos);
             final cellSym = headSym.isEmpty ? kBlank : headSym;
-            final readSym = t.read.isEmpty ? kBlank : t.read;
-            if (readSym != cellSym) continue;
+            if (!t.isWildcard) {
+              final readSym = t.read.isEmpty ? kBlank : t.read;
+              if (readSym != cellSym) continue;
+            }
 
             // Apply write.
             final writeSym = t.write.isEmpty ? kBlank : t.write;
@@ -1503,11 +1498,13 @@ class TmSimulator {
     final pHead = config.headPositions[pIdx];
     final pSym  = pTape.read(pHead);
     final pCell = pSym.isEmpty ? kBlank : pSym;
-    final pRead = t.read.isEmpty ? kBlank : t.read;
-    if (pRead != pCell) return null;
+    if (!t.isWildcard) {
+      final pRead = t.read.isEmpty ? kBlank : t.read;
+      if (pRead != pCell) return null;
+    }
 
     // ── For b2 (parallelRead): also check secondary read ───────────────
-    if (compound.behavior == TmMultiBehavior.parallelRead) {
+    if (compound.behavior == TmMultiBehavior.parallelRead && !s.isWildcard) {
       final sIdx  = s.tapeIndex - 1;
       final sTape = config.tapes[sIdx];
       final sHead = config.headPositions[sIdx];
