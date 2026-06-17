@@ -49,12 +49,18 @@ class TmTransition {
   /// neither reads, writes, nor moves the head.
   final bool isEpsilon;
 
+  /// True when the read symbol was `~` in the shorthand/comma format,
+  /// meaning "match any symbol on this tape" (wildcard read).
+  /// Distinct from [isEpsilon] — the head still moves and writes occur.
+  final bool isWildcard;
+
   const TmTransition({
     required this.read,
     required this.write,
     required this.direction,
     this.tapeIndex = 1,
     this.isEpsilon = false,
+    this.isWildcard = false,
   });
 }
 
@@ -105,20 +111,24 @@ TmTransition parseTmLabel(String raw) {
   if (s.contains(',')) {
     final parts = s.split(',');
     if (parts.length >= 3) {
-      final read  = _normSym(parts[0]);
+      final rawRead = parts[0].trim();
+      final isWildcard = rawRead == '~';
+      final read  = isWildcard ? '' : _normSym(rawRead);
       final write = _normSym(parts[1]);
       final dir   = _parseDir(parts[2]);
-      return TmTransition(read: read, write: write, direction: dir, tapeIndex: tapeIndex);
+      return TmTransition(read: read, write: write, direction: dir, tapeIndex: tapeIndex, isWildcard: isWildcard);
     }
   }
 
   // Format 2: 3-character / 3-rune shorthand e.g. `aXR` or `∅∅S`
   final runes = s.runes.toList();
   if (runes.length == 3) {
-    final read  = _normSym(String.fromCharCode(runes[0]));
+    final rawReadChar = String.fromCharCode(runes[0]);
+    final isWildcard = rawReadChar == '~';
+    final read  = isWildcard ? '' : _normSym(rawReadChar);
     final write = _normSym(String.fromCharCode(runes[1]));
     final dir   = _parseDir(String.fromCharCode(runes[2]));
-    return TmTransition(read: read, write: write, direction: dir, tapeIndex: tapeIndex);
+    return TmTransition(read: read, write: write, direction: dir, tapeIndex: tapeIndex, isWildcard: isWildcard);
   }
 
   // Fallback
@@ -863,9 +873,19 @@ class TmSimulator {
     final initialHeads = <int>[initialTape.absolutePos(0)];
     final effectiveTapeCount = tapeCount < 1 ? 1 : tapeCount;
     for (int i = 1; i < effectiveTapeCount; i++) {
-      final empty = TmTape.empty();
-      initialTapes.add(empty);
-      initialHeads.add(empty.absolutePos(0));
+      // Use the caller-supplied initial content for tapes 2..N when available.
+      // Index 0 in additionalTapeInputs corresponds to tape 2 (i == 1), etc.
+      final extraIdx = i - 1;
+      final TmTape tape;
+      if (extraIdx < additionalTapeInputs.length &&
+          additionalTapeInputs[extraIdx].isNotEmpty) {
+        final extraTokens = _tokenize(additionalTapeInputs[extraIdx]);
+        tape = TmTape.fromTokens(extraTokens);
+      } else {
+        tape = TmTape.empty();
+      }
+      initialTapes.add(tape);
+      initialHeads.add(tape.absolutePos(0));
     }
     final initialConfig = TmConfig(
       nodeId: startArrow.nodeId,
@@ -1186,11 +1206,31 @@ class TmSimulator {
       for (final line in lines.values) {
         if (line.nodeAId != effectiveConfig.nodeId) continue;
         // ── Black-box DSL node ───────────────────────────────────────────────
-        // _applyBlackBox runs the inner DSL unconditionally (it returns null
-        // only when the DSL rejects).  effectiveConfig is non-null here, so
-        // the inner machine accepted — any outgoing line means we can advance.
+        // _applyBlackBox ran the inner DSL and rewrote the tapes.  Outgoing
+        // lines from a blackbox use BbDirectTransition labels to guard which
+        // post-DSL tape state enables each hop.  Parse and check each
+        // alternative; a blank label (epsilon) fires unconditionally.
         if (node.isBlackBox) {
-          return true;
+          final label = line.label.trim();
+          if (label.isEmpty) return true; // unconditional epsilon hop
+          for (final alt in splitBbDirectAlternatives(label)) {
+            if (alt.isEmpty || alt == '~') return true; // epsilon alt
+            final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length);
+            if (bb == null) return true; // unrecognised format → epsilon
+            // Check non-wildcard reads.
+            bool allMatch = true;
+            final applyCount = bb.tapeCount.clamp(0, effectiveConfig.tapes.length);
+            for (int ti = 0; ti < applyCount; ti++) {
+              final op = bb.ops[ti];
+              if (op.isWildcard) continue;
+              final headSym = effectiveConfig.tapes[ti].read(effectiveConfig.headPositions[ti]);
+              final cellSym = headSym.isEmpty ? kBlank : headSym;
+              final readSym = op.read.isEmpty ? kBlank : op.read;
+              if (readSym != cellSym) { allMatch = false; break; }
+            }
+            if (allMatch) return true;
+          }
+          continue;
         }
 
         // ── Normal / compound transitions ────────────────────────────────────
@@ -1199,11 +1239,13 @@ class TmSimulator {
           final t = compound.primary;
           if (t.isEpsilon) return true;
           if (t.tapeIndex < 1 || t.tapeIndex > effectiveConfig.tapes.length) continue;
-          final headSym = effectiveConfig.tapes[t.tapeIndex - 1]
-              .read(effectiveConfig.headPositions[t.tapeIndex - 1]);
-          final cellSym = headSym.isEmpty ? kBlank : headSym;
-          final readSym = t.read.isEmpty ? kBlank : t.read;
-          if (readSym != cellSym) continue;
+          if (!t.isWildcard) {
+            final headSym = effectiveConfig.tapes[t.tapeIndex - 1]
+                .read(effectiveConfig.headPositions[t.tapeIndex - 1]);
+            final cellSym = headSym.isEmpty ? kBlank : headSym;
+            final readSym = t.read.isEmpty ? kBlank : t.read;
+            if (readSym != cellSym) continue;
+          }
 
           // For b2 (parallelRead): the secondary tape must also match.
           if (compound.isMultiTape &&
@@ -1211,11 +1253,13 @@ class TmSimulator {
             final s = compound.secondary!;
             if (s.tapeIndex < 1 ||
                 s.tapeIndex > effectiveConfig.tapes.length) continue;
-            final sHead = effectiveConfig.headPositions[s.tapeIndex - 1];
-            final sSym  = effectiveConfig.tapes[s.tapeIndex - 1].read(sHead);
-            final sCell = sSym.isEmpty ? kBlank : sSym;
-            final sRead = s.read.isEmpty ? kBlank : s.read;
-            if (sRead != sCell) continue;
+            if (!s.isWildcard) {
+              final sHead = effectiveConfig.headPositions[s.tapeIndex - 1];
+              final sSym  = effectiveConfig.tapes[s.tapeIndex - 1].read(sHead);
+              final sCell = sSym.isEmpty ? kBlank : sSym;
+              final sRead = s.read.isEmpty ? kBlank : s.read;
+              if (sRead != sCell) continue;
+            }
           }
 
           return true;
@@ -1266,20 +1310,72 @@ class TmSimulator {
 
         // ── Black-box DSL node ──────────────────────────────────────────────
         // _applyBlackBox (called above) already ran the inner DSL machine and
-        // rewrote all tapes.  The outgoing line is used only to determine
-        // which target state to hop to — no further tape operations are
-        // applied here.  Every outgoing line from the black-box node fires as
-        // an unconditional epsilon hop so the user can route the post-DSL
-        // config to whichever target state they connect.
+        // rewrote all tapes.  Outgoing lines from a black-box node carry
+        // BbDirectTransition labels that guard which post-DSL tape state
+        // enables each hop AND apply per-tape writes/moves after the inner
+        // machine finishes.
+        //
+        // An empty label (or a lone `~`) is an unconditional epsilon hop so
+        // users can still route with unlabelled arrows.
         if (node.isBlackBox) {
-          final hopped = effectiveConfig.retarget(
-            nodeId: line.nodeBId,
-            usedLineId: line.id,
-          );
-          final k = hopped.key;
-          if (seenKeys.add(k)) {
-            nextConfigs.add(hopped);
-            nextLines.add(line.id);
+          final label = line.label.trim();
+          if (label.isEmpty || label == '~') {
+            // Unconditional epsilon hop — no read/write/move, just retarget.
+            final hopped = effectiveConfig.retarget(
+              nodeId: line.nodeBId,
+              usedLineId: line.id,
+            );
+            final k = hopped.key;
+            if (seenKeys.add(k)) {
+              nextConfigs.add(hopped);
+              nextLines.add(line.id);
+            }
+          } else {
+            // Parse and evaluate each alternative independently (NTM branching).
+            for (final alt in splitBbDirectAlternatives(label)) {
+              if (alt.isEmpty || alt == '~') {
+                // Epsilon alternative — unconditional hop.
+                final hopped = effectiveConfig.retarget(
+                  nodeId: line.nodeBId,
+                  usedLineId: line.id,
+                );
+                final k = hopped.key;
+                if (seenKeys.add(k)) {
+                  nextConfigs.add(hopped);
+                  nextLines.add(line.id);
+                }
+                continue;
+              }
+
+              final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length);
+              if (bb == null) {
+                // Unrecognised format — treat as epsilon hop.
+                final hopped = effectiveConfig.retarget(
+                  nodeId: line.nodeBId,
+                  usedLineId: line.id,
+                );
+                final k = hopped.key;
+                if (seenKeys.add(k)) {
+                  nextConfigs.add(hopped);
+                  nextLines.add(line.id);
+                }
+                continue;
+              }
+
+              // _applyBbDirectTransition checks all non-wildcard reads on
+              // every tape in the label and applies writes + moves atomically.
+              // Returns null when any read condition fails → branch does not fire.
+              final next = _applyBbDirectTransition(
+                bb, effectiveConfig, line.nodeBId, line.id,
+              );
+              if (next == null) continue;
+
+              final k = next.key;
+              if (seenKeys.add(k)) {
+                nextConfigs.add(next);
+                nextLines.add(line.id);
+              }
+            }
           }
           continue;
         }
