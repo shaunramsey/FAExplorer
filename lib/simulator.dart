@@ -246,6 +246,13 @@ class AutomataSimulator {
           );
         case AutomataMode.tm:
           final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
+          // The outer machine here (NFA/PDA) has no tape concept of its own,
+          // so there's no "outer tape count" to inherit. But the black box's
+          // *own* DSL may still use multiple tapes purely for its internal
+          // computation (e.g. a scratch tape) — without this, the simulator
+          // would default to a single tape and silently ignore any
+          // transition inside the box that targets tape 2+.
+          sim.tapeCount = detectRequiredTapeCount(graph.nodes, graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
           while (sim.computeNext()) {}
           if (sim.result != TmResult.accept) {

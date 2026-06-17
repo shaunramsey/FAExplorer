@@ -185,6 +185,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         showHelpOverlay: _showHelpOverlay,
         simInput: _simController.text,
         simStep: _simulator.step,
+        additionalTapeInputs: _tapeControllers.map((c) => c.text).toList(),
       ),
     );
   }
@@ -215,6 +216,17 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _showHelpOverlay = snapshot.showHelpOverlay;
     _simController.text = snapshot.simInput;
     _simulator.step = snapshot.simStep;
+
+    // Restore extra-tape inputs.  _simRebuild() will grow _tapeControllers to
+    // the right length; we pre-populate them here so the text is already set
+    // when _simRebuild calls rebuild() on the TM simulator.
+    for (int i = 0; i < snapshot.additionalTapeInputs.length; i++) {
+      // Grow the list if needed (it may still be empty at this point).
+      while (_tapeControllers.length <= i) {
+        _tapeControllers.add(TextEditingController());
+      }
+      _tapeControllers[i].text = snapshot.additionalTapeInputs[i];
+    }
 
     if (_simController.text.isNotEmpty || _startArrow != null) {
       _simRebuild();
