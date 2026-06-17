@@ -155,7 +155,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   void _refreshSimulation() {
-    if (_simController.text.isEmpty && _simulator.states.isEmpty) {
+    // Only skip the rebuild when there is truly nothing to simulate: no input
+    // text, no start arrow, and the simulator has never run.  In particular,
+    // DO NOT skip when a start arrow exists — black-box DSL edits must always
+    // propagate even if the user hasn't typed an input string yet.
+    if (_simController.text.isEmpty &&
+        _startArrow == null &&
+        _simulator.states.isEmpty) {
       return;
     }
     _simRebuild();

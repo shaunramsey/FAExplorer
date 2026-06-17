@@ -87,6 +87,7 @@ class AutomataSimulator {
   }
 
   void rebuildGraph({StartArrowData? startArrow}) {
+    _blackBoxResultCache.clear(); // ← match rebuild()'s cache invalidation
     _buildSimulation(startArrow: startArrow);
     if (step > tokens.length) {
       step = tokens.length;

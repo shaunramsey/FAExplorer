@@ -21,6 +21,8 @@ import 'widgets/help_overlay.dart';
 import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
+import 'tm_simulator.dart';
+import 'widgets/tm_config_panel.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -76,6 +78,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   late final AutomataSimulator _simulator;
   late final PdaSimulator _pdaSimulator;     // ← NEW
+  late final TmSimulator _tmSimulator;       // ← TM
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
   Timer? _persistTimer;
   bool _persistenceReady = false;
@@ -111,6 +114,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   /// At the accepted final step, union all nodes/lines from every step to
   /// highlight the complete accepted path. Otherwise show only the current step.
   Set<String> get _simActiveNodes {
+    if (_automataMode == AutomataMode.tm) {
+      return _tmSimulator.activeNodes;
+    }
     if (_automataMode == AutomataMode.pda) {
       // Use _simulator.step directly so we never lag one frame behind the
       // onStepChanged callback that would normally sync _pdaSimulator.step.
@@ -125,6 +131,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   Set<String> get _simActiveLines {
+    if (_automataMode == AutomataMode.tm) {
+      return _tmSimulator.activeLines;
+    }
     if (_automataMode == AutomataMode.pda) {
       // Use _simulator.step directly — same reason as above.
       if (_simulator.step < 0) return {};
@@ -214,6 +223,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _pdaSimulator.rebuild(_simController.text, startArrow: _startArrow);
     if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
       _pdaSimulator.step = _pdaSimulator.tokens.length;
+    }
+    _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
+    if (_tmSimulator.step > _tmSimulator.maxStep) {
+      _tmSimulator.step = _tmSimulator.maxStep;
     }
   }
 
@@ -320,6 +333,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     );
 
     _pdaSimulator = PdaSimulator(         // ← NEW
+      nodes: _nodes,
+      lines: _lines,
+    );
+
+    _tmSimulator = TmSimulator(           // ← TM
       nodes: _nodes,
       lines: _lines,
     );
