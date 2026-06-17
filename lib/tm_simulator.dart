@@ -283,14 +283,18 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
   // ── Compact multi-tape shorthand ─────────────────────────────────────────
   // A label that is exactly 3*N runes (N ≥ 2) where every third rune is a
   // valid direction character (R/L/S/~) is interpreted as N consecutive
-  // single-tape 3-rune triples, one per tape (tape 1, tape 2, …).
+  // per-tape 3-rune triples, one per tape (tape 1, tape 2, …).
   //
   // Examples:
   //   aXRa1L  → tape 1: aXR,  tape 2: a1L
-  //   aXRa1Lb2S → tape 1: aXR, tape 2: a1L, tape 3: b2S
+  //   aXRa1Rb2S → tape 1: aXR, tape 2: a1R, tape 3: b2S
   //
-  // This lets inner-DSL TM transitions be written in the same compact style
-  // as blackbox-direct labels without needing explicit N: tape prefixes.
+  // Semantics: parallelRead — ALL non-wildcard reads must match simultaneously
+  // before any write fires. This mirrors _applyBbDirectTransition (used for
+  // blackbox outgoing-line labels), so `aXRa1R` checks both tape 1 for `a`
+  // AND tape 2 for `a` before writing. Use the explicit `b1` marker syntax
+  // when you want crossWrite (secondary read unchecked).
+  //
   // Only triggered when the string has no commas and no tape prefix (both of
   // which are handled by the bN path and parseTmLabel above).
   final compactRunes = raw.trim().runes.toList();
@@ -321,9 +325,14 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
         ));
       }
       // Return as a MultiTapeCompoundTransition so all tapes are applied atomically.
+      // Use parallelRead so every non-wildcard read is checked before any write
+      // fires — matching the semantics of _applyBbDirectTransition and the
+      // user-visible expectation that `aXRa1R` checks both tapes.
+      // (crossWrite is only correct for the explicit `b1` marker syntax, which
+      // documents that the secondary read is intentionally NOT checked.)
       return TmCompoundTransition.multi(
         transitions: transitions,
-        behavior: TmMultiBehavior.crossWrite,
+        behavior: TmMultiBehavior.parallelRead,
       );
     }
   }
@@ -477,6 +486,86 @@ List<String> splitBbDirectAlternatives(String label) {
       .map((s) => s.trim())
       .where((s) => s.isNotEmpty)
       .toList();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Tape-count auto-detection
+//
+//  A black box's *own* inner DSL program can reference tapes purely for its
+//  own internal computation (e.g. a scratch tape) — these have no
+//  corresponding "outer" tape and nothing else tells the simulator they're
+//  needed. If the machine that's about to run the DSL only allocates as many
+//  tapes as the outer context happens to have (or just 1, when the outer
+//  context has no tape concept at all, e.g. an NFA), any transition inside
+//  the black box that targets a higher tape index is silently skipped —
+//  the box behaves as if it only ever has tape 1, no matter what its own
+//  lines say.
+//
+//  [detectRequiredTapeCount] scans every line label in [lines] — plus, since
+//  black boxes can be nested, the lines of every black-box DSL reachable from
+//  [nodes] — and returns the highest tape index referenced anywhere (minimum
+//  1). Callers should size a [TmSimulator] to at least this many tapes before
+//  running it against this set of nodes/lines.
+// ─────────────────────────────────────────────────────────────────────────────
+
+int detectRequiredTapeCount(Map<String, NodeData> nodes, Map<String, LineData> lines) {
+  int maxTape = 1;
+
+  void scanLabel(String label) {
+    if (label.trim().isEmpty) return;
+
+    for (final raw in label.split('\n')) {
+      final s = raw.trim();
+      if (s.isEmpty) continue;
+
+      // N: tape-prefix format — also covers bN compound labels like
+      // "1:aXR,b2,2:01S", since the regex just finds every "<digits>:".
+      final prefixes = RegExp(r'(\d+):').allMatches(s);
+      for (final m in prefixes) {
+        final n = int.tryParse(m.group(1)!);
+        if (n != null && n > maxTape) maxTape = n;
+      }
+
+      // Compact 3*N shorthand with no prefixes/commas, e.g. aXRa1L = 2 tapes.
+      // This covers both the plain-TM compact shorthand and blackbox-direct
+      // outgoing-line labels, which use the same per-tape triple format.
+      if (!s.contains(':') && !s.contains(',')) {
+        final runes = s.runes.toList();
+        if (runes.length >= 3 && runes.length % 3 == 0) {
+          bool allDirsValid = true;
+          final inferredTapes = runes.length ~/ 3;
+          for (int i = 0; i < inferredTapes; i++) {
+            final d = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
+            if (d != 'R' && d != 'L' && d != 'S' && d != '~') {
+              allDirsValid = false;
+              break;
+            }
+          }
+          if (allDirsValid && inferredTapes > maxTape) maxTape = inferredTapes;
+        }
+      }
+    }
+  }
+
+  for (final line in lines.values) {
+    scanLabel(line.label);
+  }
+
+  // Recurse into nested black-box DSLs — their tape references count too,
+  // since the inner machine they describe runs with its own tape count.
+  for (final node in nodes.values) {
+    if (!node.isBlackBox || node.blackBoxDsl.trim().isEmpty) continue;
+    try {
+      final inner = DslCodec.importFromDsl(node.blackBoxDsl);
+      final nestedMax = detectRequiredTapeCount(inner.nodes, inner.lines);
+      if (nestedMax > maxTape) maxTape = nestedMax;
+    } catch (_) {
+      // Malformed inner DSL — ignore here; actually running it will surface
+      // the problem as a rejection instead.
+    }
+  }
+
+  return maxTape;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1089,11 +1178,17 @@ class TmSimulator {
 
       // ── Inner TM: multi-tape aware ────────────────────────────────────────
       case AutomataMode.tm: {
-        // Determine how many tapes the inner machine needs.  It can use at
-        // most as many tapes as the outer machine has, but may use fewer.
-        // We set the inner tapeCount to the outer tapeCount so that `N:` tape
-        // prefixes in the inner DSL labels correctly address outer tapes 2+.
-        final innerTapeCount = outerTapeCount;
+        // Determine how many tapes the inner machine needs. It needs at
+        // least as many tapes as the outer machine has (so `N:` tape
+        // prefixes in the inner DSL labels can address outer tapes 2+), but
+        // it may also reference *extra* tapes purely for its own internal
+        // scratch use — those have no corresponding outer tape, so the outer
+        // tape count alone isn't always enough. Scan the inner DSL's own
+        // lines (and anything it nests) to make sure we never under-allocate
+        // and silently drop transitions that target those scratch tapes.
+        final requiredInnerTapes = detectRequiredTapeCount(graph.nodes, graph.lines);
+        final innerTapeCount =
+            requiredInnerTapes > outerTapeCount ? requiredInnerTapes : outerTapeCount;
 
         final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
         sim.tapeCount = innerTapeCount;
@@ -1105,11 +1200,16 @@ class TmSimulator {
         sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);
 
         // Overwrite the initial config's extra tapes with the outer tapes 2..N.
+        // Only tapes that actually exist on the outer side can be seeded this
+        // way — any inner tapes beyond outerTapeCount are pure scratch space
+        // for the black box's own program and simply start blank (the
+        // default for a freshly rebuilt tape slot).
         // rebuild() always produces exactly one config in steps[0].
         if (sim.steps.isNotEmpty && sim.steps[0].configs.isNotEmpty && innerTapeCount > 1) {
           final initConfig = sim.steps[0].configs[0];
           TmConfig updated = initConfig;
           for (int i = 1; i < innerTapeCount; i++) {
+            if (i >= outerTapeCount) break; // no corresponding outer tape — leave blank
             final outerTk = _tapeToInput(i);
             final innerTape = TmTape.fromTokens(outerTk.tokens);
             // Position the inner head at the same relative position as the
@@ -1156,7 +1256,14 @@ class TmSimulator {
         final outHeads = <int>[];
         for (int i = 0; i < innerTapeCount; i++) {
           if (i >= haltConfig.tapes.length) {
-            // Inner machine had fewer tapes — carry outer tape unchanged.
+            // Inner machine had fewer tapes — carry outer tape unchanged
+            // (or blank, for a scratch tape index that has no outer
+            // counterpart).
+            if (i >= outerTapeCount) {
+              outTapes.add(const <String>[]);
+              outHeads.add(0);
+              continue;
+            }
             final ot = _tapeToInput(i);
             outTapes.add(ot.tokens);
             outHeads.add(ot.headRel);
