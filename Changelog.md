@@ -1,3 +1,7 @@
+# June 17th, 2026
+* Fixed further issues with multitape logic
+* TM mode now allows the edit of multiple tapes
+
 # June 16th, 2026
 * Fixed some issues with blackboxes and multitape logic
 
