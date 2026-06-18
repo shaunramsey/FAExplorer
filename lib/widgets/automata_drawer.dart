@@ -145,6 +145,12 @@ class AutomataDrawer extends StatelessWidget {
 
   final VoidCallback onBatchSimulator;
   final VoidCallback onEquivalenceChecker;
+
+  /// Called when the user taps "NFA/DFA → Regex" in the drawer.
+  /// Optional — callers that haven't wired this up yet simply won't show the
+  /// menu item (see [build]).
+  final VoidCallback? onFaToRegex;
+
   final VoidCallback onExport;
   final VoidCallback onImport;
   final VoidCallback onExportHistory;
@@ -164,6 +170,7 @@ class AutomataDrawer extends StatelessWidget {
     required this.onModeChanged,
     required this.onBatchSimulator,
     required this.onEquivalenceChecker,
+    this.onFaToRegex,
     required this.onExport,
     required this.onImport,
     required this.onExportHistory,
@@ -245,6 +252,16 @@ class AutomataDrawer extends StatelessWidget {
                 onEquivalenceChecker();
               },
             ),
+            if (onFaToRegex != null)
+              _HoverTile(
+                leading: const Icon(Icons.functions),
+                title: const Text('NFA / DFA  →  Regex'),
+                subtitle: 'Derive a regular expression from the current automaton using state elimination.',
+                onTap: () {
+                  Navigator.pop(context);
+                  onFaToRegex!();
+                },
+              ),
 
             _HoverTile(
               leading: const Icon(Icons.upload_file),

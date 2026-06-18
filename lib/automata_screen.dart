@@ -17,6 +17,7 @@ import 'saved_export.dart';
 import 'dialogs/automata_dialogs.dart';
 import 'dialogs/batch_simulator_dialog.dart';
 import 'dialogs/equivalence_dialog.dart';
+import 'dialogs/fa_to_regex_dialog.dart';
 import 'widgets/automata_drawer.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/help_overlay.dart';
@@ -61,6 +62,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   bool _showHelpOverlay = false;
   bool _showSimulator = true;
   bool _showRegexPanel = false;   // ← shown automatically when mode == regex
+  String? _regexPanelInitialText; // ← pre-filled when coming from FA→Regex
   AutomataMode _automataMode = AutomataMode.ndfa;
 
   StartArrowData? _startArrow;
@@ -606,6 +608,25 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     );
   }
 
+  /// Opens the NFA/DFA → Regex dialog.  The user can optionally load the
+  /// derived expression directly into the Regex Panel.
+  void _showFaToRegexDialog() {
+    showFaToRegexDialog(
+      context,
+      nodes: _nodes,
+      lines: _lines,
+      startArrow: _startArrow,
+      onLoadIntoRegexPanel: (regex) {
+        setState(() {
+          _automataMode = AutomataMode.regex;
+          _showRegexPanel = true;
+          _regexPanelInitialText = regex;
+        });
+        _schedulePersist();
+      },
+    );
+  }
+
   void _setLineMode(bool value) {
     setState(() {
       _lineMode = value;
@@ -1031,6 +1052,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         },
         onBatchSimulator: _openBatchSimulatorDialog,
         onEquivalenceChecker: _showEquivalenceDialog,
+        onFaToRegex: _showFaToRegexDialog,
         onExport: _showExportDialog,
         onImport: _showImportDialog,
         onExportHistory: _showExportHistory,
@@ -1331,6 +1353,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               RegexPanel(
                 onConvert: _onRegexConvert,
                 onClose: () => setState(() => _showRegexPanel = false),
+                initialText: _regexPanelInitialText,
+                onInitialTextConsumed: () =>
+                    setState(() => _regexPanelInitialText = null),
               ),
 
             // ── Regex show-panel FAB (when panel is closed) ───────────

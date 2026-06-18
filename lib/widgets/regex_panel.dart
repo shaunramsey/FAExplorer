@@ -39,10 +39,20 @@ class RegexPanel extends StatefulWidget {
   /// Called when the user closes the panel.
   final VoidCallback onClose;
 
+  /// Optional text to pre-fill the expression field with (e.g. when the panel
+  /// is opened from the NFA/DFA → Regex dialog).
+  final String? initialText;
+
+  /// Called once after [initialText] has been copied into the text field so
+  /// the parent can clear it and avoid re-seeding on rebuilds.
+  final VoidCallback? onInitialTextConsumed;
+
   const RegexPanel({
     super.key,
     required this.onConvert,
     required this.onClose,
+    this.initialText,
+    this.onInitialTextConsumed,
   });
 
   @override
@@ -55,14 +65,29 @@ class _RegexPanelState extends State<RegexPanel> {
   bool _isDfa = false; // toggle: NFA (false) or DFA (true)
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.initialText != null && widget.initialText!.isNotEmpty) {
+      _ctrl.text = widget.initialText!;
+      // Notify the parent that the seed has been consumed so it doesn't
+      // re-apply it on the next rebuild.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onInitialTextConsumed?.call();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _ctrl.dispose();
     super.dispose();
   }
 
   void _convert() {
-    final pattern = _ctrl.text.trim();
-    if (pattern.isEmpty) {
+    // Use the raw text — the parser skips all whitespace internally,
+    // so spaces around operators (e.g. "0 + 1") are handled correctly.
+    final pattern = _ctrl.text;
+    if (pattern.trim().isEmpty) {
       setState(() => _error = 'Please enter a regular expression.');
       return;
     }
@@ -314,10 +339,10 @@ class _RegexPanelState extends State<RegexPanel> {
                         theme: theme,
                       ),
                       _ExampleTile(
-                        pattern: '(aa)*',
-                        desc: 'Even number of a\'s',
+                        pattern: '(0 + 1(001*0(101*0)*0 + 1(101*0)*0)*(001*0(101*0)*11 + 01 + 1(101*0)*11))*',
+                        desc: 'Divisible by 5 in binary',
                         onTap: () {
-                          _ctrl.text = '(aa)*';
+                          _ctrl.text = '(0 + 1(001*0(101*0)*0 + 1(101*0)*0)*(001*0(101*0)*11 + 01 + 1(101*0)*11))*';
                           setState(() => _error = null);
                         },
                         theme: theme,

@@ -132,9 +132,18 @@ class _RegexParser {
 
   _RegexParser(this.input);
 
+  /// Advance [_pos] past any ASCII whitespace characters.
+  void _skipWhitespace() {
+    while (_pos < input.length && input[_pos] == ' ') {
+      _pos++;
+    }
+  }
+
   _RegexNode parse() {
-    if (input.trim().isEmpty) return _Epsilon();
+    _skipWhitespace();
+    if (_pos >= input.length) return _Epsilon();
     final result = _parseExpr();
+    _skipWhitespace();
     if (_pos < input.length) {
       throw Exception('Unexpected character at position $_pos: "${input[_pos]}"');
     }
@@ -144,9 +153,12 @@ class _RegexParser {
   // expr ::= concat ('+' concat)*
   _RegexNode _parseExpr() {
     var node = _parseConcat();
+    _skipWhitespace();
     while (_pos < input.length && input[_pos] == '+') {
       _pos++; // consume '+'
+      _skipWhitespace();
       final right = _parseConcat();
+      _skipWhitespace();
       node = _Union(node, right);
     }
     return node;
@@ -155,9 +167,11 @@ class _RegexParser {
   // concat ::= atom+
   _RegexNode _parseConcat() {
     _RegexNode? node;
+    _skipWhitespace();
     while (_pos < input.length && input[_pos] != '+' && input[_pos] != ')') {
       final atom = _parseAtom();
       node = node == null ? atom : _Concat(node, atom);
+      _skipWhitespace();
     }
     if (node == null) {
       // Empty concat in a context like "()" — treat as epsilon
@@ -184,7 +198,9 @@ class _RegexParser {
     final ch = input[_pos];
     if (ch == '(') {
       _pos++; // consume '('
+      _skipWhitespace();
       final inner = _parseExpr();
+      _skipWhitespace();
       if (_pos >= input.length || input[_pos] != ')') {
         throw Exception('Missing closing parenthesis');
       }
