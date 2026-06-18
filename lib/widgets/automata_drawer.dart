@@ -7,7 +7,7 @@ import 'app_theme_settings.dart';
 //  AutomataMode  — the three simulation modes
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum AutomataMode { ndfa, pda, tm }
+enum AutomataMode { ndfa, pda, tm, regex }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  _HoverTile — list tile with tooltip description on hover, no extra height
@@ -67,6 +67,7 @@ class _ModeRadioGroup extends StatelessWidget {
     (mode: AutomataMode.ndfa, label: 'NDFA', tooltip: 'Non-deterministic Finite Automaton'),
     (mode: AutomataMode.pda, label: 'PDA', tooltip: 'Pushdown Automaton — labels use read,pop|push format'),
     (mode: AutomataMode.tm, label: 'TM', tooltip: 'Turing Machine — labels use read,write,direction format'),
+    (mode: AutomataMode.regex, label: 'RegEx', tooltip: 'Regular Expression — convert a regex to NFA or DFA on the canvas'),
   ];
 
   @override

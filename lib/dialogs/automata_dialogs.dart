@@ -586,6 +586,7 @@ void showBlackBoxRunnerDialog(
   final output = <String>[];
   switch (state.automataMode) {
     case AutomataMode.ndfa:
+    case AutomataMode.regex:
       final sim = AutomataSimulator(nodes: state.nodes, lines: state.lines);
       for (final row in rows) {
         sim.rebuild(row, startArrow: state.startArrow);

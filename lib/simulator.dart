@@ -225,6 +225,7 @@ class AutomataSimulator {
       final input = slicedTokens.join();
       switch (graph.automataMode) {
         case AutomataMode.ndfa:
+        case AutomataMode.regex:
           final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
           final accepted = sim.finalResult() == SimResult.accept;

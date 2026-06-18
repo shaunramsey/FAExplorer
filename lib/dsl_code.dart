@@ -115,6 +115,9 @@ class DslCodec {
     } else if (g.automataMode == AutomataMode.tm) {
       out.add('tm mode');
       out.add('');
+    } else if (g.automataMode == AutomataMode.regex) {
+      out.add('regex mode');
+      out.add('');
     }
 
     // Node definitions
@@ -284,7 +287,7 @@ class DslCodec {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
 
-      // ── pda mode [on|off] / tm mode [on|off] ─────────────────────────────
+      // ── pda mode [on|off] / tm mode [on|off] / regex mode [on|off] ────────
       final pdaModeMatch = RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
       if (pdaModeMatch != null) {
         final flag = pdaModeMatch.group(1)?.toLowerCase();
@@ -295,6 +298,12 @@ class DslCodec {
       if (tmModeMatch != null) {
         final flag = tmModeMatch.group(1)?.toLowerCase();
         if (flag != 'off') automataMode = AutomataMode.tm;
+        continue;
+      }
+      final regexModeMatch = RegExp(r'^regex\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
+      if (regexModeMatch != null) {
+        final flag = regexModeMatch.group(1)?.toLowerCase();
+        if (flag != 'off') automataMode = AutomataMode.regex;
         continue;
       }
 

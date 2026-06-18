@@ -268,9 +268,10 @@ class LatexExporter {
 
     // ── Comment that encodes the mode so the importer can recover it ──────
     final modeComment = switch (g.automataMode) {
-      AutomataMode.pda  => '% mode: pda',
-      AutomataMode.tm   => '% mode: tm',
-      AutomataMode.ndfa => '% mode: ndfa',
+      AutomataMode.pda   => '% mode: pda',
+      AutomataMode.tm    => '% mode: tm',
+      AutomataMode.ndfa  => '% mode: ndfa',
+      AutomataMode.regex => '% mode: regex',
     };
     buf.writeln(modeComment);
     buf.writeln();
@@ -414,6 +415,8 @@ class LatexImporter {
       mode = AutomataMode.pda;
     } else if (RegExp(r'%\s*mode:\s*tm', caseSensitive: false).hasMatch(src)) {
       mode = AutomataMode.tm;
+    } else if (RegExp(r'%\s*mode:\s*regex', caseSensitive: false).hasMatch(src)) {
+      mode = AutomataMode.regex;
     }
 
     // ── Extract tikzpicture content ───────────────────────────────────────

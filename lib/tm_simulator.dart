@@ -1140,7 +1140,8 @@ class TmSimulator {
 
     switch (graph.automataMode) {
       // ── NFA: single-tape, no rewrite ──────────────────────────────────────
-      case AutomataMode.ndfa: {
+      case AutomataMode.ndfa:
+      case AutomataMode.regex: {
         final t0 = _tapeToInput(0);
         final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
         sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);

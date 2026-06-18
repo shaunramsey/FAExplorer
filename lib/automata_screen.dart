@@ -27,6 +27,8 @@ import 'widgets/pda_stack_panel.dart';
 import 'tm_simulator.dart';
 import 'widgets/tm_config_panel.dart';
 import 'widgets/black_box_input_dialog.dart';
+import 'widgets/regex_panel.dart';
+import 'regex_engine.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -58,6 +60,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   bool _showHelpOverlay = false;
   bool _showSimulator = true;
+  bool _showRegexPanel = false;   // ← shown automatically when mode == regex
   AutomataMode _automataMode = AutomataMode.ndfa;
 
   StartArrowData? _startArrow;
@@ -573,6 +576,29 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     );
   }
 
+  /// Called by [RegexPanel] when the user converts a regex to NFA or DFA.
+  /// The resulting graph is loaded onto the canvas; the mode is switched to
+  /// NDFA so the standard NFA/DFA simulator drives it.
+  void _onRegexConvert(RegexConversionResult result, bool isDfa) {
+    final nextCounter = result.nodes.length;
+    final lineCount = result.lines.length;
+    // Remap node/line counters to avoid collisions with any existing content.
+    final state = GraphState(
+      nodes: result.nodes,
+      lines: result.lines,
+      startArrow: result.startArrow,
+      nodeCounter: nextCounter,
+      lineCounter: lineCount,
+      automataMode: AutomataMode.ndfa,   // always simulate as NDFA/DFA
+    );
+    _applyGraphState(state);
+    setState(() {
+      _automataMode = AutomataMode.ndfa;
+      _showRegexPanel = false;          // collapse the panel after conversion
+    });
+    _schedulePersist();
+  }
+
   void _showEquivalenceDialog() {
     showEquivalenceDialog(
       context,
@@ -997,6 +1023,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             } else if (mode == AutomataMode.tm) {
               _tmSimulator.step = _simulator.step.clamp(-1, _tmSimulator.maxStep);
             }
+            // Auto-show the regex panel when entering regex mode,
+            // auto-hide it when leaving.
+            _showRegexPanel = (mode == AutomataMode.regex);
           });
           _schedulePersist();
         },
@@ -1296,6 +1325,28 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             // ── TM Config Panel ───────────────────────────────────────
             if (_showSimulator && _automataMode == AutomataMode.tm)
               TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
+
+            // ── Regex Panel ───────────────────────────────────────────
+            if (_automataMode == AutomataMode.regex && _showRegexPanel)
+              RegexPanel(
+                onConvert: _onRegexConvert,
+                onClose: () => setState(() => _showRegexPanel = false),
+              ),
+
+            // ── Regex show-panel FAB (when panel is closed) ───────────
+            if (_automataMode == AutomataMode.regex && !_showRegexPanel)
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16, bottom: 16),
+                  child: FloatingActionButton.extended(
+                    heroTag: 'regexOpen',
+                    onPressed: () => setState(() => _showRegexPanel = true),
+                    icon: const Icon(Icons.text_fields),
+                    label: const Text('Open Regex'),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
