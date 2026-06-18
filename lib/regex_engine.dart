@@ -47,12 +47,16 @@ class RegexConversionResult {
 }
 
 /// Converts a simple regex string to an NFA graph (with ε-transitions).
+/// Uses Thompson construction followed by ε-pass-through elimination,
+/// producing a compact NFA that still carries ε-edges where needed.
 RegexConversionResult regexToNfa(String pattern) {
   try {
     final parser = _RegexParser(pattern);
     final ast = parser.parse();
     final builder = _NfaBuilder();
     final fragment = builder.build(ast);
+    // _fragmentToGraph eliminates trivial ε-pass-throughs and lays the NFA
+    // out on a circle — no subset construction, so ε-transitions are preserved.
     return _fragmentToGraph(fragment, builder);
   } catch (e) {
     return RegexConversionResult(
@@ -63,7 +67,6 @@ RegexConversionResult regexToNfa(String pattern) {
     );
   }
 }
-
 /// Converts a simple regex string to a minimal DFA graph (no ε, one symbol per line).
 RegexConversionResult regexToDfa(String pattern) {
   try {
@@ -270,62 +273,238 @@ class _NfaBuilder {
 }
 
 // ─── NFA → Graph (with ε-transitions for NFA export) ────────────────────────
+//
+// Thompson construction creates O(|regex|) states, many of which are pure
+// ε-pass-throughs with exactly one incoming and one outgoing ε-edge.
+// We eliminate those before emitting the graph so the displayed NFA is
+// compact (matches hand-drawn style) while still being equivalent.
+//
+// A state is a "pass-through" if it is NOT the start state, NOT the accept
+// state, has NO outgoing non-ε transitions, and has exactly one outgoing
+// ε-edge. We short-circuit it by redirecting every edge that pointed TO it
+// directly to its ε-successor, then drop the state.  We repeat until stable.
 
 RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder) {
-  final nodes = <String, NodeData>{};
-  final lines = <String, LineData>{};
+  // Work on a mutable copy of the transition table.
+  // trans[s] = list of (symbol, to) pairs.
+  final trans = <int, List<({String symbol, int to})>>{};
+  builder._transitions.forEach((s, edges) {
+    trans[s] = List.of(edges);
+  });
+
+  final int startState  = fragment.start;
+  final int acceptState = fragment.accept;
+
+  // Iteratively eliminate pure pass-through states.
+  bool changed = true;
+  while (changed) {
+    changed = false;
+
+    // Find a candidate pass-through state.
+    int? candidate;
+    outer:
+    for (final s in trans.keys) {
+      if (s == startState || s == acceptState) continue;
+      final out = trans[s] ?? [];
+      // Must have exactly one outgoing ε-edge and no non-ε outgoing edges.
+      if (out.length != 1 || out[0].symbol != _kEpsilon) continue;
+      // Must not be the target of any non-ε edge coming back to itself
+      // (self-ε would collapse to a no-op, safe to remove).
+      candidate = s;
+      break outer;
+    }
+
+    if (candidate == null) break;
+
+    final successor = trans[candidate]!.first.to;
+
+    // Redirect every edge that points to candidate so it points to successor.
+    for (final edges in trans.values) {
+      for (int i = 0; i < edges.length; i++) {
+        if (edges[i].to == candidate) {
+          edges[i] = (symbol: edges[i].symbol, to: successor);
+        }
+      }
+    }
+
+    // Remove the eliminated state entirely.
+    trans.remove(candidate);
+    changed = true;
+  }
+
+  // Deduplicate self-loops that collapse to nothing (s → s via ε).
+  for (final s in trans.keys) {
+    trans[s]!.removeWhere((e) => e.symbol == _kEpsilon && e.to == s);
+  }
+
+  // ── Start-ε-collapse ───────────────────────────────────────────────────────
+  // If the start state has ONLY ε-outgoing edges (e.g. it is the Union or Star
+  // wrapper added by Thompson construction), merge its entire ε-closure into
+  // a single new start state.  This eliminates the overhead states that appear
+  // in patterns like "00+11" (2 extra states from the Union wrapper).
+  int effectiveStart  = startState;
+  int effectiveAccept = acceptState;
+
+  final _startOut = trans[startState] ?? [];
+  if (_startOut.isNotEmpty && _startOut.every((e) => e.symbol == _kEpsilon)) {
+    // Compute ε-closure of the start state.
+    final closure = <int>{startState};
+    final wl = <int>[startState];
+    while (wl.isNotEmpty) {
+      final s = wl.removeLast();
+      for (final e in trans[s] ?? []) {
+        if (e.symbol == _kEpsilon && closure.add(e.to)) wl.add(e.to);
+      }
+    }
+
+    // Gather non-ε edges from the closure that leave the closure.
+    final newEdgeSet = <({String symbol, int to})>{};
+    for (final s in closure) {
+      for (final e in trans[s] ?? []) {
+        if (e.symbol != _kEpsilon && !closure.contains(e.to)) {
+          newEdgeSet.add(e);
+        }
+      }
+    }
+
+    // Replace start's edges with the collected real edges.
+    trans[startState] = newEdgeSet.toList();
+
+    // Remove all other states in the closure.
+    for (final s in closure) {
+      if (s != startState) trans.remove(s);
+    }
+
+    // Redirect any remaining edges that point into the removed closure states.
+    for (final edges in trans.values) {
+      for (int i = 0; i < edges.length; i++) {
+        if (edges[i].to != startState && closure.contains(edges[i].to)) {
+          edges[i] = (symbol: edges[i].symbol, to: startState);
+        }
+      }
+    }
+
+    // If the original accept state was inside the closure, start IS now accepting.
+    if (closure.contains(acceptState)) {
+      effectiveAccept = startState;
+    }
+
+    // Second pass-through elimination: the collapse may have created new
+    // single-ε-edge states (e.g. Kleene back-edge intermediaries).
+    bool changed2 = true;
+    while (changed2) {
+      changed2 = false;
+      int? candidate2;
+      outer2:
+      for (final s in trans.keys) {
+        if (s == effectiveStart || s == effectiveAccept) continue;
+        final out = trans[s] ?? [];
+        if (out.length == 1 && out[0].symbol == _kEpsilon) {
+          candidate2 = s;
+          break outer2;
+        }
+      }
+      if (candidate2 == null) break;
+      final successor = trans[candidate2]!.first.to;
+      for (final edges in trans.values) {
+        for (int i = 0; i < edges.length; i++) {
+          if (edges[i].to == candidate2) {
+            edges[i] = (symbol: edges[i].symbol, to: successor);
+          }
+        }
+      }
+      trans.remove(candidate2);
+      changed2 = true;
+    }
+
+    // Remove self-ε loops introduced by the redirect.
+    for (final s in trans.keys) {
+      trans[s]!.removeWhere((e) => e.symbol == _kEpsilon && e.to == s);
+    }
+
+    // Deduplicate edges (the redirect can create identical duplicates).
+    for (final s in trans.keys) {
+      final seen = <({String symbol, int to})>{};
+      trans[s] = trans[s]!.where(seen.add).toList();
+    }
+  }
+  // ── End start-ε-collapse ───────────────────────────────────────────────────
+
+  // Collect surviving states (reachable from start via BFS).
+  final surviving = <int>{};
+  final queue = [effectiveStart];
+  surviving.add(effectiveStart);
+  while (queue.isNotEmpty) {
+    final s = queue.removeLast();
+    for (final e in trans[s] ?? []) {
+      if (surviving.add(e.to)) queue.add(e.to);
+    }
+  }
+
+  // Renumber: start → 0, accept → 1 (if different), rest in order.
+  final order = <int>[effectiveStart];
+  if (effectiveAccept != effectiveStart && surviving.contains(effectiveAccept)) {
+    order.add(effectiveAccept);
+  }
+  for (final s in surviving) {
+    if (s != effectiveStart && s != effectiveAccept) order.add(s);
+  }
+  final remap = <int, int>{};
+  for (int i = 0; i < order.length; i++) {
+    remap[order[i]] = i;
+  }
+
+  final total  = order.length;
+  final nodes  = <String, NodeData>{};
+  final lines  = <String, LineData>{};
   int lineCounter = 0;
 
-  // Layout states in a nice circular arrangement
-  final total = builder._nextState;
-  final radius = max(120.0, total * 30.0);
+  // Layout surviving states in a circle.
+  final radius = max(120.0, total * 40.0);
   final center = const Offset(400, 350);
 
   for (int i = 0; i < total; i++) {
     final angle = (2 * pi * i / total) - pi / 2;
-    final x = center.dx + cos(angle) * radius;
-    final y = center.dy + sin(angle) * radius;
-    final id = 'n$i';
-    nodes[id] = NodeData(
-      id: id,
+    final x     = center.dx + cos(angle) * radius;
+    final y     = center.dy + sin(angle) * radius;
+    final newId = remap[order[i]]!;
+    final id    = 'n$newId';
+    nodes[id]   = NodeData(
+      id:       id,
       position: Offset(x - 50, y - 50),
-      label: 'q$i',
-      isAccept: i == fragment.accept,
+      label:    'q$newId',
+      isAccept: order[i] == effectiveAccept,
     );
   }
 
-  // Add transitions
-  builder._transitions.forEach((fromState, outEdges) {
-    for (final edge in outEdges) {
-      final lid = 'l${lineCounter++}';
-      final fromId = 'n$fromState';
-      final toId = 'n${edge.to}';
-      // ε transitions use '~' which is the app's epsilon symbol
-      final label = edge.symbol.isEmpty ? '~' : edge.symbol;
-      final line = LineData(
-        id: lid,
-        nodeAId: fromId,
-        nodeBId: toId,
-        label: label,
-      );
-      lines[lid] = line;
+  // Emit edges (using renumbered ids).
+  for (final oldFrom in order) {
+    for (final edge in trans[oldFrom] ?? []) {
+      final oldTo = edge.to;
+      if (!remap.containsKey(oldTo)) continue; // pruned unreachable
+      final fromId = 'n${remap[oldFrom]!}';
+      final toId   = 'n${remap[oldTo]!}';
+      final label  = edge.symbol.isEmpty ? '~' : edge.symbol;
+      final lid    = 'l${lineCounter++}';
+      final line   = LineData(id: lid, nodeAId: fromId, nodeBId: toId, label: label);
+      lines[lid]   = line;
       nodes[fromId]?.connectedLineIds.add(lid);
       nodes[toId]?.connectedLineIds.add(lid);
     }
-  });
+  }
 
-  // Deduplicate parallel edges: merge labels into comma-separated
+  // Merge parallel edges (same from→to, different labels) into one line.
   final deduped = _deduplicateParallelEdges(lines, nodes, lineCounter);
 
   final startArrow = StartArrowData(
-    nodeId: 'n${fragment.start}',
+    nodeId: 'n0', // always renumbered to 0
     offset: const Offset(-1, 0),
     length: 100,
   );
 
   return RegexConversionResult(
-    nodes: nodes,
-    lines: deduped.$1,
+    nodes:      nodes,
+    lines:      deduped.$1,
     startArrow: startArrow,
   );
 }
