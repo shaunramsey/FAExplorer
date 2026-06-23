@@ -19,8 +19,10 @@
 //    The slider also updates as the canvas is scrolled by touch/trackpad.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
@@ -241,6 +243,13 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   final ScrollController _scrollCtrl = ScrollController();
   double _scrollFraction = 0.0; // 0..1, drives the top-bar slider
 
+  // ── Cheat-code (keyboard) ─────────────────────────────────────────────────
+  /// Accumulates physical keyboard characters typed anywhere on this screen.
+  String _cheatBuffer = '';
+  /// Clear the buffer 3 s after the last keystroke so stray presses don't linger.
+  Timer? _cheatTimer;
+  final FocusNode _cheatFocus = FocusNode();
+
   /// Tracks which difficulty the player is currently viewing.
   /// Completion badges and the progress counter reflect this selection.
   LevelDifficulty _difficulty = LevelDifficulty.hard;
@@ -270,6 +279,11 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         setState(() => _scrollFraction = fraction);
       }
     });
+
+    // Grab focus so keyboard events are captured immediately.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _cheatFocus.requestFocus();
+    });
   }
 
   @override
@@ -278,6 +292,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     _flowCtrl.dispose();
     _entryCtrl.dispose();
     _scrollCtrl.dispose();
+    _cheatFocus.dispose();
+    _cheatTimer?.cancel();
     super.dispose();
   }
 
@@ -290,6 +306,176 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   }
 
   void _reload() => _loadCompleted();
+
+  // ── Cheat code logic ──────────────────────────────────────────────────────
+
+  /// Valid cheat codes (case-insensitive).
+  static const _kCodeUnlockAll = 'UNLOCK_ALL';
+  static const _kCodeLockAll   = 'LOCK_ALL';
+
+  void _onCheatKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final ch = event.character;
+    if (ch == null || ch.isEmpty) {
+      // Non-printing key (Enter, Space, Backspace, etc.)  — treat Enter as submit.
+      if (event.logicalKey == LogicalKeyboardKey.enter) {
+        _tryCheatCode(_cheatBuffer.trim());
+      } else if (event.logicalKey == LogicalKeyboardKey.backspace && _cheatBuffer.isNotEmpty) {
+        setState(() => _cheatBuffer = _cheatBuffer.substring(0, _cheatBuffer.length - 1));
+      }
+      return;
+    }
+    // Accumulate only alphanumeric / underscore chars (to avoid accidental triggers
+    // from copy-paste shortcuts, arrow keys carrying characters on some platforms).
+    if (RegExp(r'[a-zA-Z0-9_]').hasMatch(ch)) {
+      setState(() => _cheatBuffer += ch.toUpperCase());
+    }
+    // Reset auto-clear timer.
+    _cheatTimer?.cancel();
+    _cheatTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _cheatBuffer = '');
+    });
+    // Auto-trigger when the buffer exactly matches a known code.
+    if (_cheatBuffer == _kCodeUnlockAll || _cheatBuffer == _kCodeLockAll) {
+      _cheatTimer?.cancel();
+      _tryCheatCode(_cheatBuffer);
+    }
+  }
+
+  Future<void> _tryCheatCode(String code) async {
+    final upper = code.toUpperCase().trim();
+    setState(() => _cheatBuffer = '');
+    _cheatTimer?.cancel();
+
+    if (upper == _kCodeUnlockAll) {
+      await _cheatUnlockAll();
+    } else if (upper == _kCodeLockAll) {
+      await _cheatLockAll();
+    } else if (code.isNotEmpty) {
+      // Unknown code — show a brief "unrecognised" toast.
+      if (!mounted) return;
+      _showCheatToast('Unknown code: "$code"', const Color(0xFFFF5252));
+    }
+  }
+
+  Future<void> _cheatUnlockAll() async {
+    for (final level in kAllLevels) {
+      await widget.progressStore.markCompleted(level.id, LevelDifficulty.hard);
+      await widget.progressStore.markCompleted(level.id, LevelDifficulty.easy);
+    }
+    _loadCompleted();
+    if (!mounted) return;
+    _showCheatToast('All ${kAllLevels.length} levels unlocked ✓', const Color(0xFF1FD99A));
+  }
+
+  Future<void> _cheatLockAll() async {
+    await widget.progressStore.resetAll();
+    _loadCompleted();
+    if (!mounted) return;
+    _showCheatToast('Progress reset — all levels locked', const Color(0xFFFFB300));
+  }
+
+  void _showCheatToast(String message, Color color) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.terminal, color: color, size: 16),
+            const SizedBox(width: 10),
+            Text(
+              message,
+              style: GoogleFonts.courierPrime(color: color, fontSize: 13, letterSpacing: 0.5),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF0A0F1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: color.withOpacity(0.5)),
+        ),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  /// Opens the cheat-code dialog (triggered by long-pressing the title on mobile).
+  void _showCheatDialog() {
+    final ctrl = TextEditingController();
+    final theme = AppThemeNotifier.read(context);
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: theme.borderMid),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.terminal, color: theme.accent, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'Enter Cheat Code',
+              style: GoogleFonts.courierPrime(color: theme.textLight, fontSize: 15),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              style: GoogleFonts.courierPrime(color: theme.textLight, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'e.g. UNLOCK_ALL',
+                hintStyle: GoogleFonts.courierPrime(color: theme.textDim, fontSize: 13),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(color: theme.borderMid),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(color: theme.accent, width: 1.5),
+                ),
+                filled: true,
+                fillColor: theme.bg,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onSubmitted: (v) {
+                Navigator.of(ctx).pop();
+                _tryCheatCode(v);
+              },
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'UNLOCK_ALL  •  LOCK_ALL',
+              style: GoogleFonts.courierPrime(color: theme.textDim, fontSize: 10, letterSpacing: 1),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: GoogleFonts.courierPrime(color: theme.textMid)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: theme.accent, foregroundColor: Colors.black),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _tryCheatCode(ctrl.text);
+            },
+            child: Text('Apply', style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
 
   bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completedAny);
   bool _isCompleted(String id) => _completed.contains(id);
@@ -366,7 +552,14 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     final puzzleLevels = kAllLevels.where((l) => !l.isTutorial).toList();
     final completedPuzzles = _completed.intersection(puzzleLevels.map((l) => l.id).toSet()).length;
 
-    return Scaffold(
+    return Focus(
+      focusNode: _cheatFocus,
+      autofocus: true,
+      onKeyEvent: (_, event) {
+        _onCheatKey(event);
+        return KeyEventResult.ignored; // don't swallow events (scrolling still works)
+      },
+      child: Scaffold(
       backgroundColor: theme.bg,
       body: Stack(
         children: [
@@ -453,6 +646,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                   setState(() => _difficulty = d);
                   _loadCompleted();
                 },
+                onTitleLongPress: _showCheatDialog,
               ),
             ),
           ),
@@ -461,7 +655,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
           const _Legend(),
         ],
       ),
-    );
+    ), // Scaffold
+    ); // Focus
   }
 }
 
@@ -477,6 +672,8 @@ class _TopBar extends StatelessWidget {
   final ValueChanged<double> onScrollChanged;
   final LevelDifficulty difficulty;
   final ValueChanged<LevelDifficulty> onDifficultyChanged;
+  /// Called when the player long-presses the title — opens the cheat-code dialog.
+  final VoidCallback? onTitleLongPress;
 
   const _TopBar({
     required this.completed,
@@ -486,6 +683,7 @@ class _TopBar extends StatelessWidget {
     required this.onScrollChanged,
     required this.difficulty,
     required this.onDifficultyChanged,
+    this.onTitleLongPress,
   });
 
   @override
@@ -499,30 +697,33 @@ class _TopBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             child: Row(
               children: [
-                // Title
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'AUTOMATA',
-                      style: GoogleFonts.orbitron(
-                        color: theme.accent,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 4,
+                // Title — long-press opens the cheat-code dialog on mobile/touch
+                GestureDetector(
+                  onLongPress: onTitleLongPress,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'AUTOMATA',
+                        style: GoogleFonts.orbitron(
+                          color: theme.accent,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 4,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'LEARNING MAP',
-                      style: GoogleFonts.orbitron(
-                        color: theme.textDim,
-                        fontSize: 8,
-                        letterSpacing: 3.5,
-                        fontWeight: FontWeight.w500,
+                      Text(
+                        'LEARNING MAP',
+                        style: GoogleFonts.orbitron(
+                          color: theme.textDim,
+                          fontSize: 8,
+                          letterSpacing: 3.5,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
 
                 const Spacer(),

@@ -18,11 +18,12 @@ import 'package:provider/provider.dart';
 import 'widgets/app_theme.dart';
 
 import 'game_level.dart';
-// LevelDifficulty is also declared in game_level.dart — no extra import needed.
+// LevelDifficulty and PuzzleVariant are declared in game_level.dart.
 import 'game_progress_store.dart';
 import 'tutorial_screen.dart';
 import 'dsl_code.dart';
 import 'fa_equivalence.dart';
+import 'regex_engine.dart';
 import 'models.dart';
 import 'automaton_type_checker.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
@@ -86,6 +87,14 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   String? _checkResult;
   bool _isCorrect = false;
 
+  // ── DFA → Regex input (only used for PuzzleVariant.dfaToRegex) ───────────
+  final TextEditingController _regexInputCtrl = TextEditingController();
+
+  /// Cached [GraphState] for [PuzzleVariant.dfaToRegex] levels.
+  /// Parsed once in [initState] so [_ReadOnlyDfaCanvas] always receives the
+  /// same [NodeData] objects with their DSL positions already applied.
+  GraphState? _dfaGs;
+
   // ── save / load state ────────────────────────────────────────────────────
   bool _loadingSavedDsl = true;
   Timer? _saveDebounce;
@@ -103,6 +112,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       duration: const Duration(milliseconds: 1200),
     );
 
+    // Pre-parse the read-only DFA for dfaToRegex levels once here so the
+    // same NodeData objects (positions already applied) are reused every build.
+    if (widget.level.puzzleVariant == PuzzleVariant.dfaToRegex &&
+        widget.level.dsl.isNotEmpty) {
+      try {
+        _dfaGs = DslCodec.importFromDsl(widget.level.dsl);
+      } catch (_) {}
+    }
+
     _loadSavedDsl();
   }
 
@@ -111,6 +129,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     _saveDebounce?.cancel();
     _focusNode.dispose();
     _successCtrl.dispose();
+    _regexInputCtrl.dispose();
     super.dispose();
   }
 
@@ -461,7 +480,110 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   // ── answer checking ─────────────────────────────────────────────────────
 
+  // ── DFA → Regex answer check ────────────────────────────────────────────
+  //
+  // For dfaToRegex levels the player types a regex string.  We compile it to
+  // an NFA, then run the standard FA equivalence check against the target DFA
+  // stored in the level DSL.  The canvas is irrelevant for this variant.
+
+  Future<void> _checkRegexAnswer() async {
+    final pattern = _regexInputCtrl.text.trim();
+    if (pattern.isEmpty) {
+      setState(() {
+        _checkResult = '? Enter a regular expression above, then tap Check.';
+      });
+      return;
+    }
+
+    setState(() {
+      _checking = true;
+      _checkResult = null;
+      _isCorrect = false;
+    });
+
+    try {
+      // Compile the player's regex to an NFA.
+      final compiled = regexToNfa(pattern);
+      if (compiled.isError) {
+        setState(() {
+          _checking = false;
+          _checkResult = '✗ Regex parse error: ${compiled.error}';
+        });
+        return;
+      }
+
+      // Load the target DFA from the level DSL.
+      GraphState target;
+      try {
+        target = DslCodec.importFromDsl(widget.level.dsl);
+      } catch (e) {
+        setState(() {
+          _checking = false;
+          _checkResult = '⚠ Could not parse embedded level DSL.\n$e';
+        });
+        return;
+      }
+
+      // Run NFA ↔ DFA equivalence check.
+      final result = checkEquivalence(
+        nodes1: compiled.nodes,
+        lines1: compiled.lines,
+        startArrow1: compiled.startArrow,
+        nodes2: target.nodes,
+        lines2: target.lines,
+        startArrow2: target.startArrow,
+      );
+
+      setState(() => _checking = false);
+
+      switch (result.status) {
+        case EquivalenceStatus.equivalent:
+          _isCorrect = true;
+          _checkResult = '✓ Correct! Your regex describes exactly the same language as the DFA.';
+          await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
+          widget.onCompleted?.call();
+          _successCtrl.forward(from: 0);
+          _showSuccessDialog();
+          break;
+
+        case EquivalenceStatus.notEquivalent:
+          final witness = result.witness ?? '';
+          final by = result.acceptedByMachine;
+          final yourSide   = by == 1 ? 'your regex' : 'the target DFA';
+          final otherSide  = by == 1 ? 'the target DFA' : 'your regex';
+          final inputDesc  = witness.isEmpty ? 'ε (empty string)' : '"$witness"';
+          _checkResult = '✗ Not equivalent.\n\n'
+              'Distinguishing witness: $inputDesc\n'
+              '$yourSide accepts it but $otherSide does not.';
+          break;
+
+        case EquivalenceStatus.unknownCapReached:
+          _checkResult = '? Could not determine equivalence (search space too large).\n\n'
+              'Try simplifying your regex or check manually.';
+          break;
+
+        case EquivalenceStatus.noStartState:
+          _checkResult = '? Compiled NFA has no start state — this is a bug. '
+              'Please report it.';
+          break;
+      }
+
+      setState(() {});
+    } catch (e) {
+      setState(() {
+        _checking = false;
+        _checkResult = 'Error: $e';
+      });
+    }
+  }
+
   Future<void> _checkAnswer() async {
+    // Delegate to the regex-input check for dfaToRegex levels.
+    if (widget.level.puzzleVariant == PuzzleVariant.dfaToRegex) {
+      await _checkRegexAnswer();
+      return;
+    }
+
     setState(() {
       _checking = true;
       _checkResult = null;
@@ -731,17 +853,82 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       ),
       body: _loadingSavedDsl
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : _buildBody(theme),
+
+      // ── FAB toolbar ───────────────────────────────────────────────────
+      floatingActionButton: widget.level.puzzleVariant == PuzzleVariant.dfaToRegex
+          ? null // no FAB needed — canvas is read-only
+          : _buildFab(context, theme),
+    );
+  }
+
+  // ── Body router ──────────────────────────────────────────────────────────
+
+  Widget _buildBody(AppThemeNotifier theme) {
+    switch (widget.level.puzzleVariant) {
+      case PuzzleVariant.dfaToRegex:
+        return _buildDfaToRegexBody(theme);
+      case PuzzleVariant.regexToDfa:
+      case PuzzleVariant.buildAutomaton:
+        return _buildCanvasBody(theme);
+    }
+  }
+
+  // ── DFA → Regex body: read-only DFA canvas + regex text input ────────────
+
+  Widget _buildDfaToRegexBody(AppThemeNotifier theme) {
+    final gs = _dfaGs;
+
+    return Column(
+      children: [
+        // Goal banner (no alphabet chip — irrelevant for regex input)
+        _GoalBanner(
+          description: widget.level.description,
+          tagColor: theme.tagColor(widget.level.tag),
+          automataMode: widget.level.automataMode,
+          requiredAutomatonType: widget.level.requiredAutomatonType,
+          alphabet: widget.level.alphabet,
+          checkResult: _checkResult,
+          isCorrect: _isCorrect,
+          puzzleVariant: widget.level.puzzleVariant,
+        ),
+
+        // ── Read-only DFA canvas (upper half) ────────────────────────
+        Expanded(
+          flex: 3,
+          child: gs == null
+              ? Center(
+                  child: Text('Could not load DFA.',
+                      style: TextStyle(color: theme.textMid)))
+              : _ReadOnlyDfaCanvas(gs: gs, theme: theme),
+        ),
+
+        // ── Regex input panel (lower section) ────────────────────────
+        _RegexInputPanel(
+          controller: _regexInputCtrl,
+          theme: theme,
+          isCorrect: _isCorrect,
+        ),
+      ],
+    );
+  }
+
+  // ── Standard canvas body (buildAutomaton + regexToDfa) ───────────────────
+
+  Widget _buildCanvasBody(AppThemeNotifier theme) {
+    return Column(
         children: [
           // ── Goal banner ──────────────────────────────────────────────
           _GoalBanner(
             description: widget.level.description,
-            tagColor: context.watch<AppThemeNotifier>().tagColor(widget.level.tag),
+            tagColor: theme.tagColor(widget.level.tag),
             automataMode: widget.level.automataMode,
             requiredAutomatonType: widget.level.requiredAutomatonType,
             alphabet: widget.level.alphabet,
             checkResult: _checkResult,
             isCorrect: _isCorrect,
+            puzzleVariant: widget.level.puzzleVariant,
+            targetRegex: widget.level.targetRegex,
           ),
 
           // ── Canvas ───────────────────────────────────────────────────
@@ -879,125 +1066,128 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             ),
           ),
         ],
-      ),
+      );
 
-      // ── FAB toolbar ───────────────────────────────────────────────────
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PaletteFab(
-            heroTag: 'gp_start',
-            tooltip: 'Set start state',
-            icon: Icons.play_arrow,
-            active: _placingStartArrow,
-            activeColor: const Color(0xFFFF6D00),
-            onPressed: () =>
-                setState(() => _placingStartArrow = !_placingStartArrow),
-          ),
-          const SizedBox(height: 10),
-          PaletteFab(
-            heroTag: 'gp_delete',
-            tooltip: 'Delete mode',
-            icon: Icons.delete_outline,
-            active: _deleteMode,
-            activeColor: Theme.of(context).colorScheme.error,
-            onPressed: () => setState(() {
-              _deleteMode = !_deleteMode;
-              if (_deleteMode) {
-                _lineMode = false;
-                _placingStartArrow = false;
-              }
-            }),
-          ),
-          const SizedBox(height: 10),
-          PaletteFab(
-            heroTag: 'gp_line',
-            tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
-            icon: _lineMode ? Icons.timeline : Icons.add_link,
-            active: _lineMode,
-            activeColor: theme.accent,
-            onPressed: () => setState(() => _lineMode = !_lineMode),
-          ),
-          const SizedBox(height: 10),
-          PaletteFab(
-            heroTag: 'gp_reset',
-            tooltip: 'Clear canvas',
-            icon: Icons.refresh,
-            active: false,
-            activeColor: theme.accent,
-            small: true,
-            onPressed: () {
-              final dialogTheme = AppThemeNotifier.read(context);
-              showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                backgroundColor: dialogTheme.surface,
-                surfaceTintColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: dialogTheme.borderMid),
-                ),
-                title: Text(
-                  'Clear canvas?',
-                  style: GoogleFonts.orbitron(
-                    color: dialogTheme.textLight,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                  ),
-                ),
-                content: Text(
-                  'This will delete all your work on this puzzle.',
-                  style: GoogleFonts.sourceCodePro(
-                    color: dialogTheme.textMid,
-                    fontSize: 13,
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(
-                      foregroundColor: dialogTheme.textDim,
-                    ),
-                    child: Text('Cancel',
-                        style: GoogleFonts.orbitron(fontSize: 11, letterSpacing: 1)),
-                  ),
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      setState(() {
-                        _nodes.clear();
-                        _lines.clear();
-                        _startArrow = null;
-                        _nodeCounter = 0;
-                        _lineCounter = 0;
-                        _checkResult = null;
-                        _isCorrect = false;
-                      });
-                      widget.progressStore.clearLevelDsl(
-                        widget.level.id,
-                        widget.difficulty,
-                      );
-                      // In easy mode, re-seed the scaffold after clearing so
-                      // nodes reappear at their original positions.
-                      if (widget.difficulty == LevelDifficulty.easy) {
-                        _tryApplyEasyScaffold();
-                      }
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.error,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: Text('Clear',
-                        style: GoogleFonts.orbitron(fontSize: 11, letterSpacing: 1)),
-                  ),
-                ],
+  }
+
+  // ── FAB toolbar (canvas modes only) ──────────────────────────────────────
+
+  Widget _buildFab(BuildContext context, AppThemeNotifier theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PaletteFab(
+          heroTag: 'gp_start',
+          tooltip: 'Set start state',
+          icon: Icons.play_arrow,
+          active: _placingStartArrow,
+          activeColor: const Color(0xFFFF6D00),
+          onPressed: () =>
+              setState(() => _placingStartArrow = !_placingStartArrow),
+        ),
+        const SizedBox(height: 10),
+        PaletteFab(
+          heroTag: 'gp_delete',
+          tooltip: 'Delete mode',
+          icon: Icons.delete_outline,
+          active: _deleteMode,
+          activeColor: Theme.of(context).colorScheme.error,
+          onPressed: () => setState(() {
+            _deleteMode = !_deleteMode;
+            if (_deleteMode) {
+              _lineMode = false;
+              _placingStartArrow = false;
+            }
+          }),
+        ),
+        const SizedBox(height: 10),
+        PaletteFab(
+          heroTag: 'gp_line',
+          tooltip: _lineMode ? 'Exit line mode' : 'Enter line mode',
+          icon: _lineMode ? Icons.timeline : Icons.add_link,
+          active: _lineMode,
+          activeColor: theme.accent,
+          onPressed: () => setState(() => _lineMode = !_lineMode),
+        ),
+        const SizedBox(height: 10),
+        PaletteFab(
+          heroTag: 'gp_reset',
+          tooltip: 'Clear canvas',
+          icon: Icons.refresh,
+          active: false,
+          activeColor: theme.accent,
+          small: true,
+          onPressed: () {
+            final dialogTheme = AppThemeNotifier.read(context);
+            showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              backgroundColor: dialogTheme.surface,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: dialogTheme.borderMid),
               ),
-            );
-            },
-          ),
-        ],
-      ),
+              title: Text(
+                'Clear canvas?',
+                style: GoogleFonts.orbitron(
+                  color: dialogTheme.textLight,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+              content: Text(
+                'This will delete all your work on this puzzle.',
+                style: GoogleFonts.sourceCodePro(
+                  color: dialogTheme.textMid,
+                  fontSize: 13,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: dialogTheme.textDim,
+                  ),
+                  child: Text('Cancel',
+                      style: GoogleFonts.orbitron(fontSize: 11, letterSpacing: 1)),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    setState(() {
+                      _nodes.clear();
+                      _lines.clear();
+                      _startArrow = null;
+                      _nodeCounter = 0;
+                      _lineCounter = 0;
+                      _checkResult = null;
+                      _isCorrect = false;
+                    });
+                    widget.progressStore.clearLevelDsl(
+                      widget.level.id,
+                      widget.difficulty,
+                    );
+                    // In easy mode, re-seed the scaffold after clearing so
+                    // nodes reappear at their original positions.
+                    if (widget.difficulty == LevelDifficulty.easy) {
+                      _tryApplyEasyScaffold();
+                    }
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text('Clear',
+                      style: GoogleFonts.orbitron(fontSize: 11, letterSpacing: 1)),
+                ),
+              ],
+            ),
+          );
+          },
+        ),
+      ],
     );
   }
 }
@@ -1014,6 +1204,8 @@ class _GoalBanner extends StatelessWidget {
   final AutomataMode automataMode;
   final RequiredAutomatonType? requiredAutomatonType;
   final Set<String> alphabet;
+  final PuzzleVariant puzzleVariant;
+  final String targetRegex;
 
   const _GoalBanner({
     required this.description,
@@ -1021,6 +1213,8 @@ class _GoalBanner extends StatelessWidget {
     required this.automataMode,
     required this.alphabet,
     this.requiredAutomatonType,
+    this.puzzleVariant = PuzzleVariant.buildAutomaton,
+    this.targetRegex = '',
     this.checkResult,
     this.isCorrect = false,
   });
@@ -1113,6 +1307,46 @@ class _GoalBanner extends StatelessWidget {
               ],
             ),
           ),
+
+          // ── Regex expression box (regexToDfa levels only) ─────────────
+          if (puzzleVariant == PuzzleVariant.regexToDfa && targetRegex.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF050D18),
+                border: Border(
+                  left: BorderSide(color: const Color(0xFF00E5FF), width: 4),
+                  bottom: BorderSide(color: theme.borderMid),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Icon(Icons.functions, color: Color(0xFF00E5FF), size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Regex:  ',
+                    style: GoogleFonts.sourceCodePro(
+                      fontSize: 12,
+                      color: const Color(0xFF00E5FF).withOpacity(0.7),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      targetRegex,
+                      style: GoogleFonts.courierPrime(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF00E5FF),
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // ── Check result ──────────────────────────────────────────────
           if (checkResult != null)
@@ -1303,6 +1537,189 @@ class _SuccessDialogState extends State<_SuccessDialog>
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Read-only DFA canvas  (used by dfaToRegex levels)
+//
+//  Renders the target DFA in a non-interactive, scrollable canvas so the player
+//  can read it while typing their regex answer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ReadOnlyDfaCanvas extends StatelessWidget {
+  final GraphState gs;
+  final AppThemeNotifier theme;
+
+  const _ReadOnlyDfaCanvas({required this.gs, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: theme.bg,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Start arrow
+          if (gs.startArrow != null && gs.nodes.containsKey(gs.startArrow!.nodeId))
+            Positioned.fill(
+              child: IgnorePointer(
+                child: StartArrowWidget(
+                  data: gs.startArrow!,
+                  nodeCenter: gs.nodes[gs.startArrow!.nodeId]!.center,
+                  deleteMode: false,
+                  onDelete: () {},
+                ),
+              ),
+            ),
+
+          // Transition lines
+          ...gs.lines.values.map((line) {
+            final a = gs.nodes[line.nodeAId];
+            final b = gs.nodes[line.nodeBId];
+            if (a == null || b == null) return const SizedBox.shrink();
+            return Positioned.fill(
+              child: IgnorePointer(
+                child: LineWidget(
+                  data: line,
+                  centerA: a.center,
+                  centerB: b.center,
+                  deleteMode: false,
+                  highlighted: false,
+                  onLabelChanged: (_) {}, // read-only, never fires
+                ),
+              ),
+            );
+          }),
+
+          // State nodes — non-interactive (interactionLocked: true handles this;
+          // do NOT wrap in IgnorePointer here — Node positions itself with an
+          // internal Positioned widget and must be a direct Stack child).
+          ...gs.nodes.values.map(
+            (node) => Node(
+              key: ValueKey('ro_${node.id}'),
+              data: node,
+              lineMode: false,
+              interactionLocked: true,
+              deleteMode: false,
+              highlighted: false,
+              isLabelTaken: (_, __) => false,
+              onLabelChanged: (_) {},
+              onLineModeSelect: () {},
+              onDoubleTap: () {},
+              onDelete: () {},
+            ),
+          ),
+
+          // Watermark label
+          Positioned(
+            bottom: 8,
+            right: 12,
+            child: Text(
+              'read-only',
+              style: GoogleFonts.sourceCodePro(
+                fontSize: 10,
+                color: theme.textDim.withOpacity(0.4),
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Regex Input Panel  (used by dfaToRegex levels)
+//
+//  A sticky panel at the bottom of the screen where the player types their
+//  regular expression.  Notifies the parent via the shared [controller].
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _RegexInputPanel extends StatelessWidget {
+  final TextEditingController controller;
+  final AppThemeNotifier theme;
+  final bool isCorrect;
+
+  const _RegexInputPanel({
+    required this.controller,
+    required this.theme,
+    required this.isCorrect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accentRegex = Color(0xFF00E5FF);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        border: Border(
+          top: BorderSide(color: theme.borderMid),
+          left: BorderSide(
+            color: isCorrect ? const Color(0xFF1FD99A) : accentRegex,
+            width: 4,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Your regular expression:',
+            style: GoogleFonts.sourceCodePro(
+              fontSize: 11,
+              color: theme.textDim,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.bg,
+              border: Border.all(
+                color: isCorrect
+                    ? const Color(0xFF1FD99A)
+                    : accentRegex.withOpacity(0.5),
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: TextField(
+              controller: controller,
+              enabled: !isCorrect,
+              style: GoogleFonts.courierPrime(
+                fontSize: 20,
+                color: isCorrect ? const Color(0xFF1FD99A) : accentRegex,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+              ),
+              cursorColor: accentRegex,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'e.g.  (a+b)*b',
+                hintStyle: GoogleFonts.courierPrime(
+                  fontSize: 18,
+                  color: theme.textDim.withOpacity(0.5),
+                ),
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Operators: concat (ab), union (a+b), star (a*), grouping (…)',
+            style: GoogleFonts.sourceCodePro(
+              fontSize: 10,
+              color: theme.textDim,
+            ),
+          ),
+        ],
       ),
     );
   }
