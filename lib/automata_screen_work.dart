@@ -192,7 +192,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _nodeCounter = state.nodeCounter;
         _lineCounter = state.lineCounter;
         _automataMode =
-    state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
+            state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
+        _normalizeReversePairs();
       } catch (_) {
         // Ignore corrupt saved graphs.
       }
@@ -397,6 +398,18 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   String _exportToDsl() => DslCodec.exportToDsl(_graphState);
 
 
+  /// Ensures every line with a negative perpendicularPart is flipped positive.
+  /// Because each line's perpendicular normal is derived from its own A→B
+  /// direction (flipped for a reverse line), +55 on both lines in a pair
+  /// naturally curves them to opposite sides — a negative value is never needed.
+  void _normalizeReversePairs() {
+    for (final line in _lines.values) {
+      if (line.perpendicularPart < 0) {
+        line.perpendicularPart = line.perpendicularPart.abs();
+      }
+    }
+  }
+
   void _applyGraphState(GraphState state) {
     setState(() {
       _nodes
@@ -409,10 +422,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _nodeCounter = state.nodeCounter;
       _lineCounter = state.lineCounter;
       _automataMode =
-    state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
+          state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
       _draggingNodeId = null;
       _draggingLineId = null;
       _lineSourceNodeId = null;
+      _normalizeReversePairs();
     });
     _refreshSimulation();
   }
@@ -789,7 +803,26 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
           setState(() {
             final id = _nextId('l');
 
-            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+            // If a line already exists in the opposite direction (destId → srcId),
+            // both lines get +55. Each line's perpendicular normal is computed
+            // from its own A→B direction, which is flipped for the reverse line,
+            // so +55 on both naturally curves them to opposite sides of the chord.
+            const double defaultPerp = 20.0;
+            final _reverseMatches = _lines.values
+                .where((l) => l.nodeAId == destId && l.nodeBId == srcId)
+                .toList();
+            final reverseLine = _reverseMatches.isNotEmpty ? _reverseMatches.first : null;
+
+            final line = LineData(
+              id: id,
+              nodeAId: srcId,
+              nodeBId: destId,
+              perpendicularPart: reverseLine != null ? defaultPerp : 0,
+            );
+
+            if (reverseLine != null) {
+              reverseLine.perpendicularPart = defaultPerp;
+            }
 
             _lines[id] = line;
 

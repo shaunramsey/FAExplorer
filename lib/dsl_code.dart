@@ -92,6 +92,10 @@ class DslCodec {
 
   static Offset _defaultPosition(int count) {
     if (count == 0) return const Offset(300, 300);
+    // Arrange nodes in concentric rings around a centre point.
+    // Ring 0 holds 7 nodes, ring 1 holds 13, ring 2 holds 19, …
+    // Ring radius is capped at 280 px so even deep rings stay within a
+    // typical ~800×600 viewport when the canvas origin is near (0,0).
     int ring = 0, capacity = 0, ringSize = 7;
     while (capacity + ringSize <= count) {
       capacity += ringSize;
@@ -100,7 +104,8 @@ class DslCodec {
     }
     final pos = count - capacity;
     final angle = (2 * pi * pos) / ringSize - pi / 2;
-    final radius = 180.0 * (ring + 1);
+    // Cap radius growth so nodes don't fly off-screen for large graphs.
+    final radius = min(280.0, 150.0 + ring * 80.0);
     return Offset(300 + cos(angle) * radius, 300 + sin(angle) * radius);
   }
 

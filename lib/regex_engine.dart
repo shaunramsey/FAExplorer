@@ -57,7 +57,7 @@ RegexConversionResult regexToNfa(String pattern) {
     final fragment = builder.build(ast);
     // _fragmentToGraph eliminates trivial ε-pass-throughs and lays the NFA
     // out on a circle — no subset construction, so ε-transitions are preserved.
-    return _fragmentToGraph(fragment, builder);
+    return _fragmentToGraph(fragment, builder, pattern);
   } catch (e) {
     return RegexConversionResult(
       nodes: {},
@@ -79,7 +79,7 @@ RegexConversionResult regexToDfa(String pattern) {
     _collectAlphabet(ast, alphabet);
     // Build NFA transition table, subset-construct DFA, then minimize
     final nfa = _NfaTable(fragment: fragment, builder: builder, alphabet: alphabet);
-    return _dfaTableToGraph(nfa);
+    return _dfaTableToGraph(nfa, pattern);
   } catch (e) {
     return RegexConversionResult(
       nodes: {},
@@ -88,6 +88,38 @@ RegexConversionResult regexToDfa(String pattern) {
       error: 'Parse error: $e',
     );
   }
+}
+
+// ─── Layout helpers ───────────────────────────────────────────────────────────
+
+/// Deterministic hash of [s] → a value in [0, 1).
+///
+/// Uses a simple djb2-style integer hash so the same regex always produces
+/// the same phase offset, but structurally different regexes (even with the
+/// same node count after minimization) produce different offsets.
+double _patternPhase(String s) {
+  int h = 5381;
+  for (final unit in s.codeUnits) {
+    h = ((h << 5) + h + unit) & 0x1FFFFFFF; // keep positive, 29-bit
+  }
+  return (h % 10000) / 10000.0 * 2 * pi;
+}
+
+// Layout constants shared by both NFA and DFA paths.
+const double _kNodeSize  = 100.0;
+const double _kCanvasW   = 800.0;
+const double _kCanvasH   = 600.0;
+const double _kMargin    = _kNodeSize / 2 + 30; // 80 px — clears node edge + label room
+const double _kMinChord  = 220.0; // min px between adjacent centres — room for label boxes
+
+/// Compute the circle radius for [total] nodes, given a minimum chord
+/// distance of [_kMinChord] and the canvas bounds.
+double _circleRadius(int total) {
+  if (total <= 1) return 0.0;
+  final minR = (_kMinChord / 2) / sin(pi / total);
+  final maxR = min(_kCanvasW / 2 - _kMargin, _kCanvasH / 2 - _kMargin);
+  // 75 px per node as base — generous but capped by maxR.
+  return min(maxR, max(minR, total * 75.0));
 }
 
 // ─── AST ─────────────────────────────────────────────────────────────────────
@@ -300,7 +332,7 @@ class _NfaBuilder {
 // ε-edge. We short-circuit it by redirecting every edge that pointed TO it
 // directly to its ε-successor, then drop the state.  We repeat until stable.
 
-RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder) {
+RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder, String pattern) {
   // Work on a mutable copy of the transition table.
   // trans[s] = list of (symbol, to) pairs.
   final trans = <int, List<({String symbol, int to})>>{};
@@ -475,14 +507,29 @@ RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder) 
   final lines  = <String, LineData>{};
   int lineCounter = 0;
 
-  // Layout surviving states in a circle.
-  final radius = max(120.0, total * 40.0);
-  final center = const Offset(400, 350);
+  // Layout surviving states on a circle.
+  //
+  // The phase offset is derived deterministically from the regex pattern string
+  // via a djb2-style hash, so:
+  //   • the same regex always produces the same layout (stable / predictable),
+  //   • two different regexes that happen to minimise to the same node count
+  //     still rotate to different positions (structurally distinct appearance).
+  //
+  // Radius is computed from shared constants (_kMinChord, _kMargin) so that
+  // adjacent nodes are always at least 160 px apart and none clip off-canvas.
+  final double radius      = _circleRadius(total);
+  final double phaseOffset = _patternPhase(pattern);
+  final center             = const Offset(_kCanvasW / 2, _kCanvasH / 2);
 
   for (int i = 0; i < total; i++) {
-    final angle = (2 * pi * i / total) - pi / 2;
-    final x     = center.dx + cos(angle) * radius;
-    final y     = center.dy + sin(angle) * radius;
+    final angle = (2 * pi * i / total) - pi / 2 + phaseOffset;
+    final cx    = center.dx + cos(angle) * radius;
+    final cy    = center.dy + sin(angle) * radius;
+
+    // Clamp so the node bounding box stays fully on canvas.
+    final x = cx.clamp(_kMargin, _kCanvasW - _kMargin);
+    final y = cy.clamp(_kMargin, _kCanvasH - _kMargin);
+
     final newId = remap[order[i]]!;
     final id    = 'n$newId';
     nodes[id]   = NodeData(
@@ -512,6 +559,9 @@ RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder) 
   // Merge parallel edges (same from→to, different labels) into one line.
   final deduped = _deduplicateParallelEdges(lines, nodes, lineCounter);
 
+  // Bend bidirectional pairs so they don't overlap each other.
+  _assignBidirectionalCurves(deduped.$1);
+
   final startArrow = StartArrowData(
     nodeId: 'n0', // always renumbered to 0
     offset: const Offset(-1, 0),
@@ -523,6 +573,38 @@ RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder) 
     lines:      deduped.$1,
     startArrow: startArrow,
   );
+}
+
+/// For every pair of lines (A→B) and (B→A), offset them in opposite
+/// perpendicular directions so they arc away from each other instead of
+/// drawing on top of each other.  Self-loops are skipped (they already render
+/// as distinct circles).
+void _assignBidirectionalCurves(Map<String, LineData> lines) {
+  // Build a quick lookup: canonical key "min(a,b)__max(a,b)" → list of lines.
+  final Map<String, List<LineData>> byPair = {};
+  for (final line in lines.values) {
+    if (line.nodeAId == line.nodeBId) continue; // self-loop: skip
+    final a = line.nodeAId, b = line.nodeBId;
+    final key = a.compareTo(b) <= 0 ? '${a}__$b' : '${b}__$a';
+    byPair.putIfAbsent(key, () => []).add(line);
+  }
+
+  // For each pair that has lines going in both directions, assign opposing curves.
+  for (final group in byPair.values) {
+    if (group.length < 2) continue; // only one direction — no overlap possible
+
+    // Separate by direction.
+    final forward  = group.where((l) => l.nodeAId.compareTo(l.nodeBId) <= 0).toList();
+    final backward = group.where((l) => l.nodeAId.compareTo(l.nodeBId) >  0).toList();
+    if (forward.isEmpty || backward.isEmpty) continue;
+
+    // Assign a modest perpendicular offset.  The sign convention in LineData
+    // is that positive perpendicularPart bends the arc to the left when
+    // travelling from A to B, negative bends it to the right.
+    const double bend = 55.0;
+    for (final l in forward)  { l.perpendicularPart =  bend; }
+    for (final l in backward) { l.perpendicularPart = bend; }
+  }
 }
 
 (Map<String, LineData>, int) _deduplicateParallelEdges(
@@ -773,7 +855,7 @@ _MinDfa _minimizeDfa({
   );
 }
 
-RegexConversionResult _dfaTableToGraph(_NfaTable nfa) {
+RegexConversionResult _dfaTableToGraph(_NfaTable nfa, String pattern) {
   // ── Step 1: Subset construction ──────────────────────────────────────────
   final startSet = nfa.epsilonClosure({nfa.fragment.start});
   final dfaStates = <Set<int>>[]; // ordered list of DFA states (sets of NFA states)
@@ -837,13 +919,21 @@ RegexConversionResult _dfaTableToGraph(_NfaTable nfa) {
   int lineCounter = 0;
 
   final total = minDfa.numStates;
-  final radius = max(140.0, total * 35.0);
-  final center = const Offset(400, 350);
+
+  // Layout: same scheme as the NFA path — deterministic phase from the regex
+  // string hash, shared spacing constants, on-canvas clamping.
+  final double radius      = _circleRadius(total);
+  final double phaseOffset = _patternPhase(pattern);
+  final center             = const Offset(_kCanvasW / 2, _kCanvasH / 2);
 
   for (int i = 0; i < total; i++) {
-    final angle = (2 * pi * i / total) - pi / 2;
-    final x = center.dx + cos(angle) * radius;
-    final y = center.dy + sin(angle) * radius;
+    final angle = (2 * pi * i / total) - pi / 2 + phaseOffset;
+    final cx = center.dx + cos(angle) * radius;
+    final cy = center.dy + sin(angle) * radius;
+
+    final x = cx.clamp(_kMargin, _kCanvasW - _kMargin);
+    final y = cy.clamp(_kMargin, _kCanvasH - _kMargin);
+
     final id = 'n$i';
     nodes[id] = NodeData(
       id: id,
@@ -883,6 +973,9 @@ RegexConversionResult _dfaTableToGraph(_NfaTable nfa) {
     nodes[fromId]?.connectedLineIds.add(lid);
     nodes[toId]?.connectedLineIds.add(lid);
   }
+
+  // Bend bidirectional pairs so they don't overlap each other.
+  _assignBidirectionalCurves(lines);
 
   final startArrow = StartArrowData(
     nodeId: 'n0',
