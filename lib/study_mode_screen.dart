@@ -37,22 +37,18 @@ import 'widgets/app_theme_settings.dart';
 //  Layout constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const double _kNodeW = 148.0; // node card width
-const double _kNodeH = 88.0; // node card height
-const double _kColGap = 220.0; // horizontal gap between column centres
-const double _kRowGap = 140.0; // vertical gap between row centres
-const double _kTopPad = 96.0; // space for the top bar + scroll slider row
+const double _kNodeW = 148.0;
+const double _kNodeH = 88.0;
+const double _kColGap = 220.0;
+const double _kRowGap = 140.0;
+const double _kTopPad = 96.0;
 const double _kBotPad = 80.0;
-const double _kLegendH = 58.0; // height reserved at bottom for legend
-const double _kSidePad = 120.0; // left/right canvas padding
-const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
+const double _kLegendH = 58.0;
+const double _kSidePad = 120.0;
+const double _kMinRowPad = 20.0;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Colour palette
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Position helpers (unchanged from original)
+//  Position helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 int _colIndex(double x) {
@@ -221,22 +217,26 @@ members.sort((a, b) {
   return result;
 }
 
+// Helper defaults for optional constructor params
+void _noop() {}
+
 // ─────────────────────────────────────────────────────────────────────────────
-//  LevelSelectScreen
+//  StudyModeScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class LevelSelectScreen extends StatefulWidget {
-  final GameProgressStore progressStore;
+class StudyModeScreen extends StatefulWidget {
+  final GameProgressStore? progressStore;
   final VoidCallback onGoToSandbox;
   final VoidCallback? onGoToStudy;
 
-  const LevelSelectScreen({super.key, required this.progressStore, required this.onGoToSandbox, this.onGoToStudy});
+  const StudyModeScreen({super.key, this.progressStore, VoidCallback? onGoToSandbox, this.onGoToStudy})
+      : onGoToSandbox = onGoToSandbox ?? _noop;
 
   @override
-  State<LevelSelectScreen> createState() => _LevelSelectScreenState();
+  State<StudyModeScreen> createState() => _StudyModeScreenState();
 }
 
-class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProviderStateMixin {
+class _StudyModeScreenState extends State<StudyModeScreen> with TickerProviderStateMixin {
   late final AnimationController _pulseCtrl;
   late final AnimationController _flowCtrl;
   late final AnimationController _entryCtrl;
@@ -300,9 +300,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
 
   void _loadCompleted() {
     setState(() {
-      _completed = widget.progressStore.loadCompletedLevels(_difficulty);
-      _completedAny = widget.progressStore.loadCompletedLevels(LevelDifficulty.hard)
-        ..addAll(widget.progressStore.loadCompletedLevels(LevelDifficulty.easy));
+      _completed = widget.progressStore?.loadCompletedLevels(_difficulty) ?? {};
+      _completedAny = (widget.progressStore?.loadCompletedLevels(LevelDifficulty.hard) ?? {})
+        ..addAll(widget.progressStore?.loadCompletedLevels(LevelDifficulty.easy) ?? {});
     });
   }
 
@@ -361,8 +361,8 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
 
   Future<void> _cheatUnlockAll() async {
     for (final level in kAllLevels) {
-      await widget.progressStore.markCompleted(level.id, LevelDifficulty.hard);
-      await widget.progressStore.markCompleted(level.id, LevelDifficulty.easy);
+      await widget.progressStore?.markCompleted(level.id, LevelDifficulty.hard);
+      await widget.progressStore?.markCompleted(level.id, LevelDifficulty.easy);
     }
     _loadCompleted();
     if (!mounted) return;
@@ -370,7 +370,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   }
 
   Future<void> _cheatLockAll() async {
-    await widget.progressStore.resetAll();
+    await widget.progressStore?.resetAll();
     _loadCompleted();
     if (!mounted) return;
     _showCheatToast('Progress reset — all levels locked', const Color(0xFFFFB300));
@@ -481,9 +481,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completedAny);
   bool _isCompleted(String id) => _completed.contains(id);
   bool _isCompletedHard(String id) =>
-      widget.progressStore.loadCompletedLevels(LevelDifficulty.hard).contains(id);
+      widget.progressStore?.loadCompletedLevels(LevelDifficulty.hard).contains(id) ?? false;
   bool _isCompletedEasy(String id) =>
-      widget.progressStore.loadCompletedLevels(LevelDifficulty.easy).contains(id);
+      widget.progressStore?.loadCompletedLevels(LevelDifficulty.easy).contains(id) ?? false;
 
   void _onTap(GameLevel level) {
     if (!_isUnlocked(level)) {
@@ -503,13 +503,15 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   }
 
   Future<void> _openLevel(GameLevel level) async {
+    final store = widget.progressStore;
+    if (store == null) return; // study mode launched without a progress store
     if (level.isTutorial) {
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => TutorialScreen(
             level: level,
-            progressStore: widget.progressStore,
+            progressStore: store,
             onCompleted: _reload,
           ),
         ),
@@ -525,7 +527,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         MaterialPageRoute(
           builder: (_) => GamePuzzleScreen(
             level: level,
-            progressStore: widget.progressStore,
+            progressStore: store,
             onCompleted: _reload,
             difficulty: _difficulty,
           ),

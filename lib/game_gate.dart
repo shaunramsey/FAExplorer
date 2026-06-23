@@ -23,6 +23,7 @@ import 'data/firebase_session_store.dart';
 import 'automata_screen.dart';
 import 'login_screen.dart';
 import 'level_select_screen.dart';
+import 'study_mode_screen.dart';
 import 'game_progress_store.dart';
 
 // ── App mode enum ─────────────────────────────────────────────────────────────
@@ -155,6 +156,10 @@ class _AppGateState extends State<AppGate> {
     return LevelSelectScreen(
       progressStore: _progressStore!,
       onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
+      onGoToStudy: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const StudyModeScreen()),
+      ),
     );
   }
 }
