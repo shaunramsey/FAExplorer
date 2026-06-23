@@ -594,9 +594,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       automataMode: AutomataMode.ndfa,   // always simulate as NDFA/DFA
     );
     _applyGraphState(state);
+    // Keep the regex panel open and stay in regex mode so the user can
+    // tweak the expression and re-convert without reopening the panel.
     setState(() {
-      _automataMode = AutomataMode.ndfa;
-      _showRegexPanel = false;          // collapse the panel after conversion
+      _automataMode = AutomataMode.regex;
+      _showRegexPanel = true;
     });
     _schedulePersist();
   }

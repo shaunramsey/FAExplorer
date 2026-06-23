@@ -2,7 +2,7 @@
 //  regex_panel.dart
 //
 //  Floating panel shown when the automata mode is set to RegEx.
-//  Lets the user type a simple regex and convert it to an NFA or DFA
+//  Lets the user type a simple regex and convert it to a DFA
 //  that is displayed on the canvas.
 //
 //  Supported syntax:
@@ -32,7 +32,7 @@ typedef RegexConvertCallback = void Function(RegexConversionResult result, bool 
 // ─── Panel widget ─────────────────────────────────────────────────────────────
 
 class RegexPanel extends StatefulWidget {
-  /// Called when the user clicks "Convert to NFA" or "Convert to DFA".
+  /// Called when the user clicks "Convert to DFA".
   /// The parent screen is responsible for loading the resulting graph.
   final RegexConvertCallback onConvert;
 
@@ -62,7 +62,6 @@ class RegexPanel extends StatefulWidget {
 class _RegexPanelState extends State<RegexPanel> {
   final TextEditingController _ctrl = TextEditingController();
   String? _error;
-  bool _isDfa = false; // toggle: NFA (false) or DFA (true)
 
   @override
   void initState() {
@@ -71,6 +70,26 @@ class _RegexPanelState extends State<RegexPanel> {
       _ctrl.text = widget.initialText!;
       // Notify the parent that the seed has been consumed so it doesn't
       // re-apply it on the next rebuild.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onInitialTextConsumed?.call();
+      });
+    }
+  }
+
+  /// Picks up a new [initialText] when the panel is already mounted — this
+  /// happens when the user loads a derived regex from the FA→Regex dialog
+  /// while the Regex Panel is already visible.
+  @override
+  void didUpdateWidget(RegexPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final incoming = widget.initialText;
+    if (incoming != null &&
+        incoming.isNotEmpty &&
+        incoming != oldWidget.initialText) {
+      setState(() {
+        _ctrl.text = incoming;
+        _error = null;
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onInitialTextConsumed?.call();
       });
@@ -92,7 +111,7 @@ class _RegexPanelState extends State<RegexPanel> {
       return;
     }
 
-    final result = _isDfa ? regexToDfa(pattern) : regexToNfa(pattern);
+    final result = regexToDfa(pattern);
 
     if (result.isError) {
       setState(() => _error = result.error);
@@ -100,7 +119,7 @@ class _RegexPanelState extends State<RegexPanel> {
     }
 
     setState(() => _error = null);
-    widget.onConvert(result, _isDfa);
+    widget.onConvert(result, true);
   }
 
   @override
@@ -236,35 +255,6 @@ class _RegexPanelState extends State<RegexPanel> {
 
                   const SizedBox(height: 12),
 
-                  // ── NFA / DFA toggle ───────────────────────────────────
-                  Row(
-                    children: [
-                      Text(
-                        'Output:',
-                        style: GoogleFonts.courierPrime(
-                          fontSize: 13,
-                          color: theme.textMid,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      _ModeChip(
-                        label: 'NFA',
-                        selected: !_isDfa,
-                        onTap: () => setState(() => _isDfa = false),
-                        theme: theme,
-                      ),
-                      const SizedBox(width: 6),
-                      _ModeChip(
-                        label: 'DFA',
-                        selected: _isDfa,
-                        onTap: () => setState(() => _isDfa = true),
-                        theme: theme,
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
                   // ── Convert button ─────────────────────────────────────
                   FilledButton.icon(
                     onPressed: _convert,
@@ -278,7 +268,7 @@ class _RegexPanelState extends State<RegexPanel> {
                     ),
                     icon: const Icon(Icons.transform, size: 18),
                     label: Text(
-                      _isDfa ? 'Convert to DFA' : 'Convert to NFA',
+                      'Convert to DFA',
                       style: GoogleFonts.courierPrime(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
@@ -400,47 +390,6 @@ class _SyntaxRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ModeChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final AppThemeNotifier theme;
-
-  const _ModeChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    required this.theme,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? theme.accent.withOpacity(0.18) : theme.bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? theme.accent : theme.borderMid,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.courierPrime(
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-            color: selected ? theme.accent : theme.textMid,
-          ),
-        ),
       ),
     );
   }
