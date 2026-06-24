@@ -45,11 +45,15 @@ class _Challenge {
   final String regex;
   final Set<String> alphabet;
   final _Difficulty difficulty;
+  /// Plain-language description used by the DESCRIBE → FA mode.
+  /// Null for challenges generated from regex templates.
+  final String? description;
 
   const _Challenge({
     required this.regex,
     required this.alphabet,
     required this.difficulty,
+    this.description,
   });
 }
 
@@ -228,12 +232,421 @@ String _tMixedSuffix(String a, String b, Random rng)    =>
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Description-challenge templates
+//
+//  Each entry is a factory that receives (firstSymbol, secondSymbol, rng) and
+//  returns a ({description, regex, difficulty}) record.  The description is the
+//  plain-English prompt shown to the player; the regex is used internally for
+//  grading only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+typedef _DescTemplate = ({String description, String regex, _Difficulty difficulty})
+    Function(String a, String b, Random rng);
+
+/// 30 description-challenge templates spread across easy / medium / hard.
+const List<_DescTemplate> _kDescTemplates = [
+  // ── Easy ──────────────────────────────────────────────────────────────────
+
+  // Accepts only the empty string
+  _dOnlyEmpty,
+  // Accepts exactly one specific symbol
+  _dExactlyOneSymbol,
+  // Accepts any single symbol from the alphabet
+  _dAnySingleSymbol,
+  // Accepts all strings (including empty)
+  _dAllStrings,
+  // Accepts only the empty string OR a single symbol
+  _dEmptyOrSingle,
+  // Accepts strings consisting entirely of one repeated symbol
+  _dRepeatOneSymbol,
+  // Accepts strings of length exactly 2
+  _dLengthExactly2,
+  // Accepts strings that start with a specific symbol
+  _dStartsWith,
+  // Accepts strings that end with a specific symbol
+  _dEndsWith,
+  // Accepts the two-symbol string in both orders
+  _dBothOrders,
+
+  // ── Medium ────────────────────────────────────────────────────────────────
+
+  // Accepts strings containing at least one of each symbol
+  _dContainsBoth,
+  // Accepts strings where the first and last symbol are the same
+  _dFirstEqualsLast,
+  // Accepts strings with an even number of a specific symbol
+  _dEvenCount,
+  // Accepts strings with an odd number of a specific symbol
+  _dOddCount,
+  // Accepts non-empty strings of even length
+  _dEvenLength,
+  // Accepts strings that contain exactly one occurrence of a specific symbol
+  _dExactlyOne,
+  // Accepts strings that do NOT contain a specific symbol
+  _dNoSymbol,
+  // Accepts strings where the second character (if it exists) is a specific symbol
+  _dSecondIsSymbol,
+  // Accepts strings of length at most 3
+  _dLengthAtMost3,
+  // Accepts strings that are a palindrome of length ≤ 2 (ε, a, b, aa, bb)
+  _dShortPalindrome,
+
+  // ── Hard ──────────────────────────────────────────────────────────────────
+
+  // Accepts strings where every occurrence of 'a' is immediately followed by 'b'
+  _dAAlwaysFollowedByB,
+  // Accepts strings where 'a' and 'b' alternate (starting with either)
+  _dAlternating,
+  // Accepts strings that contain the substring consisting of two identical symbols in a row
+  _dContainsDouble,
+  // Accepts strings where the number of 'a's and 'b's are both even
+  _dBothEven,
+  // Accepts strings whose length is a multiple of 3
+  _dLengthMod3,
+  // Accepts strings that begin AND end with the same symbol
+  _dSameEnds,
+  // Accepts strings that contain at least two occurrences of a specific symbol consecutively
+  _dAtLeastTwoConsecutive,
+  // Accepts strings where no two consecutive symbols are the same
+  _dNoTwoConsecutiveSame,
+  // Accepts strings where the third-to-last symbol (if reachable) is a specific symbol
+  _dThirdFromEnd,
+  // Accepts strings over {a,b} where the count of 'a' mod 3 equals 0
+  _dCountMod3,
+];
+
+// ── Easy desc templates ───────────────────────────────────────────────────────
+
+({String description, String regex, _Difficulty difficulty})
+    _dOnlyEmpty(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts only the empty string (ε) '
+              'and rejects every non-empty string.',
+          regex: '~',
+          difficulty: _Difficulty.easy,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dExactlyOneSymbol(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts exactly the one-character string '
+        '"$sym" and nothing else.',
+    regex: sym,
+    difficulty: _Difficulty.easy,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dAnySingleSymbol(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts any string of length exactly 1 '
+              '(i.e. either "$a" or "$b"), and rejects all other strings.',
+          regex: '$a+$b',
+          difficulty: _Difficulty.easy,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dAllStrings(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts every possible string over '
+              '{$a, $b}, including the empty string.',
+          regex: '($a+$b)*',
+          difficulty: _Difficulty.easy,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dEmptyOrSingle(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts only the empty string (ε) '
+        'and the one-character string "$sym" — nothing longer.',
+    regex: '$sym?',
+    difficulty: _Difficulty.easy,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dRepeatOneSymbol(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts strings made up of zero or more '
+        'copies of "$sym" (including ε), and rejects any string that '
+        'contains "${ sym == a ? b : a }".',
+    regex: '$sym*',
+    difficulty: _Difficulty.easy,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dLengthExactly2(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts all strings of length exactly 2 '
+              'over the alphabet {$a, $b}.',
+          regex: '($a+$b)($a+$b)',
+          difficulty: _Difficulty.easy,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dStartsWith(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts all non-empty strings that begin '
+        'with "$sym".',
+    regex: '$sym($a+$b)*',
+    difficulty: _Difficulty.easy,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dEndsWith(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts all strings (including length 1) '
+        'that end with "$sym".',
+    regex: '($a+$b)*$sym',
+    difficulty: _Difficulty.easy,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dBothOrders(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts exactly the two strings '
+              '"$a$b" and "$b$a", and nothing else.',
+          regex: '$a$b+$b$a',
+          difficulty: _Difficulty.easy,
+        );
+
+// ── Medium desc templates ─────────────────────────────────────────────────────
+
+({String description, String regex, _Difficulty difficulty})
+    _dContainsBoth(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} that '
+              'contain at least one "$a" AND at least one "$b" (in any order).',
+          regex: '($a+$b)*$a($a+$b)*$b($a+$b)*+($a+$b)*$b($a+$b)*$a($a+$b)*',
+          difficulty: _Difficulty.medium,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dFirstEqualsLast(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings of length ≥ 1 where '
+              'the first and last character are the same symbol.',
+          regex: '$a($a+$b)*$a+$b($a+$b)*$b+$a+$b',
+          difficulty: _Difficulty.medium,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dEvenCount(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  final other = sym == a ? b : a;
+  return (
+    description: 'Build an FA that accepts strings over {$a, $b} that contain '
+        'an even number of "$sym"s (zero counts as even).',
+    regex: '$other*($sym$other*$sym$other*)*',
+    difficulty: _Difficulty.medium,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dOddCount(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  final other = sym == a ? b : a;
+  return (
+    description: 'Build an FA that accepts strings over {$a, $b} that contain '
+        'an odd number of "$sym"s (at least one).',
+    regex: '$other*$sym($other*$sym$other*$sym$other*)*',
+    difficulty: _Difficulty.medium,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dEvenLength(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts all strings over {$a, $b} '
+              'whose length is even (including the empty string, which has length 0).',
+          regex: '(($a+$b)($a+$b))*',
+          difficulty: _Difficulty.medium,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dExactlyOne(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  final other = sym == a ? b : a;
+  return (
+    description: 'Build an FA that accepts strings over {$a, $b} that contain '
+        'exactly one "$sym" (surrounded by any number of "$other"s).',
+    regex: '$other*$sym$other*',
+    difficulty: _Difficulty.medium,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dNoSymbol(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  final other = sym == a ? b : a;
+  return (
+    description: 'Build an FA that accepts strings over {$a, $b} that contain '
+        'no "$sym" at all (only "$other"s, or the empty string).',
+    regex: '$other*',
+    difficulty: _Difficulty.medium,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dSecondIsSymbol(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts all strings of length ≥ 2 where '
+        'the second character is "$sym".',
+    regex: '($a+$b)$sym($a+$b)*',
+    difficulty: _Difficulty.medium,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dLengthAtMost3(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} of '
+              'length 0, 1, 2, or 3 — rejecting anything longer.',
+          regex:
+              '~+($a+$b)+($a+$b)($a+$b)+($a+$b)($a+$b)($a+$b)',
+          difficulty: _Difficulty.medium,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dShortPalindrome(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts only strings of length ≤ 2 '
+              'that read the same forwards and backwards: '
+              'ε, "$a", "$b", "$a$a", and "$b$b".',
+          regex: '~+$a+$b+$a$a+$b$b',
+          difficulty: _Difficulty.medium,
+        );
+
+// ── Hard desc templates ───────────────────────────────────────────────────────
+
+({String description, String regex, _Difficulty difficulty})
+    _dAAlwaysFollowedByB(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} where '
+              'every "$a" is immediately followed by a "$b" '
+              '(the string may start with "$b"s and end with "$b"s, but no '
+              '"$a" appears at the end or before another "$a").',
+          regex: '$b*($a$b+)*',
+          difficulty: _Difficulty.hard,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dAlternating(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} where '
+              'no two consecutive characters are the same '
+              '(i.e. "$a" and "$b" must strictly alternate, possibly starting with either).',
+          regex: '($a($b$a)*($b)?+$b($a$b)*($a)?)?',
+          difficulty: _Difficulty.hard,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dContainsDouble(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts strings over {$a, $b} that contain '
+        'at least one occurrence of "$sym$sym" as a consecutive substring.',
+    regex: '($a+$b)*$sym$sym($a+$b)*',
+    difficulty: _Difficulty.hard,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dBothEven(String a, String b, Random rng) => (
+          description: 'Build an FA over {$a, $b} that accepts strings where '
+              'the number of "$a"s is even AND the number of "$b"s is even '
+              '(zero counts as even for both).',
+          regex: '($a$a+$b$b+($a$b+$b$a)($a$a+$b$b)*($a$b+$b$a))*',
+          difficulty: _Difficulty.hard,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dLengthMod3(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} whose '
+              'length is divisible by 3 (including the empty string).',
+          regex: '(($a+$b)($a+$b)($a+$b))*',
+          difficulty: _Difficulty.hard,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dSameEnds(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} of '
+              'length ≥ 2 where the first and last characters are the same, '
+              'plus single-character strings "$a" and "$b".',
+          regex: '$a($a+$b)*$a+$b($a+$b)*$b+$a+$b',
+          difficulty: _Difficulty.hard,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dAtLeastTwoConsecutive(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts strings over {$a, $b} that contain '
+        'the substring "$sym$sym$sym" (three "$sym"s in a row) at least once.',
+    regex: '($a+$b)*$sym$sym$sym($a+$b)*',
+    difficulty: _Difficulty.hard,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dNoTwoConsecutiveSame(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} where '
+              'no symbol appears twice in a row anywhere in the string '
+              '(so "$a$b$a" is accepted but "$a$a" is not).',
+          regex: '($a($b$a)*($b)?+$b($a$b)*($a)?)?',
+          difficulty: _Difficulty.hard,
+        );
+
+({String description, String regex, _Difficulty difficulty})
+    _dThirdFromEnd(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return (
+    description: 'Build an FA that accepts strings over {$a, $b} of length '
+        '≥ 3 where the third character from the end is "$sym".',
+    regex: '($a+$b)*$sym($a+$b)($a+$b)',
+    difficulty: _Difficulty.hard,
+  );
+}
+
+({String description, String regex, _Difficulty difficulty})
+    _dCountMod3(String a, String b, Random rng) => (
+          description: 'Build an FA that accepts strings over {$a, $b} where '
+              'the number of "$a"s is a multiple of 3 (including zero).',
+          regex: '$b*($a$b*$a$b*$a$b*)*',
+          difficulty: _Difficulty.hard,
+        );
+
+/// Generates [count] description challenges from the template pool.
+List<_Challenge> _generateDescriptionChallenges(Random rng,
+    {int count = 15}) {
+  final results = <_Challenge>[];
+  final alphabets = List.of(_kAlphabets)..shuffle(rng);
+  final templates = List.of(_kDescTemplates)..shuffle(rng);
+
+  for (int i = 0; i < count; i++) {
+    final tmpl = templates[i % templates.length];
+    final alphabet = alphabets[rng.nextInt(alphabets.length)];
+    final symbols = alphabet.toList()..sort();
+    final a = symbols[0];
+    final b = symbols.length > 1 ? symbols[1] : symbols[0];
+    final r = tmpl(a, b, rng);
+    results.add(_Challenge(
+      regex: r.regex,
+      alphabet: alphabet,
+      difficulty: r.difficulty,
+      description: r.description,
+    ));
+  }
+
+  results.shuffle(rng);
+  return results;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Practice mode enum
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum _PracticeMode {
   regexToDfa('REGEX → DFA', Icons.functions),
-  dfaToRegex('DFA → REGEX', Icons.account_tree_outlined);
+  dfaToRegex('DFA → REGEX', Icons.account_tree_outlined),
+  describeToFa('DESCRIBE → FA', Icons.lightbulb_outline_rounded);
 
   const _PracticeMode(this.label, this.icon);
   final String label;
@@ -294,6 +707,10 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     with TickerProviderStateMixin {
   final _rng = Random();
 
+  /// Which practice modes are currently selected (multi-select).
+  Set<_PracticeMode> _selectedModes = {_PracticeMode.regexToDfa};
+
+  /// The mode actually used for the current challenge — drawn from [_selectedModes].
   _PracticeMode _mode = _PracticeMode.regexToDfa;
 
   // The working queue — a shuffled copy of _kPool.
@@ -307,6 +724,36 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   // Per-round state
   _GradeResult? _gradeResult;
   bool _submitted = false;
+
+  /// How many wrong (non-parse-error) attempts this round.
+  int _wrongAttempts = 0;
+
+  /// True once the player has exhausted all 3 tries — answer is revealed.
+  bool _answerRevealed = false;
+
+  static const int _maxTries = 3;
+
+  /// Returns the appropriate mode for a given challenge.
+  /// Description challenges always use describeToFa when that mode is selected;
+  /// otherwise falls back to regexToDfa.
+  _PracticeMode _pickModeForChallenge(_Challenge challenge) {
+    if (challenge.description != null &&
+        _selectedModes.contains(_PracticeMode.describeToFa)) {
+      return _PracticeMode.describeToFa;
+    }
+    // For regex/DFA challenges, pick randomly from the non-describe selected modes.
+    final pool = _selectedModes
+        .where((m) => m != _PracticeMode.describeToFa)
+        .toList();
+    if (pool.isEmpty) return _PracticeMode.regexToDfa;
+    return pool[_rng.nextInt(pool.length)];
+  }
+
+  /// Pick a mode at random from the selected set.
+  _PracticeMode _pickMode() {
+    final list = _selectedModes.toList();
+    return list[_rng.nextInt(list.length)];
+  }
 
   // For DFA → REGEX: player types a regex into this controller.
   final TextEditingController _regexInputCtrl = TextEditingController();
@@ -330,6 +777,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     )..forward();
 
     _buildQueue();
+    _mode = _pickModeForChallenge(_queue[_queueIndex]);
   }
 
   @override
@@ -343,7 +791,9 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   // ── Queue management ──────────────────────────────────────────────────────
 
   void _buildQueue() {
-    _queue = _generateChallenges(_rng);
+    final regexChallenges = _generateChallenges(_rng);
+    final descChallenges = _generateDescriptionChallenges(_rng);
+    _queue = [...regexChallenges, ...descChallenges]..shuffle(_rng);
     _queueIndex = 0;
   }
 
@@ -354,8 +804,11 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     if (_queueIndex >= _queue.length) _buildQueue();
 
     setState(() {
+      _mode = _pickModeForChallenge(_queue[_queueIndex]);
       _gradeResult = null;
       _submitted = false;
+      _wrongAttempts = 0;
+      _answerRevealed = false;
       _playerNodes = {};
       _playerLines = {};
       _playerStart = null;
@@ -367,18 +820,56 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       ..forward();
   }
 
-  void _switchMode(_PracticeMode mode) {
-    if (mode == _mode) return;
+  /// Toggle a single mode on/off in [_selectedModes].
+  /// At least one mode must remain selected at all times.
+  void _toggleMode(_PracticeMode mode) {
+    final next = Set<_PracticeMode>.of(_selectedModes);
+    if (next.contains(mode)) {
+      if (next.length == 1) return; // can't deselect the last one
+      next.remove(mode);
+    } else {
+      next.add(mode);
+    }
+    // Mutate before _pickMode so it reads the updated set.
+    _selectedModes = next;
+    _buildQueue();
+    final newMode = _pickModeForChallenge(_queue[_queueIndex]);
     setState(() {
-      _mode = mode;
+      _mode = newMode;
       _gradeResult = null;
       _submitted = false;
+      _wrongAttempts = 0;
+      _answerRevealed = false;
       _playerNodes = {};
       _playerLines = {};
       _playerStart = null;
       _regexInputCtrl.clear();
     });
+    _entryCtrl
+      ..reset()
+      ..forward();
+  }
+
+  /// Toggle "select all" — either enable every mode or reset to just [regexToDfa].
+  void _toggleSelectAll() {
+    final allSelected = _selectedModes.length == _PracticeMode.values.length;
+    // Mutate before _pickMode so it reads the updated set.
+    _selectedModes = allSelected
+        ? {_PracticeMode.regexToDfa}
+        : Set.of(_PracticeMode.values);
     _buildQueue();
+    final newMode = _pickModeForChallenge(_queue[_queueIndex]);
+    setState(() {
+      _mode = newMode;
+      _gradeResult = null;
+      _submitted = false;
+      _wrongAttempts = 0;
+      _answerRevealed = false;
+      _playerNodes = {};
+      _playerLines = {};
+      _playerStart = null;
+      _regexInputCtrl.clear();
+    });
     _entryCtrl
       ..reset()
       ..forward();
@@ -445,15 +936,25 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   }
 
   void _submit() {
-    final result = _mode == _PracticeMode.regexToDfa
-        ? _gradePlayerDfa()
-        : _gradePlayerRegex();
+    final result = _mode == _PracticeMode.dfaToRegex
+        ? _gradePlayerRegex()
+        : _gradePlayerDfa(); // both regexToDfa and describeToFa draw a DFA
 
     setState(() {
       _gradeResult = result;
       _submitted = true;
-      if (result.error == null) _attempted++;
-      if (result.correct) _correct++;
+      // Only count genuine wrong answers (not parse errors) toward the try limit.
+      if (result.error == null) {
+        _attempted++;
+        if (result.correct) {
+          _correct++;
+        } else {
+          _wrongAttempts++;
+          if (_wrongAttempts >= _maxTries) {
+            _answerRevealed = true;
+          }
+        }
+      }
     });
   }
 
@@ -470,7 +971,9 @@ class _StudyModeScreenState extends State<StudyModeScreen>
         children: [
           _TopBar(
             mode: _mode,
-            onModeChanged: _switchMode,
+            selectedModes: _selectedModes,
+            onModeToggled: _toggleMode,
+            onSelectAllToggled: _toggleSelectAll,
             correct: _correct,
             total: _attempted,
             onGoToSandbox: widget.onGoToSandbox,
@@ -489,6 +992,9 @@ class _StudyModeScreenState extends State<StudyModeScreen>
                 queueTotal: _queue.length,
                 gradeResult: _gradeResult,
                 submitted: _submitted,
+                wrongAttempts: _wrongAttempts,
+                answerRevealed: _answerRevealed,
+                maxTries: _maxTries,
                 regexInputCtrl: _regexInputCtrl,
                 regexInputFocus: _regexInputFocus,
                 onPlayerFaChanged: (nodes, lines, start) {
@@ -498,9 +1004,13 @@ class _StudyModeScreenState extends State<StudyModeScreen>
                 },
                 onSubmit: _submitted && _gradeResult?.error != null
                     ? _submit        // allow re-try on parse errors
-                    : _submitted
+                    : _submitted && (_gradeResult?.correct ?? false)
                         ? _nextChallenge
-                        : _submit,
+                        : _submitted && _answerRevealed
+                            ? _nextChallenge
+                            : _submitted
+                                ? _submit   // wrong but tries remaining
+                                : _submit,  // not yet submitted
                 onSkip: _nextChallenge,
                 theme: theme,
               ),
@@ -518,14 +1028,18 @@ class _StudyModeScreenState extends State<StudyModeScreen>
 
 class _TopBar extends StatelessWidget {
   final _PracticeMode mode;
-  final ValueChanged<_PracticeMode> onModeChanged;
+  final Set<_PracticeMode> selectedModes;
+  final ValueChanged<_PracticeMode> onModeToggled;
+  final VoidCallback onSelectAllToggled;
   final int correct;
   final int total;
   final VoidCallback onGoToSandbox;
 
   const _TopBar({
     required this.mode,
-    required this.onModeChanged,
+    required this.selectedModes,
+    required this.onModeToggled,
+    required this.onSelectAllToggled,
     required this.correct,
     required this.total,
     required this.onGoToSandbox,
@@ -534,6 +1048,7 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
+    final allSelected = selectedModes.length == _PracticeMode.values.length;
 
     return SafeArea(
       bottom: false,
@@ -568,47 +1083,59 @@ class _TopBar extends StatelessWidget {
 
             const SizedBox(width: 16),
 
-            // Mode selector chips
+            // Multi-select mode chips
             Expanded(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: _PracticeMode.values.map((m) {
-                    final sel = m == mode;
-                    return Padding(
+                  children: [
+                    // "Select All" toggle chip
+                    Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: GestureDetector(
-                        onTap: () => onModeChanged(m),
+                        onTap: onSelectAllToggled,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: sel
-                                ? theme.accent.withOpacity(0.15)
+                            color: allSelected
+                                ? theme.accentGreen.withOpacity(0.15)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                              color: sel
-                                  ? theme.accent.withOpacity(0.8)
+                              color: allSelected
+                                  ? theme.accentGreen.withOpacity(0.8)
                                   : theme.borderMid,
                             ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(m.icon,
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 160),
+                                child: Icon(
+                                  allSelected
+                                      ? Icons.check_box_rounded
+                                      : Icons.check_box_outline_blank_rounded,
+                                  key: ValueKey(allSelected),
                                   size: 12,
-                                  color: sel ? theme.accent : theme.textDim),
+                                  color: allSelected
+                                      ? theme.accentGreen
+                                      : theme.textDim,
+                                ),
+                              ),
                               const SizedBox(width: 5),
                               Text(
-                                m.label,
+                                'ALL',
                                 style: GoogleFonts.orbitron(
-                                  color: sel ? theme.accent : theme.textDim,
+                                  color: allSelected
+                                      ? theme.accentGreen
+                                      : theme.textDim,
                                   fontSize: 8,
                                   letterSpacing: 1.5,
-                                  fontWeight: sel
+                                  fontWeight: allSelected
                                       ? FontWeight.w700
                                       : FontWeight.w500,
                                 ),
@@ -617,8 +1144,69 @@ class _TopBar extends StatelessWidget {
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ),
+
+                    // Individual mode chips
+                    ..._PracticeMode.values.map((m) {
+                      final sel = selectedModes.contains(m);
+                      // Use green for dfaToRegex, violet for describeToFa, accent for regexToDfa
+                      final chipColor = m == _PracticeMode.dfaToRegex
+                          ? theme.accentGreen
+                          : m == _PracticeMode.describeToFa
+                              ? const Color(0xFFB47FFF)
+                              : theme.accent;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: GestureDetector(
+                          onTap: () => onModeToggled(m),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: sel
+                                  ? chipColor.withOpacity(0.15)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: sel
+                                    ? chipColor.withOpacity(0.8)
+                                    : theme.borderMid,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 160),
+                                  child: Icon(
+                                    sel
+                                        ? Icons.check_box_rounded
+                                        : Icons.check_box_outline_blank_rounded,
+                                    key: ValueKey(sel),
+                                    size: 12,
+                                    color: sel ? chipColor : theme.textDim,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  m.label,
+                                  style: GoogleFonts.orbitron(
+                                    color: sel ? chipColor : theme.textDim,
+                                    fontSize: 8,
+                                    letterSpacing: 1.5,
+                                    fontWeight: sel
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
                 ),
               ),
             ),
@@ -681,6 +1269,9 @@ class _ChallengeBody extends StatelessWidget {
   final int queueTotal;
   final _GradeResult? gradeResult;
   final bool submitted;
+  final int wrongAttempts;
+  final bool answerRevealed;
+  final int maxTries;
   final TextEditingController regexInputCtrl;
   final FocusNode regexInputFocus;
   final void Function(
@@ -698,6 +1289,9 @@ class _ChallengeBody extends StatelessWidget {
     required this.queueTotal,
     required this.gradeResult,
     required this.submitted,
+    required this.wrongAttempts,
+    required this.answerRevealed,
+    required this.maxTries,
     required this.regexInputCtrl,
     required this.regexInputFocus,
     required this.onPlayerFaChanged,
@@ -731,22 +1325,23 @@ class _ChallengeBody extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // Input area (drawing canvas for REGEX→DFA, text field for DFA→REGEX)
+          // Input area (drawing canvas for REGEX→DFA / DESCRIBE→FA, text field for DFA→REGEX)
           Expanded(
-            child: mode == _PracticeMode.regexToDfa
-                ? _DfaDrawingArea(
-                    challenge: challenge,
-                    submitted: submitted,
-                    gradeResult: gradeResult,
-                    onFaChanged: onPlayerFaChanged,
-                    theme: theme,
-                  )
-                : _RegexInputArea(
+            child: mode == _PracticeMode.dfaToRegex
+                ? _RegexInputArea(
                     challenge: challenge,
                     controller: regexInputCtrl,
                     focusNode: regexInputFocus,
                     submitted: submitted,
                     gradeResult: gradeResult,
+                    theme: theme,
+                  )
+                : _DfaDrawingArea(
+                    challenge: challenge,
+                    submitted: submitted,
+                    gradeResult: gradeResult,
+                    answerRevealed: answerRevealed,
+                    onFaChanged: onPlayerFaChanged,
                     theme: theme,
                   ),
           ),
@@ -759,6 +1354,9 @@ class _ChallengeBody extends StatelessWidget {
               result: gradeResult!,
               challenge: challenge,
               mode: mode,
+              wrongAttempts: wrongAttempts,
+              answerRevealed: answerRevealed,
+              maxTries: maxTries,
               theme: theme,
             ),
 
@@ -768,6 +1366,9 @@ class _ChallengeBody extends StatelessWidget {
           _ActionRow(
             submitted: submitted,
             gradeResult: gradeResult,
+            answerRevealed: answerRevealed,
+            wrongAttempts: wrongAttempts,
+            maxTries: maxTries,
             onSubmit: onSubmit,
             onSkip: onSkip,
             theme: theme,
@@ -861,7 +1462,9 @@ class _ChallengeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final accentColor = mode == _PracticeMode.regexToDfa
         ? theme.accent
-        : theme.accentGreen;
+        : mode == _PracticeMode.describeToFa
+            ? const Color(0xFFB47FFF)
+            : theme.accentGreen;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -938,6 +1541,35 @@ class _ChallengeCard extends StatelessWidget {
                 ),
               ),
             ),
+          ] else if (mode == _PracticeMode.describeToFa) ...[
+            // DESCRIBE → FA: show the plain-language description
+            Text(
+              'LANGUAGE DESCRIPTION',
+              style: GoogleFonts.orbitron(
+                color: theme.textDim,
+                fontSize: 8,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFB47FFF).withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFFB47FFF).withOpacity(0.25)),
+              ),
+              child: Text(
+                challenge.description ?? '',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFFD4AAFF),
+                  fontSize: 14,
+                  height: 1.55,
+                ),
+              ),
+            ),
           ] else ...[
             // DFA→REGEX: no description shown — alphabet is the only hint
             Text(
@@ -976,9 +1608,9 @@ class _ChallengeCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                mode == _PracticeMode.regexToDfa
-                    ? Icons.edit_outlined
-                    : Icons.keyboard_outlined,
+                mode == _PracticeMode.dfaToRegex
+                    ? Icons.keyboard_outlined
+                    : Icons.edit_outlined,
                 color: theme.textDim,
                 size: 14,
               ),
@@ -987,7 +1619,9 @@ class _ChallengeCard extends StatelessWidget {
                 child: Text(
                   mode == _PracticeMode.regexToDfa
                       ? 'Draw a DFA on the canvas below whose language equals this regex.'
-                      : 'Type a regular expression below that describes exactly this language.',
+                      : mode == _PracticeMode.describeToFa
+                          ? 'Draw a DFA on the canvas below whose language matches the description above.'
+                          : 'Type a regular expression below that describes exactly this language.',
                   style: GoogleFonts.sourceCodePro(
                     color: theme.textDim,
                     fontSize: 11,
@@ -1014,6 +1648,7 @@ class _DfaDrawingArea extends StatefulWidget {
   final _Challenge challenge;
   final bool submitted;
   final _GradeResult? gradeResult;
+  final bool answerRevealed;
   final void Function(
           Map<String, NodeData>, Map<String, LineData>, StartArrowData?)
       onFaChanged;
@@ -1024,6 +1659,7 @@ class _DfaDrawingArea extends StatefulWidget {
     required this.challenge,
     required this.submitted,
     required this.gradeResult,
+    required this.answerRevealed,
     required this.onFaChanged,
     required this.theme,
   });
@@ -1053,6 +1689,42 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
+    final answerRevealed = widget.answerRevealed;
+
+    // When the answer is revealed, swap to a read-only view of the correct DFA.
+    if (answerRevealed) {
+      return Container(
+        decoration: BoxDecoration(
+          color: theme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFFB300).withOpacity(0.5), width: 1.5),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: _ReadOnlyDfaPreview(
+                regex: widget.challenge.regex,
+                alphabet: widget.challenge.alphabet,
+                theme: theme,
+              ),
+            ),
+            Positioned(
+              top: 10,
+              right: 14,
+              child: Text(
+                'CORRECT DFA  (read-only)',
+                style: GoogleFonts.orbitron(
+                  color: const Color(0xFFFFB300).withOpacity(0.7),
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -1369,12 +2041,18 @@ class _FeedbackBanner extends StatelessWidget {
   final _GradeResult result;
   final _Challenge challenge;
   final _PracticeMode mode;
+  final int wrongAttempts;
+  final bool answerRevealed;
+  final int maxTries;
   final AppThemeNotifier theme;
 
   const _FeedbackBanner({
     required this.result,
     required this.challenge,
     required this.mode,
+    required this.wrongAttempts,
+    required this.answerRevealed,
+    required this.maxTries,
     required this.theme,
   });
 
@@ -1397,20 +2075,57 @@ class _FeedbackBanner extends StatelessWidget {
         title: 'Correct!',
         body: mode == _PracticeMode.regexToDfa
             ? 'Your DFA is equivalent to  ${challenge.regex}.'
-            : 'Your regex describes the same language.',
+            : mode == _PracticeMode.describeToFa
+                ? 'Your FA correctly captures the described language!'
+                : 'Your regex describes the same language.',
         theme: theme,
       );
     }
 
-    // Wrong — show counterexample
+    // Wrong — show counterexample and either tries-remaining or the answer.
     final ce = result.counterexample ?? '';
     final ceDisplay = ce.isEmpty ? 'ε (empty string)' : '"$ce"';
+    final triesLeft = maxTries - wrongAttempts;
+
+    if (answerRevealed) {
+      // 3 tries exhausted — show the canonical answer.
+      final answerText = mode == _PracticeMode.dfaToRegex
+          ? 'A correct regex for this language is:\n  ${challenge.regex}'
+          : 'The correct FA has been loaded on the canvas above — study it, then move on.';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Banner(
+            icon: Icons.close_rounded,
+            color: theme.error,
+            title: 'Not quite — counterexample: $ceDisplay',
+            body: 'Your machine and the target disagree on this string.',
+            theme: theme,
+          ),
+          const SizedBox(height: 8),
+          _Banner(
+            icon: Icons.lightbulb_outline_rounded,
+            color: const Color(0xFFFFB300),
+            title: 'Answer revealed (3/3 tries used)',
+            body: answerText,
+            theme: theme,
+          ),
+        ],
+      );
+    }
+
+    // Still has tries left.
+    final triesMsg = triesLeft == 1
+        ? '1 try remaining — next wrong answer will reveal the solution.'
+        : '$triesLeft tries remaining.';
+
     return _Banner(
       icon: Icons.close_rounded,
       color: theme.error,
-      title: 'Not quite',
-      body:
-          'Counterexample: $ceDisplay\nYour machine and the target disagree on this string. Check it and try again.',
+      title: 'Not quite — try ${wrongAttempts + 1} / $maxTries',
+      body: 'Counterexample: $ceDisplay\n'
+          'Your machine and the target disagree on this string. Check it and try again.\n'
+          '$triesMsg',
       theme: theme,
     );
   }
@@ -1483,6 +2198,9 @@ class _Banner extends StatelessWidget {
 class _ActionRow extends StatelessWidget {
   final bool submitted;
   final _GradeResult? gradeResult;
+  final bool answerRevealed;
+  final int wrongAttempts;
+  final int maxTries;
   final VoidCallback onSubmit;
   final VoidCallback onSkip;
   final AppThemeNotifier theme;
@@ -1490,6 +2208,9 @@ class _ActionRow extends StatelessWidget {
   const _ActionRow({
     required this.submitted,
     required this.gradeResult,
+    required this.answerRevealed,
+    required this.wrongAttempts,
+    required this.maxTries,
     required this.onSubmit,
     required this.onSkip,
     required this.theme,
@@ -1531,16 +2252,27 @@ class _ActionRow extends StatelessWidget {
       );
     }
 
-    // Wrong → "Try Again" + Skip
+    // Answer revealed after 3 wrong tries → only "Next Challenge"
+    if (submitted && answerRevealed) {
+      return _Btn(
+        label: 'NEXT CHALLENGE',
+        icon: Icons.arrow_forward_rounded,
+        color: const Color(0xFFFFB300),
+        onTap: onSubmit,
+      );
+    }
+
+    // Wrong but tries remaining → "Try Again" (re-submits) + Skip
     if (submitted && gradeResult != null) {
+      final triesLeft = maxTries - wrongAttempts;
       return Row(
         children: [
           Expanded(
             child: _Btn(
-              label: 'TRY AGAIN',
+              label: 'TRY AGAIN  ($triesLeft left)',
               icon: Icons.refresh_rounded,
               color: theme.error,
-              onTap: onSkip, // go to next
+              onTap: onSubmit,
             ),
           ),
           const SizedBox(width: 12),
