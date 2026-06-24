@@ -28,7 +28,7 @@ import 'game_progress_store.dart';
 
 // ── App mode enum ─────────────────────────────────────────────────────────────
 
-enum _AppMode { none, sandbox, game }
+enum _AppMode { none, sandbox, game, study }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -135,6 +135,7 @@ class _AppGateState extends State<AppGate> {
       return _ModeSelectScreen(
         onSandbox: () => setState(() => _mode = _AppMode.sandbox),
         onGame: () => setState(() => _mode = _AppMode.game),
+        onStudy: () => setState(() => _mode = _AppMode.study),
         onSignOut: _handleSignOut,
         isGuest: widget.authService.isGuest,
         progressStore: _progressStore!,
@@ -152,14 +153,20 @@ class _AppGateState extends State<AppGate> {
       );
     }
 
+    // Study
+    if (_mode == _AppMode.study) {
+      return StudyModeScreen(
+        progressStore: _progressStore!,
+        onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
+        onGoToStudy: () => setState(() => _mode = _AppMode.study),
+      );
+    }
+
     // Game
     return LevelSelectScreen(
       progressStore: _progressStore!,
       onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
-      onGoToStudy: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const StudyModeScreen()),
-      ),
+      onGoToStudy: () => setState(() => _mode = _AppMode.study),
     );
   }
 }
@@ -171,6 +178,7 @@ class _AppGateState extends State<AppGate> {
 class _ModeSelectScreen extends StatefulWidget {
   final VoidCallback onSandbox;
   final VoidCallback onGame;
+  final VoidCallback onStudy;
   final Future<void> Function() onSignOut;
   final bool isGuest;
   final GameProgressStore progressStore;
@@ -178,6 +186,7 @@ class _ModeSelectScreen extends StatefulWidget {
   const _ModeSelectScreen({
     required this.onSandbox,
     required this.onGame,
+    required this.onStudy,
     required this.onSignOut,
     required this.isGuest,
     required this.progressStore,
@@ -292,6 +301,19 @@ class _ModeSelectScreenState extends State<_ModeSelectScreen>
                         pulseAnim: _pulseCtrl,
                         onTap: widget.onGame,
                         featured: true,
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      _ModeCard(
+                        icon: Icons.menu_book_rounded,
+                        title: 'STUDY MODE',
+                        subtitle:
+                            'Learn automata theory.\nInteractive lessons & examples.',
+                        accent: theme.accent,
+                        subtitleColor: theme.textMid,
+                        pulseAnim: _pulseCtrl,
+                        onTap: widget.onStudy,
                       ),
 
                       const Spacer(),

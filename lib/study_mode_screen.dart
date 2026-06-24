@@ -1,666 +1,514 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  Level Select Screen — horizontal neural-network layout
+//  study_mode_screen.dart
 //
-//  Changes from original:
-//  • Removed column labels (Foundation, Basics, etc.) — they didn't match the
-//    actual level groupings and their overlay was intercepting touch events,
-//    breaking the sandbox button.
-//  • Sandbox button now works correctly.
-//  • All edges are thicker and brighter overall for legibility.
-//  • New "partial prereqs" edge state (amber): THIS prereq is done, but the
-//    destination level is still locked because other prereqs are missing.
-//  • New "missing prereq" edge state (pulsing orange, dashed): THIS is the
-//    specific prereq blocking an otherwise almost-unlocked level — draws
-//    attention to exactly what the player needs to do next.
-//  • Multi-column edges are routed above or below intermediate nodes so they
-//    never visually pass through unrelated level cards.
-//  • Arrowheads are larger and arrows always drawn (not gated by entryValue).
-//  • Scroll slider in the top bar: drag it to pan the canvas horizontally.
-//    The slider also updates as the canvas is scrolled by touch/trackpad.
+//  Interactive practice mode — generates unlimited regex↔DFA challenges
+//  that are separate from the main game.  Two modes, selectable from the
+//  top bar:
+//
+//    REGEX → DFA   Show a regular expression; player draws the equivalent DFA.
+//                  Checked with FA equivalence (same as game mode).
+//
+//    DFA → REGEX   Show a read-only DFA; player types an equivalent regex.
+//                  Checked with FA equivalence.
+//
+//  Challenges are drawn from a curated pool of (regex, alphabet) pairs that
+//  span easy → hard.  Each round the pool is shuffled; when exhausted it
+//  reshuffles so practice never ends.  No flashcards, no self-grading —
+//  every round has a real machine-checked answer.
+//
+//  The puzzle UX reuses the same widget structure the game puzzle screen uses
+//  so the interaction is identical: the automata_screen canvas for drawing,
+//  the FA-equivalence checker for grading.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import 'fa_equivalence.dart';
+import 'fa_to_regex.dart';
 import 'game_level.dart';
-import 'game_progress_store.dart';
-import 'game_puzzle.dart';
-import 'tutorial_screen.dart';
+import 'models.dart';
+import 'regex_engine.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/app_theme_settings.dart';
+import 'widgets/automata_drawer.dart' show AutomataMode;
+import 'widgets/automata_canvas_embed.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Layout constants
+//  Challenge pool
 // ─────────────────────────────────────────────────────────────────────────────
 
-const double _kNodeW = 148.0;
-const double _kNodeH = 88.0;
-const double _kColGap = 220.0;
-const double _kRowGap = 140.0;
-const double _kTopPad = 96.0;
-const double _kBotPad = 80.0;
-const double _kLegendH = 58.0;
-const double _kSidePad = 120.0;
-const double _kMinRowPad = 20.0;
+class _Challenge {
+  final String regex;
+  final Set<String> alphabet;
+  final _Difficulty difficulty;
+
+  const _Challenge({
+    required this.regex,
+    required this.alphabet,
+    required this.difficulty,
+  });
+}
+
+enum _Difficulty { easy, medium, hard }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Position helpers
+//  Procedural challenge generator
+//
+//  Builds a fresh shuffled list of _Challenge objects on demand.
+//  Regexes are assembled from parameterised templates so each call produces
+//  a different ordering and, for templates that accept substitutable symbols,
+//  different concrete expressions.
 // ─────────────────────────────────────────────────────────────────────────────
 
-int _colIndex(double x) {
-  if (x < 0.15) return 0;
-  if (x < 0.28) return 1;
-  if (x < 0.42) return 2;
-  if (x < 0.56) return 3;
-  if (x < 0.68) return 4;
-  if (x < 0.78) return 5;
-  if (x < 0.88) return 6;
-  return 7;
+/// All alphabets the generator may pick from.
+const _kAlphabets = [
+  {'a', 'b'},
+  {'0', '1'},
+  {'x', 'y'},
+  {'p', 'q'},
+];
+
+/// Generates a fresh list of [count] randomised challenges.
+List<_Challenge> _generateChallenges(Random rng, {int count = 30}) {
+  final results = <_Challenge>[];
+
+  // Each entry is a factory that takes (rng, alphabet) and returns a regex.
+  // Factories that don't need both symbols only use the first/second element.
+  final alphabets = List.of(_kAlphabets)..shuffle(rng);
+
+  // We'll cycle through alphabets and difficulty buckets.
+  final easyTemplates   = _kEasyTemplates;
+  final mediumTemplates = _kMediumTemplates;
+  final hardTemplates   = _kHardTemplates;
+
+  // Shuffle each bucket independently.
+  final easy   = List.of(easyTemplates)..shuffle(rng);
+  final medium = List.of(mediumTemplates)..shuffle(rng);
+  final hard   = List.of(hardTemplates)..shuffle(rng);
+
+  // Interleave difficulties ~30/40/30 over [count] items.
+  final targets = [
+    (_Difficulty.easy,   (count * 0.30).round()),
+    (_Difficulty.medium, (count * 0.40).round()),
+    (_Difficulty.hard,   count - (count * 0.30).round() - (count * 0.40).round()),
+  ];
+
+  for (final (diff, n) in targets) {
+    final pool = switch (diff) {
+      _Difficulty.easy   => easy,
+      _Difficulty.medium => medium,
+      _Difficulty.hard   => hard,
+    };
+    for (int i = 0; i < n; i++) {
+      final template = pool[i % pool.length];
+      final alphabet = alphabets[rng.nextInt(alphabets.length)];
+      final symbols  = alphabet.toList()..sort();
+      final a = symbols[0];
+      final b = symbols.length > 1 ? symbols[1] : symbols[0];
+      results.add(_Challenge(
+        regex:      template(a, b, rng),
+        alphabet:   alphabet,
+        difficulty: diff,
+      ));
+    }
+  }
+
+  results.shuffle(rng);
+  return results;
 }
 
-Map<String, Offset> _buildPositions(List<GameLevel> levels, double canvasH) {
-  final Map<int, List<GameLevel>> cols = {};
-  for (final l in levels) {
-    final c = _colIndex(l.x);
-    cols.putIfAbsent(c, () => []).add(l);
-  }
-  final Map<String, Offset> result = {};
-  for (final entry in cols.entries) {
-    final colIdx = entry.key;
-    final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
-    final cx = _kSidePad + colIdx * _kColGap;
-    final count = members.length;
-    final minRequired = count * _kNodeH + (count - 1) * _kMinRowPad;
-    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    final totalSpan = minRequired > usableH ? minRequired : usableH;
-    final gap = count > 1 ? totalSpan / (count - 1) : 0.0;
-    final blockH = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = _kTopPad + (usableH - blockH) / 2.0;
-    for (int i = 0; i < count; i++) {
-      final cy = count == 1 ? _kTopPad + usableH / 2.0 : topOffset + i * gap;
-      result[members[i].id] = Offset(cx, cy);
-    }
-  }
-  return result;
+// Template signature: (firstSymbol, secondSymbol, rng) → regex string.
+typedef _RegexTemplate = String Function(String a, String b, Random rng);
+
+// ── Easy templates ────────────────────────────────────────────────────────────
+const List<_RegexTemplate> _kEasyTemplates = [
+  // Single symbol
+  _tSingle,
+  // Exact two-symbol string
+  _tExactTwo,
+  // Union of two symbols
+  _tUnionTwo,
+  // Star of first symbol
+  _tStarA,
+  // Star of union
+  _tStarUnion,
+  // First symbol then star of second
+  _tABStar,
+  // Star of first then second
+  _tStarAB,
+  // Optional single symbol
+  _tOptional,
+  // Exact three-symbol string
+  _tExactThree,
+  // Two-symbol string or empty
+  _tTwoOrEps,
+];
+
+String _tSingle(String a, String b, Random rng)      => rng.nextBool() ? a : b;
+String _tExactTwo(String a, String b, Random rng)    => '$a$b';
+String _tUnionTwo(String a, String b, Random rng)    => '$a+$b';
+String _tStarA(String a, String b, Random rng)       => '$a*';
+String _tStarUnion(String a, String b, Random rng)   => '($a+$b)*';
+String _tABStar(String a, String b, Random rng)      => '$a$b*';
+String _tStarAB(String a, String b, Random rng)      => '$a*$b';
+String _tOptional(String a, String b, Random rng)    => rng.nextBool() ? '$a?' : '$b?';
+String _tExactThree(String a, String b, Random rng)  {
+  final s = [a, b, a];
+  if (rng.nextBool()) s[1] = a;
+  return s.join();
+}
+String _tTwoOrEps(String a, String b, Random rng)    => '($a$b)?';
+
+// ── Medium templates ──────────────────────────────────────────────────────────
+const List<_RegexTemplate> _kMediumTemplates = [
+  _tEndsWith,
+  _tStartsWith,
+  _tContainsSub,
+  _tExactlyOneB,
+  _tRepeatPair,
+  _tEvenCountA,
+  _tStarAStar,
+  _tEvenLength,
+  _tNotEmpty,
+  _tAtLeastTwo,
+];
+
+String _tEndsWith(String a, String b, Random rng)    => '($a+$b)*$b';
+String _tStartsWith(String a, String b, Random rng)  => '$a($a+$b)*';
+String _tContainsSub(String a, String b, Random rng) => '($a+$b)*$a$b($a+$b)*';
+String _tExactlyOneB(String a, String b, Random rng) => '$a*$b$a*';
+String _tRepeatPair(String a, String b, Random rng)  => '($a$b)*';
+String _tEvenCountA(String a, String b, Random rng)  => '$b*($a$b*$a$b*)*';
+String _tStarAStar(String a, String b, Random rng)   => '$a*$b*';
+String _tEvenLength(String a, String b, Random rng)  => '(($a+$b)($a+$b))*';
+String _tNotEmpty(String a, String b, Random rng)    => '($a+$b)($a+$b)*';
+String _tAtLeastTwo(String a, String b, Random rng)  =>
+    '($a+$b)*$a($a+$b)*$a($a+$b)*';
+
+// ── Hard templates ────────────────────────────────────────────────────────────
+const List<_RegexTemplate> _kHardTemplates = [
+  _tContainsLength3Sub,
+  _tStartsWith2,
+  _tThirdFromEnd,
+  _tEvenBothCounts,
+  _tComplexSuffix,
+  _tRepeatTriple,
+  _tOddLength,
+  _tContainsDouble,
+  _tAtLeastThree,
+  _tMixedSuffix,
+];
+
+String _tContainsLength3Sub(String a, String b, Random rng) {
+  final sub = rng.nextBool() ? '$a$b$a' : '$b$a$b';
+  return '($a+$b)*$sub($a+$b)*';
+}
+String _tStartsWith2(String a, String b, Random rng)   => '$a$b($a+$b)*';
+String _tThirdFromEnd(String a, String b, Random rng)  =>
+    '($a+$b)*$a($a+$b)($a+$b)';
+String _tEvenBothCounts(String a, String b, Random rng) =>
+    '($a$a+$b$b+($a$b+$b$a)($a$a+$b$b)*($a$b+$b$a))*';
+String _tComplexSuffix(String a, String b, Random rng)  =>
+    '$a*($b$a+)*$b?';
+String _tRepeatTriple(String a, String b, Random rng)   => '($a$b$a)*';
+String _tOddLength(String a, String b, Random rng)      =>
+    '($a+$b)(($a+$b)($a+$b))*';
+String _tContainsDouble(String a, String b, Random rng) {
+  final sym = rng.nextBool() ? a : b;
+  return '($a+$b)*$sym$sym($a+$b)*';
+}
+String _tAtLeastThree(String a, String b, Random rng)   =>
+    '($a+$b)*$a($a+$b)*$a($a+$b)*$a($a+$b)*';
+String _tMixedSuffix(String a, String b, Random rng)    =>
+    '($a+$b)*($a$b+$b$a)($a+$b)*';
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Practice mode enum
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _PracticeMode {
+  regexToDfa('REGEX → DFA', Icons.functions),
+  dfaToRegex('DFA → REGEX', Icons.account_tree_outlined);
+
+  const _PracticeMode(this.label, this.icon);
+  final String label;
+  final IconData icon;
 }
 
-double _canvasWidth(List<GameLevel> levels) {
-  int maxCol = 0;
-  for (final l in levels) {
-    final c = _colIndex(l.x);
-    if (c > maxCol) maxCol = c;
-  }
-  return _kSidePad * 2 + maxCol * _kColGap + _kNodeW;
+// ─────────────────────────────────────────────────────────────────────────────
+//  Result of grading a player's attempt
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GradeResult {
+  final bool correct;
+  final String? counterexample; // null when correct
+  final String? error;          // parse / build error
+
+  const _GradeResult.correct()
+      : correct = true,
+        counterexample = null,
+        error = null;
+
+  const _GradeResult.wrong(this.counterexample)
+      : correct = false,
+        error = null;
+
+  const _GradeResult.parseError(this.error)
+      : correct = false,
+        counterexample = null;
 }
-
-double _canvasHeight(List<GameLevel> levels, double screenH) => screenH;
-
-double _canvasWidthFromPositions(Map<String, Offset> positions) {
-  final maxX = positions.values.fold<double>(0.0, (cur, p) => max(cur, p.dx));
-  return maxX + _kNodeW / 2 + _kSidePad;
-}
-
-Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
-  final Map<String, List<String>> adj = {for (var l in levels) l.id: []};
-  final Map<String, int> indeg = {for (var l in levels) l.id: 0};
-
-  List<String> depsOf(UnlockRule rule) {
-    if (rule is AlwaysUnlocked) return [];
-    if (rule is RequireLevel) return [rule.levelId];
-    if (rule is RequireAll) return rule.levelIds;
-    if (rule is RequireAny) return rule.levelIds;
-    if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
-    return [];
-  }
-
-  for (final l in levels) {
-    final deps = depsOf(l.unlockRule);
-    for (final d in deps) {
-      if (!adj.containsKey(d)) continue;
-      adj[d] = [...adj[d]!, l.id];
-      indeg[l.id] = indeg[l.id]! + 1;
-    }
-  }
-
-  final List<String> q = [];
-  final Map<String, int> layer = {for (var l in levels) l.id: 0};
-  for (final id in indeg.keys) {
-    if (indeg[id] == 0) q.add(id);
-  }
-
-  while (q.isNotEmpty) {
-    final cur = q.removeAt(0);
-    for (final next in adj[cur]!) {
-      layer[next] = max(layer[next]!, layer[cur]! + 2);
-      indeg[next] = indeg[next]! - 1;
-      if (indeg[next] == 0) q.add(next);
-    }
-  }
-
-  int maxAssigned = layer.values.fold(0, (a, b) => a > b ? a : b);
-  for (final id in indeg.keys) {
-    if (indeg[id]! > 0) {
-      maxAssigned += 1;
-      layer[id] = maxAssigned;
-    }
-  }
-  return layer;
-}
-
-Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double canvasH) {
-  final layerById = _computeLayersFromDeps(levels);
-  List<String> _extractLevelDependencies(GameLevel level) {
-  List<String> extract(UnlockRule rule) {
-    if (rule is AlwaysUnlocked) return [];
-    if (rule is RequireLevel) return [rule.levelId];
-    if (rule is RequireAll) return rule.levelIds;
-    if (rule is RequireAny) return rule.levelIds;
-    if (rule is RequireExpression) {
-      return rule.children.expand(extract).toList();
-    }
-    return [];
-  }
-
-  return extract(level.unlockRule);
-}
-
-  final Map<int, List<GameLevel>> cols = {};
-  for (final l in levels) {
-    final c = layerById[l.id] ?? 0;
-    cols.putIfAbsent(c, () => []).add(l);
-  }
-
-  final Map<String, Offset> result = {};
-  for (final entry in cols.entries) {
-    final colIdx = entry.key;
-    final members = [...entry.value];
-
-members.sort((a, b) {
-  double barycenter(GameLevel level) {
-    final deps = _extractLevelDependencies(level);
-
-    if (deps.isEmpty) {
-      return level.y;
-    }
-
-    double sum = 0;
-    int count = 0;
-
-    for (final depId in deps) {
-      final dep = kLevelById[depId];
-      if (dep != null) {
-        sum += dep.y;
-        count++;
-      }
-    }
-
-    return count == 0 ? level.y : sum / count;
-  }
-
-  return barycenter(a).compareTo(barycenter(b));
-});
-    final cx = _kSidePad + colIdx * _kColGap;
-    final count = members.length;
-    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    final gap = count > 1 ? min(_kRowGap, usableH / (count - 1)) : 0.0;
-    final totalSpan = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = count > 1 ? _kTopPad + (usableH - totalSpan) / 2.0 : _kTopPad + usableH / 2.0;
-    for (int i = 0; i < count; i++) {
-      final cy = topOffset + (count == 1 ? 0.0 : i * gap);
-      result[members[i].id] = Offset(cx, cy);
-    }
-  }
-  return result;
-}
-
-// Helper defaults for optional constructor params
-void _noop() {}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  StudyModeScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
 class StudyModeScreen extends StatefulWidget {
-  final GameProgressStore? progressStore;
+  /// Called when the user taps "SANDBOX" — navigate to the free-canvas screen.
   final VoidCallback onGoToSandbox;
-  final VoidCallback? onGoToStudy;
 
-  const StudyModeScreen({super.key, this.progressStore, VoidCallback? onGoToSandbox, this.onGoToStudy})
-      : onGoToSandbox = onGoToSandbox ?? _noop;
+  // Kept for API compat with old callers.
+  final VoidCallback? onGoToStudy;
+  final dynamic progressStore; // GameProgressStore? — not used here
+
+  const StudyModeScreen({
+    super.key,
+    VoidCallback? onGoToSandbox,
+    this.onGoToStudy,
+    this.progressStore,
+  }) : onGoToSandbox = onGoToSandbox ?? _noop;
 
   @override
   State<StudyModeScreen> createState() => _StudyModeScreenState();
 }
 
-class _StudyModeScreenState extends State<StudyModeScreen> with TickerProviderStateMixin {
-  late final AnimationController _pulseCtrl;
-  late final AnimationController _flowCtrl;
+void _noop() {}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StudyModeScreenState extends State<StudyModeScreen>
+    with TickerProviderStateMixin {
+  final _rng = Random();
+
+  _PracticeMode _mode = _PracticeMode.regexToDfa;
+
+  // The working queue — a shuffled copy of _kPool.
+  late List<_Challenge> _queue;
+  int _queueIndex = 0;
+
+  // Session counters
+  int _attempted = 0;
+  int _correct = 0;
+
+  // Per-round state
+  _GradeResult? _gradeResult;
+  bool _submitted = false;
+
+  // For DFA → REGEX: player types a regex into this controller.
+  final TextEditingController _regexInputCtrl = TextEditingController();
+  final FocusNode _regexInputFocus = FocusNode();
+
+  // For REGEX → DFA: player draws on an embedded mini-canvas.
+  // We represent their drawn FA here; the embedded canvas writes into these.
+  Map<String, NodeData> _playerNodes = {};
+  Map<String, LineData> _playerLines = {};
+  StartArrowData? _playerStart;
+
+  // Entry animation
   late final AnimationController _entryCtrl;
-
-  final ScrollController _scrollCtrl = ScrollController();
-  double _scrollFraction = 0.0; // 0..1, drives the top-bar slider
-
-  // ── Cheat-code (keyboard) ─────────────────────────────────────────────────
-  /// Accumulates physical keyboard characters typed anywhere on this screen.
-  String _cheatBuffer = '';
-  /// Clear the buffer 3 s after the last keystroke so stray presses don't linger.
-  Timer? _cheatTimer;
-  final FocusNode _cheatFocus = FocusNode();
-
-  /// Tracks which difficulty the player is currently viewing.
-  /// Completion badges and the progress counter reflect this selection.
-  LevelDifficulty _difficulty = LevelDifficulty.hard;
-
-  /// Completed IDs for the *currently selected* difficulty.
-  Set<String> _completed = {};
-
-  /// Union of all completed IDs across both difficulties — used for unlock
-  /// evaluation so completing on either difficulty counts toward prerequisites.
-  Set<String> _completedAny = {};
 
   @override
   void initState() {
     super.initState();
-    _loadCompleted();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..forward();
 
-    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
-    _flowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
-    _entryCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..forward();
-
-    _scrollCtrl.addListener(() {
-      if (!_scrollCtrl.hasClients) return;
-      final max = _scrollCtrl.position.maxScrollExtent;
-      if (max <= 0) return;
-      final fraction = (_scrollCtrl.offset / max).clamp(0.0, 1.0);
-      if ((fraction - _scrollFraction).abs() > 0.001) {
-        setState(() => _scrollFraction = fraction);
-      }
-    });
-
-    // Grab focus so keyboard events are captured immediately.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _cheatFocus.requestFocus();
-    });
+    _buildQueue();
   }
 
   @override
   void dispose() {
-    _pulseCtrl.dispose();
-    _flowCtrl.dispose();
+    _regexInputCtrl.dispose();
+    _regexInputFocus.dispose();
     _entryCtrl.dispose();
-    _scrollCtrl.dispose();
-    _cheatFocus.dispose();
-    _cheatTimer?.cancel();
     super.dispose();
   }
 
-  void _loadCompleted() {
+  // ── Queue management ──────────────────────────────────────────────────────
+
+  void _buildQueue() {
+    _queue = _generateChallenges(_rng);
+    _queueIndex = 0;
+  }
+
+  _Challenge get _current => _queue[_queueIndex];
+
+  void _nextChallenge() {
+    _queueIndex++;
+    if (_queueIndex >= _queue.length) _buildQueue();
+
     setState(() {
-      _completed = widget.progressStore?.loadCompletedLevels(_difficulty) ?? {};
-      _completedAny = (widget.progressStore?.loadCompletedLevels(LevelDifficulty.hard) ?? {})
-        ..addAll(widget.progressStore?.loadCompletedLevels(LevelDifficulty.easy) ?? {});
+      _gradeResult = null;
+      _submitted = false;
+      _playerNodes = {};
+      _playerLines = {};
+      _playerStart = null;
+      _regexInputCtrl.clear();
+    });
+
+    _entryCtrl
+      ..reset()
+      ..forward();
+  }
+
+  void _switchMode(_PracticeMode mode) {
+    if (mode == _mode) return;
+    setState(() {
+      _mode = mode;
+      _gradeResult = null;
+      _submitted = false;
+      _playerNodes = {};
+      _playerLines = {};
+      _playerStart = null;
+      _regexInputCtrl.clear();
+    });
+    _buildQueue();
+    _entryCtrl
+      ..reset()
+      ..forward();
+  }
+
+  // ── Grading ───────────────────────────────────────────────────────────────
+
+  /// Grade the player's DFA against the target regex (REGEX → DFA mode).
+  _GradeResult _gradePlayerDfa() {
+    if (_playerStart == null || _playerNodes.isEmpty) {
+      return const _GradeResult.parseError('Draw some states first, then hit Check.');
+    }
+
+    // Build target DFA from the challenge regex.
+    final targetResult = regexToDfa(_current.regex.replaceAll(' ', ''));
+    if (targetResult.isError) {
+      return _GradeResult.parseError('Internal error: ${targetResult.error}');
+    }
+
+    // Compare player FA to target FA.
+    final eq = checkEquivalence(
+      nodes1: _playerNodes,
+      lines1: _playerLines,
+      startArrow1: _playerStart,
+      nodes2: targetResult.nodes,
+      lines2: targetResult.lines,
+      startArrow2: targetResult.startArrow,
+    );
+
+    if (eq.status == EquivalenceStatus.equivalent) return const _GradeResult.correct();
+    return _GradeResult.wrong(eq.witness);
+  }
+
+  /// Grade the player's regex string against the target DFA (DFA → REGEX mode).
+  _GradeResult _gradePlayerRegex() {
+    final raw = _regexInputCtrl.text.trim();
+    if (raw.isEmpty) {
+      return const _GradeResult.parseError('Type a regular expression first.');
+    }
+
+    // Build player NFA from their typed regex.
+    final playerResult = regexToNfa(raw);
+    if (playerResult.isError) {
+      return _GradeResult.parseError('Parse error: ${playerResult.error}');
+    }
+
+    // Build target DFA from the challenge's canonical regex.
+    final targetResult = regexToDfa(_current.regex.replaceAll(' ', ''));
+    if (targetResult.isError) {
+      return _GradeResult.parseError('Internal error building target.');
+    }
+
+    final eq = checkEquivalence(
+      nodes1: playerResult.nodes,
+      lines1: playerResult.lines,
+      startArrow1: playerResult.startArrow,
+      nodes2: targetResult.nodes,
+      lines2: targetResult.lines,
+      startArrow2: targetResult.startArrow,
+    );
+
+    if (eq.status == EquivalenceStatus.equivalent) return const _GradeResult.correct();
+    return _GradeResult.wrong(eq.witness);
+  }
+
+  void _submit() {
+    final result = _mode == _PracticeMode.regexToDfa
+        ? _gradePlayerDfa()
+        : _gradePlayerRegex();
+
+    setState(() {
+      _gradeResult = result;
+      _submitted = true;
+      if (result.error == null) _attempted++;
+      if (result.correct) _correct++;
     });
   }
 
-  void _reload() => _loadCompleted();
-
-  // ── Cheat code logic ──────────────────────────────────────────────────────
-
-  /// Valid cheat codes (case-insensitive).
-  static const _kCodeUnlockAll = 'UNLOCK_ALL';
-  static const _kCodeLockAll   = 'LOCK_ALL';
-
-  void _onCheatKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-    final ch = event.character;
-    if (ch == null || ch.isEmpty) {
-      // Non-printing key (Enter, Space, Backspace, etc.)  — treat Enter as submit.
-      if (event.logicalKey == LogicalKeyboardKey.enter) {
-        _tryCheatCode(_cheatBuffer.trim());
-      } else if (event.logicalKey == LogicalKeyboardKey.backspace && _cheatBuffer.isNotEmpty) {
-        setState(() => _cheatBuffer = _cheatBuffer.substring(0, _cheatBuffer.length - 1));
-      }
-      return;
-    }
-    // Accumulate only alphanumeric / underscore chars (to avoid accidental triggers
-    // from copy-paste shortcuts, arrow keys carrying characters on some platforms).
-    if (RegExp(r'[a-zA-Z0-9_]').hasMatch(ch)) {
-      setState(() => _cheatBuffer += ch.toUpperCase());
-    }
-    // Reset auto-clear timer.
-    _cheatTimer?.cancel();
-    _cheatTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _cheatBuffer = '');
-    });
-    // Auto-trigger when the buffer exactly matches a known code.
-    if (_cheatBuffer == _kCodeUnlockAll || _cheatBuffer == _kCodeLockAll) {
-      _cheatTimer?.cancel();
-      _tryCheatCode(_cheatBuffer);
-    }
-  }
-
-  Future<void> _tryCheatCode(String code) async {
-    final upper = code.toUpperCase().trim();
-    setState(() => _cheatBuffer = '');
-    _cheatTimer?.cancel();
-
-    if (upper == _kCodeUnlockAll) {
-      await _cheatUnlockAll();
-    } else if (upper == _kCodeLockAll) {
-      await _cheatLockAll();
-    } else if (code.isNotEmpty) {
-      // Unknown code — show a brief "unrecognised" toast.
-      if (!mounted) return;
-      _showCheatToast('Unknown code: "$code"', const Color(0xFFFF5252));
-    }
-  }
-
-  Future<void> _cheatUnlockAll() async {
-    for (final level in kAllLevels) {
-      await widget.progressStore?.markCompleted(level.id, LevelDifficulty.hard);
-      await widget.progressStore?.markCompleted(level.id, LevelDifficulty.easy);
-    }
-    _loadCompleted();
-    if (!mounted) return;
-    _showCheatToast('All ${kAllLevels.length} levels unlocked ✓', const Color(0xFF1FD99A));
-  }
-
-  Future<void> _cheatLockAll() async {
-    await widget.progressStore?.resetAll();
-    _loadCompleted();
-    if (!mounted) return;
-    _showCheatToast('Progress reset — all levels locked', const Color(0xFFFFB300));
-  }
-
-  void _showCheatToast(String message, Color color) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.terminal, color: color, size: 16),
-            const SizedBox(width: 10),
-            Text(
-              message,
-              style: GoogleFonts.courierPrime(color: color, fontSize: 13, letterSpacing: 0.5),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF0A0F1A),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: color.withOpacity(0.5)),
-        ),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  /// Opens the cheat-code dialog (triggered by long-pressing the title on mobile).
-  void _showCheatDialog() {
-    final ctrl = TextEditingController();
-    final theme = AppThemeNotifier.read(context);
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: theme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: theme.borderMid),
-        ),
-        title: Row(
-          children: [
-            Icon(Icons.terminal, color: theme.accent, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              'Enter Cheat Code',
-              style: GoogleFonts.courierPrime(color: theme.textLight, fontSize: 15),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              style: GoogleFonts.courierPrime(color: theme.textLight, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'e.g. UNLOCK_ALL',
-                hintStyle: GoogleFonts.courierPrime(color: theme.textDim, fontSize: 13),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: theme.borderMid),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: theme.accent, width: 1.5),
-                ),
-                filled: true,
-                fillColor: theme.bg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-              onSubmitted: (v) {
-                Navigator.of(ctx).pop();
-                _tryCheatCode(v);
-              },
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'UNLOCK_ALL  •  LOCK_ALL',
-              style: GoogleFonts.courierPrime(color: theme.textDim, fontSize: 10, letterSpacing: 1),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: GoogleFonts.courierPrime(color: theme.textMid)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: theme.accent, foregroundColor: Colors.black),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _tryCheatCode(ctrl.text);
-            },
-            child: Text('Apply', style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completedAny);
-  bool _isCompleted(String id) => _completed.contains(id);
-  bool _isCompletedHard(String id) =>
-      widget.progressStore?.loadCompletedLevels(LevelDifficulty.hard).contains(id) ?? false;
-  bool _isCompletedEasy(String id) =>
-      widget.progressStore?.loadCompletedLevels(LevelDifficulty.easy).contains(id) ?? false;
-
-  void _onTap(GameLevel level) {
-    if (!_isUnlocked(level)) {
-      _showLockedSheet(level);
-    } else {
-      _openLevel(level);
-    }
-  }
-
-  void _showLockedSheet(GameLevel level) {
-    final tagColor = AppThemeNotifier.read(context).tagColor(level.tag);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _LockedSheet(level: level, tagColor: tagColor),
-    );
-  }
-
-  Future<void> _openLevel(GameLevel level) async {
-    final store = widget.progressStore;
-    if (store == null) return; // study mode launched without a progress store
-    if (level.isTutorial) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => TutorialScreen(
-            level: level,
-            progressStore: store,
-            onCompleted: _reload,
-          ),
-        ),
-      );
-    } else {
-      // Always honour the player's selected difficulty. Levels without an
-      // easy-mode scaffold (level.hasEasyMode == false) simply start from a
-      // blank canvas in Easy too — GamePuzzleScreen already handles that case
-      // by skipping scaffold seeding while still using Easy's save/completion
-      // keys, so progress is tracked correctly under the chosen difficulty.
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => GamePuzzleScreen(
-            level: level,
-            progressStore: store,
-            onCompleted: _reload,
-            difficulty: _difficulty,
-          ),
-        ),
-      );
-    }
-    _reload();
-  }
-
-  /// Jumps the canvas to the given fraction (0 = leftmost, 1 = rightmost).
-  void _scrollToFraction(double fraction) {
-    if (!_scrollCtrl.hasClients) return;
-    final max = _scrollCtrl.position.maxScrollExtent;
-    _scrollCtrl.jumpTo((fraction * max).clamp(0.0, max));
-  }
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final screenH = MediaQuery.of(context).size.height;
-    final canvasH = _canvasHeight(kAllLevels, screenH);
-    final positions = _computePositionsFromDeps(kAllLevels, canvasH);
-    final canvasW = _canvasWidthFromPositions(positions);
-    // For the progress bar, count puzzle levels and tutorial levels separately
-    final puzzleLevels = kAllLevels.where((l) => !l.isTutorial).toList();
-    final completedPuzzles = _completed.intersection(puzzleLevels.map((l) => l.id).toSet()).length;
+    final challenge = _current;
 
-    return Focus(
-      focusNode: _cheatFocus,
-      autofocus: true,
-      onKeyEvent: (_, event) {
-        _onCheatKey(event);
-        return KeyEventResult.ignored; // don't swallow events (scrolling still works)
-      },
-      child: Scaffold(
+    return Scaffold(
       backgroundColor: theme.bg,
-      body: Stack(
+      body: Column(
         children: [
-          // ── Background grid ────────────────────────────────────────────
-          CustomPaint(
-            size: Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.height),
-            painter: _GridPainter(gridColor: theme.gridLine),
+          _TopBar(
+            mode: _mode,
+            onModeChanged: _switchMode,
+            correct: _correct,
+            total: _attempted,
+            onGoToSandbox: widget.onGoToSandbox,
           ),
-
-          // ── Scrollable canvas (horizontal only) ───────────────────────
-          AnimatedBuilder(
-            animation: Listenable.merge([_pulseCtrl, _flowCtrl, _entryCtrl]),
-            builder: (context, _) {
-              final entryVal = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut).value;
-
-              return SingleChildScrollView(
-                controller: _scrollCtrl,
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: SizedBox(
-                  width: canvasW,
-                  height: canvasH,
-                  child: Stack(
-                    children: [
-                      // Edges (drawn below node cards)
-                      CustomPaint(
-                        size: Size(canvasW, canvasH),
-                        painter: _EdgePainter(
-                          theme: theme.data,
-                          levels: kAllLevels,
-                          positions: positions,
-                          completed: _completedAny,
-                          isUnlocked: _isUnlocked,
-                          flowValue: _flowCtrl.value,
-                          pulseValue: _pulseCtrl.value,
-                          entryValue: entryVal,
-                          canvasH: canvasH,
-                        ),
-                      ),
-
-                      // Node cards (rendered on top of edges)
-                      for (final level in kAllLevels)
-                        Positioned(
-                          left: positions[level.id]!.dx - _kNodeW / 2,
-                          top: positions[level.id]!.dy - _kNodeH / 2,
-                          child: SizedBox(
-                            width: _kNodeW,
-                            child: GestureDetector(
-                              onTap: () => _onTap(level),
-                              child: _NodeCard(
-                                level: level,
-                                unlocked: _isUnlocked(level),
-                                completed: _isCompleted(level.id),
-                                completedHard: _isCompletedHard(level.id),
-                                completedEasy: _isCompletedEasy(level.id),
-                                currentDifficulty: _difficulty,
-                                pulseAnim: _pulseCtrl,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // ── Top bar ────────────────────────────────────────────────────
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Material(
-              color: Colors.transparent,
-              child: _TopBar(
-                completed: completedPuzzles,
-                total: puzzleLevels.length,
-                onSandbox: widget.onGoToSandbox,
-                onStudy: widget.onGoToStudy,
-                scrollFraction: _scrollFraction,
-                onScrollChanged: _scrollToFraction,
-                difficulty: _difficulty,
-                onDifficultyChanged: (d) {
-                  setState(() => _difficulty = d);
-                  _loadCompleted();
+          Expanded(
+            child: FadeTransition(
+              opacity: CurvedAnimation(
+                parent: _entryCtrl,
+                curve: Curves.easeOut,
+              ),
+              child: _ChallengeBody(
+                key: ValueKey('${_mode.name}:${_queueIndex}'),
+                mode: _mode,
+                challenge: challenge,
+                queueIndex: _queueIndex,
+                queueTotal: _queue.length,
+                gradeResult: _gradeResult,
+                submitted: _submitted,
+                regexInputCtrl: _regexInputCtrl,
+                regexInputFocus: _regexInputFocus,
+                onPlayerFaChanged: (nodes, lines, start) {
+                  _playerNodes = nodes;
+                  _playerLines = lines;
+                  _playerStart = start;
                 },
-                onTitleLongPress: _showCheatDialog,
+                onSubmit: _submitted && _gradeResult?.error != null
+                    ? _submit        // allow re-try on parse errors
+                    : _submitted
+                        ? _nextChallenge
+                        : _submit,
+                onSkip: _nextChallenge,
+                theme: theme,
               ),
             ),
           ),
-
-          // ── Legend ─────────────────────────────────────────────────────
-          const _Legend(),
         ],
       ),
-    ), // Scaffold
-    ); // Focus
+    );
   }
 }
 
@@ -669,744 +517,263 @@ class _StudyModeScreenState extends State<StudyModeScreen> with TickerProviderSt
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TopBar extends StatelessWidget {
-  final int completed;
+  final _PracticeMode mode;
+  final ValueChanged<_PracticeMode> onModeChanged;
+  final int correct;
   final int total;
-  final VoidCallback onSandbox;
-  final VoidCallback? onStudy;
-  final double scrollFraction;
-  final ValueChanged<double> onScrollChanged;
-  final LevelDifficulty difficulty;
-  final ValueChanged<LevelDifficulty> onDifficultyChanged;
-  /// Called when the player long-presses the title — opens the cheat-code dialog.
-  final VoidCallback? onTitleLongPress;
+  final VoidCallback onGoToSandbox;
 
   const _TopBar({
-    required this.completed,
+    required this.mode,
+    required this.onModeChanged,
+    required this.correct,
     required this.total,
-    required this.onSandbox,
-    this.onStudy,
-    required this.scrollFraction,
-    required this.onScrollChanged,
-    required this.difficulty,
-    required this.onDifficultyChanged,
-    this.onTitleLongPress,
+    required this.onGoToSandbox,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
+
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child: Row(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Row(
+          children: [
+            // Title
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Title — long-press opens the cheat-code dialog on mobile/touch
-                GestureDetector(
-                  onLongPress: onTitleLongPress,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'AUTOMATA',
-                        style: GoogleFonts.orbitron(
-                          color: theme.accent,
-                          fontSize: 19,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 4,
-                        ),
-                      ),
-                      Text(
-                        'LEARNING MAP',
-                        style: GoogleFonts.orbitron(
-                          color: theme.textDim,
-                          fontSize: 8,
-                          letterSpacing: 3.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const Spacer(),
-
-                // ── Difficulty toggle ────────────────────────────────────
-                _DifficultyToggle(
-                  current: difficulty,
-                  onChanged: onDifficultyChanged,
-                ),
-
-                const SizedBox(width: 12),
-
-                // Progress
-                Row(
-                  children: [
-                    Text(
-                      '$completed / $total',
-                      style: GoogleFonts.orbitron(color: theme.textLight, fontSize: 12, letterSpacing: 1),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 70,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: total > 0 ? completed / total : 0,
-                          backgroundColor: theme.gridLine,
-                          valueColor: AlwaysStoppedAnimation(theme.accent),
-                          minHeight: 5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(width: 14),
-
-                IconButton(
-                  tooltip: 'Appearance & colors',
-                  icon: Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
-                  onPressed: () => showAppThemeSettings(context),
-                ),
-                const SizedBox(width: 4),
-                if (onStudy != null) ...[
-                  TextButton(
-                    onPressed: onStudy,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        side: BorderSide(color: theme.borderMid, width: 1),
-                      ),
-                      foregroundColor: theme.textDim,
-                    ),
-                    child: Text('STUDY', style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 9, letterSpacing: 2)),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                TextButton(
-                  onPressed: onSandbox,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                      side: BorderSide(color: theme.borderMid, width: 1),
-                    ),
-                    foregroundColor: theme.textDim,
-                  ),
-                  child: Text('SANDBOX', style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 9, letterSpacing: 2)),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Scroll slider ──────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 4),
-            child: Row(
-              children: [
-                Icon(Icons.chevron_left, color: theme.textDim, size: 16),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 2,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                      activeTrackColor: theme.accent.withOpacity(0.7),
-                      inactiveTrackColor: theme.gridLine,
-                      thumbColor: theme.accent,
-                      overlayColor: theme.accent.withOpacity(0.15),
-                    ),
-                    child: Slider(
-                      value: scrollFraction,
-                      onChanged: onScrollChanged,
-                    ),
-                  ),
-                ),
-                Icon(Icons.chevron_right, color: theme.textDim, size: 16),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Node Card
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _NodeCard extends StatelessWidget {
-  final GameLevel level;
-  final bool unlocked;
-  final bool completed;
-  final bool completedHard;
-  final bool completedEasy;
-  final LevelDifficulty currentDifficulty;
-  final Animation<double> pulseAnim;
-
-  const _NodeCard({
-    required this.level,
-    required this.unlocked,
-    required this.completed,
-    required this.completedHard,
-    required this.completedEasy,
-    required this.currentDifficulty,
-    required this.pulseAnim,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-    final tagColor = theme.tagColor(level.tag);
-
-    return AnimatedBuilder(
-      animation: pulseAnim,
-      builder: (_, __) {
-        final glowOpacity = completed
-            ? 0.35 + pulseAnim.value * 0.25
-            : unlocked
-            ? 0.12 + pulseAnim.value * 0.08
-            : 0.0;
-
-        final borderColor = completed
-            ? tagColor.withOpacity(0.85)
-            : unlocked
-            ? tagColor.withOpacity(0.55)
-            : theme.textMid.withOpacity(0.85);
-
-        final bgColor = completed
-            ? tagColor.withOpacity(0.10)
-            : unlocked
-            ? tagColor.withOpacity(0.05)
-            : theme.border;
-
-        return Container(
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: borderColor, width: completed ? 1.8 : 1.2),
-            boxShadow: glowOpacity > 0
-                ? [
-                    BoxShadow(
-                      color: tagColor.withOpacity(glowOpacity),
-                      blurRadius: completed ? 22 : 10,
-                      spreadRadius: completed ? 2 : 0,
-                    ),
-                  ]
-                : null,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // ── Status icon row ──────────────────────────────────────
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (completed)
-                      Icon(
-                        level.isTutorial ? Icons.school : Icons.check_circle,
-                        color: tagColor,
-                        size: 13,
-                      )
-                    else if (unlocked)
-                      Icon(
-                        level.isTutorial ? Icons.school_outlined : Icons.radio_button_unchecked,
-                        color: tagColor.withOpacity(0.7),
-                        size: 11,
-                      )
-                    else
-                      Icon(Icons.lock_outline, color: theme.textDim, size: 11),
-                    const SizedBox(width: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: tagColor.withOpacity(unlocked ? 0.15 : 0.06),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        (level.tag ?? 'misc').toUpperCase(),
-                        style: GoogleFonts.orbitron(
-                          color: unlocked ? tagColor.withOpacity(0.9) : theme.textDim,
-                          fontSize: 6.5,
-                          letterSpacing: 1.2,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    // ── Dual-difficulty completion badges ────────────────
-                    if (!level.isTutorial)
-                      _CompletionBadges(
-                        completedHard: completedHard,
-                        completedEasy: completedEasy,
-                        currentDifficulty: currentDifficulty,
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 5),
-
-                // ── Title ────────────────────────────────────────────────
                 Text(
-                  level.title,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  'PRACTICE',
                   style: GoogleFonts.orbitron(
-                    color: completed
-                        ? tagColor
-                        : unlocked
-                        ? theme.textLight
-                        : theme.textDim,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    height: 1.3,
+                    color: theme.accent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 4,
                   ),
                 ),
-
-                const SizedBox(height: 5),
-
-                // ── Unlock requirement or "READY" ────────────────────────
-                _UnlockHint(level: level, unlocked: unlocked, completed: completed),
+                Text(
+                  'MODE',
+                  style: GoogleFonts.orbitron(
+                    color: theme.textDim,
+                    fontSize: 9,
+                    letterSpacing: 4,
+                  ),
+                ),
               ],
             ),
-          ),
-        );
-      },
-    );
-  }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Difficulty toggle (Easy / Hard pill in the top bar)
-// ─────────────────────────────────────────────────────────────────────────────
+            const SizedBox(width: 16),
 
-class _DifficultyToggle extends StatelessWidget {
-  const _DifficultyToggle({required this.current, required this.onChanged});
+            // Mode selector chips
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _PracticeMode.values.map((m) {
+                    final sel = m == mode;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: GestureDetector(
+                        onTap: () => onModeChanged(m),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: sel
+                                ? theme.accent.withOpacity(0.15)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: sel
+                                  ? theme.accent.withOpacity(0.8)
+                                  : theme.borderMid,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(m.icon,
+                                  size: 12,
+                                  color: sel ? theme.accent : theme.textDim),
+                              const SizedBox(width: 5),
+                              Text(
+                                m.label,
+                                style: GoogleFonts.orbitron(
+                                  color: sel ? theme.accent : theme.textDim,
+                                  fontSize: 8,
+                                  letterSpacing: 1.5,
+                                  fontWeight: sel
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
 
-  final LevelDifficulty current;
-  final ValueChanged<LevelDifficulty> onChanged;
+            const SizedBox(width: 12),
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-    return Container(
-      height: 28,
-      decoration: BoxDecoration(
-        color: theme.bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.borderMid),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: LevelDifficulty.values.map((d) {
-          final selected = d == current;
-          const easyColor = Color(0xFF4CAF50);
-          const hardColor = Color(0xFFFFB300);
-          final activeColor = d.isHard ? hardColor : easyColor;
-          return GestureDetector(
-            onTap: () => onChanged(d),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: selected ? activeColor : Colors.transparent,
-                borderRadius: BorderRadius.circular(13),
+            // Score
+            if (total > 0)
+              Text(
+                '$correct / $total',
+                style: GoogleFonts.orbitron(
+                  color: theme.textMid,
+                  fontSize: 11,
+                  letterSpacing: 1,
+                ),
+              ),
+
+            const SizedBox(width: 8),
+
+            // Theme settings
+            IconButton(
+              tooltip: 'Appearance',
+              icon:
+                  Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
+              onPressed: () => showAppThemeSettings(context),
+            ),
+
+            // Sandbox shortcut
+            TextButton(
+              onPressed: onGoToSandbox,
+              style: TextButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  side: BorderSide(color: theme.borderMid),
+                ),
               ),
               child: Text(
-                d.displayName.toUpperCase(),
+                'SANDBOX',
                 style: GoogleFonts.orbitron(
-                  fontSize: 8,
-                  letterSpacing: 1.5,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? Colors.black87 : theme.textDim,
-                ),
+                    color: theme.textDim, fontSize: 8, letterSpacing: 2),
               ),
             ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Completion badges — shown in the top-right of each node card
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Shows a small badge for each difficulty the player has completed.
-/// Hard → gold gear badge.  Easy → green check badge.
-/// If neither is completed, renders nothing.
-class _CompletionBadges extends StatelessWidget {
-  const _CompletionBadges({
-    required this.completedHard,
-    required this.completedEasy,
-    required this.currentDifficulty,
-  });
-
-  final bool completedHard;
-  final bool completedEasy;
-  final LevelDifficulty currentDifficulty;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!completedHard && !completedEasy) return const SizedBox.shrink();
-
-    const size = 14.0;
-
-    if (completedHard && completedEasy) {
-      return SizedBox(
-        width: size + 6,
-        height: size,
-        child: Stack(
-          children: [
-            Positioned(left: 0, child: _EasyBadge(size: size)),
-            Positioned(right: 0, child: _HardBadge(size: size)),
           ],
         ),
-      );
-    }
-    if (completedHard) return _HardBadge(size: size);
-    return _EasyBadge(size: size);
-  }
-}
-
-class _EasyBadge extends StatelessWidget {
-  const _EasyBadge({required this.size});
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle),
-      child: Icon(Icons.check_rounded, size: size * 0.65, color: Colors.white),
-    );
-  }
-}
-
-class _HardBadge extends StatelessWidget {
-  const _HardBadge({required this.size});
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(size: Size(size, size), painter: _HardBadgePainter());
-  }
-}
-
-class _HardBadgePainter extends CustomPainter {
-  static const _gold = Color(0xFFFFB300);
-  static const _goldDeep = Color(0xFFE65100);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final r = min(cx, cy);
-
-    // Gear teeth
-    final toothPaint = Paint()..color = _gold..style = PaintingStyle.fill;
-    for (var i = 0; i < 6; i++) {
-      final angle = (i / 6) * 2 * pi;
-      canvas.save();
-      canvas.translate(cx, cy);
-      canvas.rotate(angle);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(r * 0.80, 0), width: r * 0.30, height: r * 0.20),
-          const Radius.circular(1),
-        ),
-        toothPaint,
-      );
-      canvas.restore();
-    }
-
-    // Outer filled circle
-    canvas.drawCircle(Offset(cx, cy), r * 0.68, Paint()..color = _gold..style = PaintingStyle.fill);
-
-    // Inner dark disc
-    canvas.drawCircle(
-      Offset(cx, cy),
-      r * 0.50,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [_goldDeep.withOpacity(0.9), _goldDeep.withOpacity(0.65)],
-        ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.50)),
-    );
-
-    // Six-pointed star
-    const starPoints = 6;
-    final outerR = r * 0.33;
-    final innerR = r * 0.17;
-    final starPath = Path();
-    for (var i = 0; i < starPoints * 2; i++) {
-      final angle = (i / (starPoints * 2)) * 2 * pi - pi / 2;
-      final sr = i.isEven ? outerR : innerR;
-      final x = cx + cos(angle) * sr;
-      final y = cy + sin(angle) * sr;
-      if (i == 0) starPath.moveTo(x, y); else starPath.lineTo(x, y);
-    }
-    starPath.close();
-    canvas.drawPath(starPath, Paint()..color = _gold..style = PaintingStyle.fill);
-
-    // Centre dot
-    canvas.drawCircle(Offset(cx, cy), r * 0.09, Paint()..color = Colors.white.withOpacity(0.9));
-  }
-
-  @override
-  bool shouldRepaint(_HardBadgePainter _) => false;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Unlock hint (shown inside each node card)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _UnlockHint extends StatelessWidget {
-  final GameLevel level;
-  final bool unlocked;
-  final bool completed;
-
-  const _UnlockHint({required this.level, required this.unlocked, required this.completed});
-
-  String _shortHint() {
-    final rule = level.unlockRule;
-    if (rule is AlwaysUnlocked) return 'AVAILABLE';
-    if (rule is RequireLevel) {
-      final dep = kLevelById[rule.levelId];
-      return 'NEED: ${dep?.title ?? rule.levelId}';
-    }
-    if (rule is RequireAll) {
-      if (rule.levelIds.length == 1) {
-        final dep = kLevelById[rule.levelIds.first];
-        return 'NEED: ${dep?.title ?? rule.levelIds.first}';
-      }
-      return 'NEED ALL ${rule.levelIds.length} PREREQS';
-    }
-    if (rule is RequireAny) return 'NEED ANY PREREQ';
-    if (rule is RequireExpression) return 'NEED MULTIPLE';
-    return 'LOCKED';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-    final tagColor = theme.tagColor(level.tag);
-
-    if (completed) {
-      return Text(
-        'COMPLETE',
-        style: GoogleFonts.sourceCodePro(
-          color: tagColor.withOpacity(0.8),
-          fontSize: 7.5,
-          letterSpacing: 1.5,
-          fontWeight: FontWeight.w600,
-        ),
-      );
-    }
-
-    if (unlocked) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(color: tagColor.withOpacity(0.12), borderRadius: BorderRadius.circular(3)),
-        child: Text(
-          level.isTutorial ? 'TAP TO READ' : 'TAP TO PLAY',
-          style: GoogleFonts.sourceCodePro(
-            color: tagColor.withOpacity(0.9),
-            fontSize: 7,
-            letterSpacing: 1.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: theme.borderMid,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: theme.textMid.withOpacity(0.25)),
-      ),
-      child: Text(
-        _shortHint(),
-        textAlign: TextAlign.center,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: GoogleFonts.sourceCodePro(
-          color: theme.textLight,
-          fontSize: 7.5,
-          letterSpacing: 0.8,
-          height: 1.4,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Locked bottom sheet
+//  Challenge body  (keyed so it fully rebuilds on new challenge)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _LockedSheet extends StatelessWidget {
-  final GameLevel level;
-  final Color tagColor;
+class _ChallengeBody extends StatelessWidget {
+  final _PracticeMode mode;
+  final _Challenge challenge;
+  final int queueIndex;
+  final int queueTotal;
+  final _GradeResult? gradeResult;
+  final bool submitted;
+  final TextEditingController regexInputCtrl;
+  final FocusNode regexInputFocus;
+  final void Function(
+          Map<String, NodeData>, Map<String, LineData>, StartArrowData?)
+      onPlayerFaChanged;
+  final VoidCallback onSubmit;
+  final VoidCallback onSkip;
+  final AppThemeNotifier theme;
 
-  const _LockedSheet({required this.level, required this.tagColor});
-
-  List<String> _requiredTitles() => _extractIds(level.unlockRule).map((id) => kLevelById[id]?.title ?? id).toList();
-
-  List<String> _extractIds(UnlockRule rule) {
-    if (rule is AlwaysUnlocked) return [];
-    if (rule is RequireLevel) return [rule.levelId];
-    if (rule is RequireAll) return rule.levelIds;
-    if (rule is RequireAny) return rule.levelIds;
-    if (rule is RequireExpression) {
-      return rule.children.expand(_extractIds).toList();
-    }
-    return [];
-  }
-
-  bool _isAnd() {
-    final rule = level.unlockRule;
-    if (rule is RequireAll) return true;
-    if (rule is RequireExpression) return rule.isAnd;
-    return true;
-  }
+  const _ChallengeBody({
+    super.key,
+    required this.mode,
+    required this.challenge,
+    required this.queueIndex,
+    required this.queueTotal,
+    required this.gradeResult,
+    required this.submitted,
+    required this.regexInputCtrl,
+    required this.regexInputFocus,
+    required this.onPlayerFaChanged,
+    required this.onSubmit,
+    required this.onSkip,
+    required this.theme,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-    final titles = _requiredTitles();
-    final isAnd = _isAnd();
-
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: theme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.borderMid, width: 1.5),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 24, offset: const Offset(0, -4))],
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(color: theme.borderMid, borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-
-          Row(
-            children: [
-              Icon(Icons.lock, color: theme.textDim, size: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  level.title,
-                  style: GoogleFonts.orbitron(
-                    color: theme.textLight,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: tagColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: tagColor.withOpacity(0.3)),
-                ),
-                child: Text(
-                  (level.tag ?? 'misc').toUpperCase(),
-                  style: GoogleFonts.orbitron(
-                    color: tagColor,
-                    fontSize: 9,
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
+          // Progress bar
+          _ProgressRow(
+            index: queueIndex,
+            total: queueTotal,
+            theme: theme,
           ),
 
           const SizedBox(height: 16),
 
-          if (titles.isEmpty)
-            Text('This level is always available.', style: GoogleFonts.sourceCodePro(color: theme.textMid, fontSize: 13))
-          else ...[
-            Text(
-              titles.length == 1
-                  ? 'TO UNLOCK, COMPLETE:'
-                  : isAnd
-                  ? 'TO UNLOCK, COMPLETE ALL OF:'
-                  : 'TO UNLOCK, COMPLETE ANY ONE OF:',
-              style: GoogleFonts.orbitron(color: theme.textDim, fontSize: 9, letterSpacing: 2, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            ...titles.map(
-              (t) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(color: tagColor.withOpacity(0.6), shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(t, style: GoogleFonts.sourceCodePro(color: theme.textLight, fontSize: 13)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 20),
-
-          SizedBox(
-            width: double.infinity,
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              style: TextButton.styleFrom(
-                backgroundColor: tagColor.withOpacity(0.08),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: tagColor.withOpacity(0.25)),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: Text(
-                'GOT IT',
-                style: GoogleFonts.orbitron(
-                  color: tagColor,
-                  fontSize: 12,
-                  letterSpacing: 2,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
+          // Challenge card
+          _ChallengeCard(
+            mode: mode,
+            challenge: challenge,
+            theme: theme,
           ),
+
+          const SizedBox(height: 16),
+
+          // Input area (drawing canvas for REGEX→DFA, text field for DFA→REGEX)
+          Expanded(
+            child: mode == _PracticeMode.regexToDfa
+                ? _DfaDrawingArea(
+                    challenge: challenge,
+                    submitted: submitted,
+                    gradeResult: gradeResult,
+                    onFaChanged: onPlayerFaChanged,
+                    theme: theme,
+                  )
+                : _RegexInputArea(
+                    challenge: challenge,
+                    controller: regexInputCtrl,
+                    focusNode: regexInputFocus,
+                    submitted: submitted,
+                    gradeResult: gradeResult,
+                    theme: theme,
+                  ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Feedback banner (shown after submission)
+          if (gradeResult != null)
+            _FeedbackBanner(
+              result: gradeResult!,
+              challenge: challenge,
+              mode: mode,
+              theme: theme,
+            ),
+
+          if (gradeResult != null) const SizedBox(height: 12),
+
+          // Action row
+          _ActionRow(
+            submitted: submitted,
+            gradeResult: gradeResult,
+            onSubmit: onSubmit,
+            onSkip: onSkip,
+            theme: theme,
+          ),
+
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -1414,187 +781,39 @@ class _LockedSheet extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Legend — updated to show new edge states
+//  Progress row
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _Legend extends StatelessWidget {
-  const _Legend();
+class _ProgressRow extends StatelessWidget {
+  final int index;
+  final int total;
+  final AppThemeNotifier theme;
+
+  const _ProgressRow(
+      {required this.index, required this.total, required this.theme});
 
   @override
   Widget build(BuildContext context) {
-    final theme = context.watch<AppThemeNotifier>();
-    final d = theme.data;
-    final tags = [
-      ('intro', d.tagIntro, 'Intro'),
-      ('dfa', d.tagDfa, 'DFA'),
-      ('nfa', d.tagNfa, 'NFA'),
-      ('pda', d.tagPda, 'PDA'),
-      ('tm', d.tagTm, 'TM'),
-      ('boss', d.tagBoss, 'Boss'),
-    ];
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      child: Container(
-        height: _kLegendH + 8,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              d.bg.withOpacity(0),
-              d.bg.withOpacity(0.92),
-            ],
-          ),
+    final pct = total > 0 ? (index + 1) / total : 0.0;
+    return Row(
+      children: [
+        Text(
+          '${index + 1} / $total',
+          style: GoogleFonts.sourceCodePro(
+              color: theme.textDim, fontSize: 11, letterSpacing: 1),
         ),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 16,
-              runSpacing: 6,
-              children: [
-                // ── Node state indicators ──────────────────────────────
-                _LegendItem(
-                  icon: Icon(Icons.check_circle, color: theme.textLight, size: 11),
-                  label: 'Completed',
-                  color: theme.textLight,
-                ),
-                _LegendItem(
-                  icon: Icon(Icons.radio_button_unchecked, color: theme.textMid, size: 11),
-                  label: 'Available',
-                  color: theme.textMid,
-                ),
-                _LegendItem(
-                  icon: Icon(Icons.lock_outline, color: theme.textDim, size: 11),
-                  label: 'Locked',
-                  color: theme.textDim,
-                ),
-
-                Container(width: 1, height: 14, color: theme.borderMid),
-
-                // ── Tag colours ────────────────────────────────────────
-                for (final (_, color, label) in tags)
-                  _LegendItem(
-                    icon: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
-                    ),
-                    label: label,
-                    color: color.withOpacity(0.85),
-                  ),
-
-                Container(width: 1, height: 14, color: theme.borderMid),
-
-                // ── Edge state indicators ──────────────────────────────
-                _LegendItem(
-                  icon: Container(
-                    width: 18,
-                    height: 3,
-                    decoration: BoxDecoration(color: d.edgeBright, borderRadius: BorderRadius.circular(1.5)),
-                  ),
-                  label: 'Both done',
-                  color: d.edgeBright,
-                ),
-                _LegendItem(
-                  icon: Container(
-                    width: 18,
-                    height: 2.5,
-                    decoration: BoxDecoration(color: d.edgeActive, borderRadius: BorderRadius.circular(1.5)),
-                  ),
-                  label: 'Prereq done',
-                  color: d.edgeActive,
-                ),
-                _LegendItem(
-                  icon: Container(
-                    width: 18,
-                    height: 2,
-                    decoration: BoxDecoration(color: d.edgeAlmost, borderRadius: BorderRadius.circular(1)),
-                  ),
-                  label: 'Partial prereqs',
-                  color: d.edgeAlmost,
-                ),
-                _LegendItem(
-                  icon: _DashedLine(color: d.edgeBlocking, width: 18),
-                  label: 'Missing prereq',
-                  color: d.edgeBlocking,
-                ),
-                _LegendItem(
-                  icon: Container(
-                    width: 18,
-                    height: 1.5,
-                    decoration: BoxDecoration(color: d.edgeDim, borderRadius: BorderRadius.circular(1)),
-                  ),
-                  label: 'Locked path',
-                  color: d.edgeDim,
-                ),
-              ],
+        const SizedBox(width: 12),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: pct,
+              minHeight: 3,
+              backgroundColor: theme.gridLine,
+              valueColor:
+                  AlwaysStoppedAnimation(theme.accent.withOpacity(0.6)),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Small dashed-line widget for the legend.
-class _DashedLine extends StatelessWidget {
-  final Color color;
-  final double width;
-
-  const _DashedLine({required this.color, required this.width});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(width, 2.5),
-      painter: _DashPainter(color: color),
-    );
-  }
-}
-
-class _DashPainter extends CustomPainter {
-  final Color color;
-  const _DashPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-    double x = 0;
-    while (x < size.width) {
-      canvas.drawLine(Offset(x, size.height / 2), Offset(min(x + 4, size.width), size.height / 2), paint);
-      x += 7;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DashPainter old) => old.color != color;
-}
-
-class _LegendItem extends StatelessWidget {
-  final Widget icon;
-  final String label;
-  final Color color;
-
-  const _LegendItem({required this.icon, required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        icon,
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: GoogleFonts.orbitron(color: color, fontSize: 7, letterSpacing: 1.2, fontWeight: FontWeight.w500),
         ),
       ],
     );
@@ -1602,441 +821,901 @@ class _LegendItem extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Background grid painter
+//  Challenge card  — shows what the player needs to do
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _GridPainter extends CustomPainter {
-  const _GridPainter({required this.gridColor});
+class _ChallengeCard extends StatelessWidget {
+  final _PracticeMode mode;
+  final _Challenge challenge;
+  final AppThemeNotifier theme;
 
-  final Color gridColor;
+  const _ChallengeCard({
+    required this.mode,
+    required this.challenge,
+    required this.theme,
+  });
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = gridColor
-      ..strokeWidth = 0.5;
-    const spacing = 40.0;
-    for (double x = 0; x < size.width; x += spacing) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+  Color get _diffColor {
+    switch (challenge.difficulty) {
+      case _Difficulty.easy:
+        return const Color(0xFF4CAF50);
+      case _Difficulty.medium:
+        return const Color(0xFFFFB300);
+      case _Difficulty.hard:
+        return const Color(0xFFF44336);
     }
-    for (double y = 0; y < size.height; y += spacing) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+  }
+
+  String get _diffLabel {
+    switch (challenge.difficulty) {
+      case _Difficulty.easy:
+        return 'EASY';
+      case _Difficulty.medium:
+        return 'MEDIUM';
+      case _Difficulty.hard:
+        return 'HARD';
     }
   }
 
   @override
-  bool shouldRepaint(_GridPainter old) => old.gridColor != gridColor;
+  Widget build(BuildContext context) {
+    final accentColor = mode == _PracticeMode.regexToDfa
+        ? theme.accent
+        : theme.accentGreen;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accentColor.withOpacity(0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withOpacity(0.07),
+            blurRadius: 24,
+            spreadRadius: 4,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              // Mode chip
+              _Chip(
+                label: mode.label,
+                color: accentColor,
+              ),
+              const SizedBox(width: 8),
+              // Difficulty chip
+              _Chip(
+                label: _diffLabel,
+                color: _diffColor,
+              ),
+              const Spacer(),
+              // Alphabet
+              Text(
+                'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
+                style: GoogleFonts.courierPrime(
+                  color: theme.textDim,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // The regex (shown large and prominent)
+          if (mode == _PracticeMode.regexToDfa) ...[
+            Text(
+              'REGULAR EXPRESSION',
+              style: GoogleFonts.orbitron(
+                color: theme.textDim,
+                fontSize: 8,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.accent.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: theme.accent.withOpacity(0.2)),
+              ),
+              child: SelectableText(
+                challenge.regex,
+                style: GoogleFonts.courierPrime(
+                  color: theme.accent,
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+          ] else ...[
+            // DFA→REGEX: no description shown — alphabet is the only hint
+            Text(
+              'ALPHABET',
+              style: GoogleFonts.orbitron(
+                color: theme.textDim,
+                fontSize: 8,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.accentGreen.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border:
+                    Border.all(color: theme.accentGreen.withOpacity(0.20)),
+              ),
+              child: Text(
+                'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
+                style: GoogleFonts.courierPrime(
+                  color: theme.accentGreen,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 14),
+
+          // Task instruction
+          Row(
+            children: [
+              Icon(
+                mode == _PracticeMode.regexToDfa
+                    ? Icons.edit_outlined
+                    : Icons.keyboard_outlined,
+                color: theme.textDim,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  mode == _PracticeMode.regexToDfa
+                      ? 'Draw a DFA on the canvas below whose language equals this regex.'
+                      : 'Type a regular expression below that describes exactly this language.',
+                  style: GoogleFonts.sourceCodePro(
+                    color: theme.textDim,
+                    fontSize: 11,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Path data helper — carries a computed edge path plus metadata for drawing.
+//  DFA drawing area  (REGEX → DFA mode)
+//
+//  Uses the same automata sandbox the game uses, just embedded here.
+//  The player draws; we read the FA out via callback.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _PathData {
-  const _PathData({required this.path, required this.arrowFrom, this.isSimple = false, this.ctrl1, this.ctrl2});
+class _DfaDrawingArea extends StatefulWidget {
+  final _Challenge challenge;
+  final bool submitted;
+  final _GradeResult? gradeResult;
+  final void Function(
+          Map<String, NodeData>, Map<String, LineData>, StartArrowData?)
+      onFaChanged;
+  final AppThemeNotifier theme;
 
-  /// The computed Flutter Path (one or two cubic bezier segments).
-  final Path path;
-
-  /// The control point just before [dst], used to derive the arrowhead angle.
-  final Offset arrowFrom;
-
-  /// True = single cubic bezier (suitable for flow-dot animation).
-  final bool isSimple;
-
-  /// Only populated when [isSimple] is true.
-  final Offset? ctrl1;
-  final Offset? ctrl2;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Edge painter
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _EdgePainter extends CustomPainter {
-  final AppThemeData theme;
-  final List<GameLevel> levels;
-  final Map<String, Offset> positions;
-  final Set<String> completed;
-  final bool Function(GameLevel) isUnlocked;
-  final double flowValue;
-  final double pulseValue;
-  final double entryValue;
-  final double canvasH;
-
-  _EdgePainter({
+  const _DfaDrawingArea({
+    super.key,
+    required this.challenge,
+    required this.submitted,
+    required this.gradeResult,
+    required this.onFaChanged,
     required this.theme,
-    required this.levels,
-    required this.positions,
-    required this.completed,
-    required this.isUnlocked,
-    required this.flowValue,
-    required this.pulseValue,
-    required this.entryValue,
-    required this.canvasH,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    for (final level in levels) {
-      _drawEdgesFor(canvas, level);
-    }
-  }
-
-  // ── Rule helpers ───────────────────────────────────────────────────────────
-
-  List<String> _extractDeps(UnlockRule rule) {
-    if (rule is AlwaysUnlocked) return [];
-    if (rule is RequireLevel) return [rule.levelId];
-    if (rule is RequireAll) return rule.levelIds;
-    if (rule is RequireAny) return rule.levelIds;
-    if (rule is RequireExpression) {
-      return rule.children.expand(_extractDeps).toList();
-    }
-    return [];
-  }
-
-  bool _isOrRule(UnlockRule rule) {
-    if (rule is RequireAny) return true;
-    if (rule is RequireExpression) return !rule.isAnd;
-    return false;
-  }
-
-  // ── Main per-level edge drawing ────────────────────────────────────────────
-
-  void _drawEdgesFor(Canvas canvas, GameLevel dest) {
-    final destPos = positions[dest.id];
-    if (destPos == null) return;
-
-    final deps = _extractDeps(dest.unlockRule);
-    if (deps.isEmpty) return;
-
-    final destCompleted = completed.contains(dest.id);
-    final destUnlocked = isUnlocked(dest);
-    final destIsOr = _isOrRule(dest.unlockRule);
-
-    // Count how many of dest's prereqs are already completed.
-    final numCompletedDeps = deps.where((id) => completed.contains(id)).length;
-
-    // "Almost unlocked" = dest is still locked but some of its prereqs ARE done.
-    // (Impossible for OR rules since any single done dep → dest unlocked, so
-    //  this state is exclusive to AND-type rules.)
-    final isAlmostUnlocked = !destUnlocked && numCompletedDeps > 0;
-
-    for (final srcId in deps) {
-      final srcLevel = kLevelById[srcId];
-      if (srcLevel == null) continue;
-      final srcPos = positions[srcId];
-      if (srcPos == null) continue;
-
-      final srcCompleted = completed.contains(srcId);
-
-      // ── Classify this edge ──────────────────────────────────────────────
-
-      Color edgeColor;
-      double strokeW;
-      bool drawGlow;
-      bool blockingDash; // extra-visible dashes for the "missing prereq" state
-
-      if (srcCompleted && destCompleted) {
-        edgeColor = theme.edgeBright.withOpacity(0.90);
-        strokeW = 1.0;
-        drawGlow = true;
-        blockingDash = false;
-      } else if (srcCompleted && destUnlocked) {
-        edgeColor = theme.edgeActive.withOpacity(0.95);
-        strokeW = 1.0;
-        drawGlow = true;
-        blockingDash = false;
-      } else if (srcCompleted && isAlmostUnlocked) {
-        edgeColor = theme.edgeAlmost;
-        strokeW = 3.0;
-        drawGlow = true;
-        blockingDash = false;
-      } else if (!srcCompleted && isAlmostUnlocked) {
-        edgeColor = theme.edgeBlocking.withOpacity(0.55 + pulseValue * 0.45);
-        strokeW = 4.0;
-        drawGlow = true;
-        blockingDash = true;
-      } else {
-        edgeColor = theme.edgeDim.withOpacity(0.95);
-        strokeW = 3.5;
-        drawGlow = false;
-        blockingDash = false;
-      }
-
-      // ── Build path, routing around intermediate nodes ───────────────────
-
-      final src = Offset(srcPos.dx + _kNodeW / 2, srcPos.dy);
-      final dst = Offset(destPos.dx - _kNodeW / 2, destPos.dy);
-      final intermediate = _getIntermediatePositions(srcId, dest.id, src.dx, dst.dx);
-      final pathData = _buildEdgePath(src, dst, intermediate);
-
-      // ── Glow layer ──────────────────────────────────────────────────────
-
-      if (drawGlow) {
-        canvas.drawPath(
-          pathData.path,
-          Paint()
-            ..color = edgeColor.withOpacity(0.22)
-            ..strokeWidth = strokeW + 18
-            ..style = PaintingStyle.stroke
-            ..strokeCap = StrokeCap.round
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-        );
-      }
-
-      // ── Main line ───────────────────────────────────────────────────────
-
-      // OR-rule edges are lightly dashed; blocking edges get a bolder dash.
-      final useDash = destIsOr || blockingDash;
-      final dashLen = blockingDash ? 14.0 : 8.0;
-      final gapLen = blockingDash ? 6.0 : 5.0;
-      final drawPath = useDash ? _dashPath(pathData.path, dashLen, gapLen) : pathData.path;
-
-      canvas.drawPath(
-        drawPath,
-        Paint()
-          ..color = edgeColor
-          ..strokeWidth = strokeW
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round,
-      );
-      if (!srcCompleted && isAlmostUnlocked) {
-        for (final metric in drawPath.computeMetrics()) {
-          final t = (flowValue * metric.length);
-
-          final tangent = metric.getTangentForOffset(t);
-          if (tangent != null) {
-            canvas.drawCircle(
-              tangent.position,
-              7,
-              Paint()
-                ..color = Colors.redAccent
-                ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-            );
-          }
-        }
-      }
-
-      // ── Flow dot (only active/bright edges with simple bezier path) ─────
-
-      if (pathData.isSimple && entryValue >= 1.0 && (srcCompleted && destUnlocked || srcCompleted && destCompleted)) {
-        final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
-        final pt = _cubicPoint(src, pathData.ctrl1!, pathData.ctrl2!, dst, t);
-        canvas.drawCircle(pt, destCompleted ? 3.5 : 3.0, Paint()..color = edgeColor.withOpacity(0.95));
-      }
-
-      // ── Arrowhead ───────────────────────────────────────────────────────
-
-      _drawArrow(canvas, pathData.arrowFrom, dst, edgeColor, strokeW);
-    }
-  }
-
-  // ── Routing helpers ────────────────────────────────────────────────────────
-
-  /// Returns all node positions whose centre X lies strictly between
-  /// [srcX] and [dstX], i.e. intermediate nodes that an edge might cross.
-  List<Offset> _getIntermediatePositions(String srcId, String destId, double srcX, double dstX) {
-    // Adjacent-column edges (gap ≤ one column + tolerance) have no intermediates.
-    if (dstX - srcX <= _kColGap + 10) return const [];
-
-    final result = <Offset>[];
-    for (final entry in positions.entries) {
-      final id = entry.key;
-      if (id == srcId || id == destId) continue;
-      final p = entry.value;
-      if (p.dx > srcX + 5 && p.dx < dstX - 5) {
-        result.add(p);
-      }
-    }
-    return result;
-  }
-
-  /// Builds a bezier path from [src] to [dst].
-  ///
-  /// For adjacent-column edges: a standard S-curve cubic bezier.
-  /// For multi-column edges: a two-segment cubic that arcs through a
-  /// horizontal lane chosen to avoid all intermediate node cards.
-  _PathData _buildEdgePath(Offset src, Offset dst, List<Offset> intermediate) {
-    final ctrlDist = (dst.dx - src.dx) * 0.45;
-
-    // ── Bezier sampler ──────────────────────────────────────────────────────
-    // Approximate a cubic bezier with [steps] sample points.
-    List<Offset> _sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
-      final pts = <Offset>[];
-      for (int i = 0; i <= steps; i++) {
-        final t = i / steps;
-        pts.add(_cubicPoint(p0, p1, p2, p3, t));
-      }
-      return pts;
-    }
-
-    // ── Node-avoidance check ─────────────────────────────────────────────────
-    // Returns true if any sample point in [pts] falls inside a node card
-    // (with padding), ignoring the src and dst nodes themselves.
-    final srcNodeCenter = Offset(src.dx - _kNodeW / 2, src.dy);
-    final dstNodeCenter = Offset(dst.dx + _kNodeW / 2, dst.dy);
-
-    bool samplesHitNodes(List<Offset> pts) {
-      for (final entry in positions.entries) {
-        final p = entry.value;
-        if ((p - srcNodeCenter).distance < 8 || (p - dstNodeCenter).distance < 8) continue;
-        final rect = Rect.fromCenter(
-          center: p,
-          width: _kNodeW + 120,
-          height: _kNodeH + 120,
-        );
-        for (final pt in pts) {
-          if (rect.contains(pt)) return true;
-        }
-      }
-      return false;
-    }
-
-    // ── Adjacent-column: simple S-curve ─────────────────────────────────────
-    if (dst.dx - src.dx <= _kColGap * 4) {
-      final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
-      final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
-      return _PathData(
-        path: Path()
-          ..moveTo(src.dx, src.dy)
-          ..cubicTo(ctrl1.dx, ctrl1.dy, ctrl2.dx, ctrl2.dy, dst.dx, dst.dy),
-        isSimple: true,
-        ctrl1: ctrl1,
-        ctrl2: ctrl2,
-        arrowFrom: ctrl2,
-      );
-    }
-
-    // ── Multi-column: arc through a horizontal bypass lane ──────────────────
-    // Build a rich candidate list: fixed lanes + per-node offsets.
-    final usableBottom = canvasH - _kBotPad - _kLegendH;
-    final candidateYs = <double>[
-      _kTopPad + 362,
-      _kTopPad + 50,
-      _kTopPad + 90,
-      canvasH * 0.18,
-      canvasH * 0.28,
-      canvasH * 0.72,
-      canvasH * 0.82,
-      usableBottom - 90,
-      usableBottom - 50,
-      usableBottom - 18,
-    ];
-
-    // Also offer lanes that sit just above/below each intermediate node.
-    for (final p in intermediate) {
-      candidateYs.add(p.dy - _kNodeH / 2 - 36);
-      candidateYs.add(p.dy + _kNodeH / 2 + 36);
-    }
-
-    // Sort by distance from the midpoint of src/dst so we prefer lanes that
-    // stay close to the natural straight line when possible.
-    final midY = (src.dy + dst.dy) / 2;
-    candidateYs.sort((a, b) => (a - midY).abs().compareTo((b - midY).abs()));
-
-    final midX = (src.dx + dst.dx) / 2;
-    final halfCtrl = ctrlDist * 0.7;
-    final arrowFrom = Offset(dst.dx - halfCtrl, dst.dy);
-
-    const maxDeviation = 220.0;
-
-for (final y in candidateYs) {
-  if ((y - midY).abs() > maxDeviation) {
-    continue;
-  }{
-      // Two cubic bezier segments meeting at (midX, y).
-      final c1 = Offset(src.dx + halfCtrl, src.dy);
-      final c2 = Offset(midX - 60, y);
-      final c3 = Offset(midX + 60, y);
-      final c4 = arrowFrom;
-
-      final seg1 = _sampleCubic(src, c1, c2, Offset(midX, y));
-      final seg2 = _sampleCubic(Offset(midX, y), c3, c4, dst);
-
-      if (!samplesHitNodes([...seg1, ...seg2])) {
-        return _PathData(
-          path: Path()
-            ..moveTo(src.dx, src.dy)
-            ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, midX, y)
-            ..cubicTo(c3.dx, c3.dy, c4.dx, c4.dy, dst.dx, dst.dy),
-          isSimple: false,
-          arrowFrom: arrowFrom,
-        );
-      }
-    }
+  State<_DfaDrawingArea> createState() => _DfaDrawingAreaState();
 }
 
-    // Absolute fallback: route hard above all nodes.
-    final fallbackY = midY.clamp(
-  _kTopPad + 40,
-  canvasH - _kBotPad - _kLegendH - 40,
-);
-    return _PathData(
-      path: Path()
-        ..moveTo(src.dx, src.dy)
-        ..cubicTo(src.dx + halfCtrl, src.dy, midX - 20, fallbackY, midX, fallbackY)
-        ..cubicTo(midX + 20, fallbackY, arrowFrom.dx, arrowFrom.dy, dst.dx, dst.dy),
-      isSimple: false,
-      arrowFrom: arrowFrom,
-    );
-  }
+class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
+  // The player's in-progress FA lives here; the embedded AutomataDrawer
+  // mutates these via its onChanged callback.
+  Map<String, NodeData> _nodes = {};
+  Map<String, LineData> _lines = {};
+  StartArrowData? _start;
 
-  // ── Drawing primitives ─────────────────────────────────────────────────────
-
-  Offset _cubicPoint(Offset p0, Offset p1, Offset p2, Offset p3, double t) {
-    final mt = 1 - t;
-    return Offset(
-      mt * mt * mt * p0.dx + 3 * mt * mt * t * p1.dx + 3 * mt * t * t * p2.dx + t * t * t * p3.dx,
-      mt * mt * mt * p0.dy + 3 * mt * mt * t * p1.dy + 3 * mt * t * t * p2.dy + t * t * t * p3.dy,
-    );
-  }
-
-  void _drawArrow(Canvas canvas, Offset from, Offset to, Color color, double w) {
-    if ((to - from).distance < 1.0) return; // guard: no direction
-    const len = 12.0;
-    const wing = 7.0;
-    final angle = atan2(to.dy - from.dy, to.dx - from.dx);
-    final tip = Offset(to.dx - cos(angle) * 2, to.dy - sin(angle) * 2);
-    canvas.drawPath(
-      Path()
-        ..moveTo(tip.dx, tip.dy)
-        ..lineTo(tip.dx - len * cos(angle) + wing * sin(angle), tip.dy - len * sin(angle) - wing * cos(angle))
-        ..lineTo(tip.dx - len * cos(angle) - wing * sin(angle), tip.dy - len * sin(angle) + wing * cos(angle))
-        ..close(),
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.fill,
-    );
-  }
-
-  Path _dashPath(Path source, double dashLength, double gapLength) {
-    final dashed = Path();
-    for (final metric in source.computeMetrics()) {
-      double distance = 0.0;
-      var draw = true;
-      while (distance < metric.length) {
-        final next = min(distance + (draw ? dashLength : gapLength), metric.length);
-        if (draw) {
-          dashed.addPath(metric.extractPath(distance, next), Offset.zero);
-        }
-        draw = !draw;
-        distance = next;
-      }
-    }
-    return dashed;
+  void _onFaChanged(
+    Map<String, NodeData> nodes,
+    Map<String, LineData> lines,
+    StartArrowData? start,
+  ) {
+    _nodes = nodes;
+    _lines = lines;
+    _start = start;
+    widget.onFaChanged(nodes, lines, start);
   }
 
   @override
-  bool shouldRepaint(_EdgePainter old) =>
-      old.flowValue != flowValue ||
-      old.pulseValue != pulseValue ||
-      old.entryValue != entryValue ||
-      old.completed != completed ||
-      old.theme.edgeDim != theme.edgeDim ||
-      old.theme.edgeActive != theme.edgeActive ||
-      old.theme.edgeBright != theme.edgeBright ||
-      old.theme.edgeAlmost != theme.edgeAlmost ||
-      old.theme.edgeBlocking != theme.edgeBlocking;
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.borderMid),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          // The actual drawing canvas — imported from the existing widget.
+          // AutomataDrawer exposes an onChanged callback that we use.
+          Positioned.fill(
+            child: AutomataDrawerEmbed(
+              mode: AutomataMode.ndfa,
+              initialNodes: const {},
+              initialLines: const {},
+              initialStart: null,
+              onChanged: _onFaChanged,
+              readOnly: widget.submitted && (widget.gradeResult?.correct ?? false),
+            ),
+          ),
+
+          // Watermark label
+          Positioned(
+            top: 10,
+            right: 14,
+            child: Text(
+              'YOUR DFA',
+              style: GoogleFonts.orbitron(
+                color: theme.textDim.withOpacity(0.4),
+                fontSize: 8,
+                letterSpacing: 2,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Regex input area  (DFA → REGEX mode)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _RegexInputArea extends StatelessWidget {
+  final _Challenge challenge;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool submitted;
+  final _GradeResult? gradeResult;
+  final AppThemeNotifier theme;
+
+  const _RegexInputArea({
+    super.key,
+    required this.challenge,
+    required this.controller,
+    required this.focusNode,
+    required this.submitted,
+    required this.gradeResult,
+    required this.theme,
+  });
+
+  // Show the equivalent DFA diagram (read-only) generated from the target regex.
+  @override
+  Widget build(BuildContext context) {
+    final correct = gradeResult?.correct ?? false;
+    final borderColor = !submitted
+        ? theme.accentGreen.withOpacity(0.35)
+        : correct
+            ? const Color(0xFF4CAF50)
+            : theme.error;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Read-only DFA preview (so player can actually see the machine)
+        Expanded(
+          flex: 3,
+          child: Container(
+            decoration: BoxDecoration(
+              color: theme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.borderMid),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: _ReadOnlyDfaPreview(
+                    regex: challenge.regex,
+                    alphabet: challenge.alphabet,
+                    theme: theme,
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  right: 14,
+                  child: Text(
+                    'TARGET DFA  (read-only)',
+                    style: GoogleFonts.orbitron(
+                      color: theme.textDim.withOpacity(0.5),
+                      fontSize: 8,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Regex text field
+        Expanded(
+          flex: 1,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: theme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: borderColor, width: 1.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'YOUR REGEX',
+                  style: GoogleFonts.orbitron(
+                    color: theme.textDim,
+                    fontSize: 8,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    readOnly:
+                        submitted && correct, // lock on correct answer
+                    style: GoogleFonts.courierPrime(
+                      color: !submitted
+                          ? theme.textLight
+                          : correct
+                              ? const Color(0xFF4CAF50)
+                              : theme.error,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'e.g.  a*(ba+b)*',
+                      hintStyle: GoogleFonts.courierPrime(
+                        color: theme.textDim.withOpacity(0.5),
+                        fontSize: 18,
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) {
+                      // pressing Enter submits
+                    },
+                  ),
+                ),
+                // Operator quick-reference
+                Row(
+                  children: [
+                    _OpHint(op: '*', label: 'star', theme: theme),
+                    const SizedBox(width: 10),
+                    _OpHint(op: '+', label: 'or', theme: theme),
+                    const SizedBox(width: 10),
+                    _OpHint(op: '~', label: 'ε', theme: theme),
+                    const SizedBox(width: 10),
+                    _OpHint(op: '()', label: 'group', theme: theme),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OpHint extends StatelessWidget {
+  final String op;
+  final String label;
+  final AppThemeNotifier theme;
+
+  const _OpHint(
+      {required this.op, required this.label, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          decoration: BoxDecoration(
+            color: theme.accent.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: theme.accent.withOpacity(0.2)),
+          ),
+          child: Text(
+            op,
+            style: GoogleFonts.courierPrime(
+              color: theme.accent,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: GoogleFonts.sourceCodePro(
+            color: theme.textDim,
+            fontSize: 9,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Read-only DFA preview widget
+//  Builds the target DFA from the challenge regex and renders it read-only
+//  using the same AutomataDrawerEmbed, but with readOnly: true.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ReadOnlyDfaPreview extends StatefulWidget {
+  final String regex;
+  final Set<String> alphabet;
+  final AppThemeNotifier theme;
+
+  const _ReadOnlyDfaPreview({
+    required this.regex,
+    required this.alphabet,
+    required this.theme,
+  });
+
+  @override
+  State<_ReadOnlyDfaPreview> createState() => _ReadOnlyDfaPreviewState();
+}
+
+class _ReadOnlyDfaPreviewState extends State<_ReadOnlyDfaPreview> {
+  Map<String, NodeData>? _nodes;
+  Map<String, LineData>? _lines;
+  StartArrowData? _start;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _build();
+  }
+
+  void _build() {
+    final result = regexToDfa(widget.regex.replaceAll(' ', ''));
+    if (result.isError) {
+      _error = result.error;
+    } else {
+      _nodes = result.nodes;
+      _lines = result.lines;
+      _start = result.startArrow;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+
+    if (_error != null) {
+      return Center(
+        child: Text(
+          'Error building DFA: $_error',
+          style:
+              GoogleFonts.sourceCodePro(color: theme.error, fontSize: 12),
+        ),
+      );
+    }
+
+    if (_nodes == null) {
+      return Center(
+        child: CircularProgressIndicator(color: theme.accent),
+      );
+    }
+
+    return AutomataDrawerEmbed(
+      mode: AutomataMode.ndfa,
+      initialNodes: _nodes!,
+      initialLines: _lines!,
+      initialStart: _start,
+      onChanged: (_, __, ___) {}, // read-only; ignore
+      readOnly: true,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Feedback banner
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FeedbackBanner extends StatelessWidget {
+  final _GradeResult result;
+  final _Challenge challenge;
+  final _PracticeMode mode;
+  final AppThemeNotifier theme;
+
+  const _FeedbackBanner({
+    required this.result,
+    required this.challenge,
+    required this.mode,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (result.error != null) {
+      return _Banner(
+        icon: Icons.warning_amber_rounded,
+        color: theme.error,
+        title: 'Cannot check yet',
+        body: result.error!,
+        theme: theme,
+      );
+    }
+
+    if (result.correct) {
+      return _Banner(
+        icon: Icons.check_circle_outline,
+        color: const Color(0xFF4CAF50),
+        title: 'Correct!',
+        body: mode == _PracticeMode.regexToDfa
+            ? 'Your DFA is equivalent to  ${challenge.regex}.'
+            : 'Your regex describes the same language.',
+        theme: theme,
+      );
+    }
+
+    // Wrong — show counterexample
+    final ce = result.counterexample ?? '';
+    final ceDisplay = ce.isEmpty ? 'ε (empty string)' : '"$ce"';
+    return _Banner(
+      icon: Icons.close_rounded,
+      color: theme.error,
+      title: 'Not quite',
+      body:
+          'Counterexample: $ceDisplay\nYour machine and the target disagree on this string. Check it and try again.',
+      theme: theme,
+    );
+  }
+}
+
+class _Banner extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String body;
+  final AppThemeNotifier theme;
+
+  const _Banner({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.body,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.4), width: 1.5),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.orbitron(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: GoogleFonts.sourceCodePro(
+                    color: theme.textLight,
+                    fontSize: 12,
+                    height: 1.55,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Action row
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ActionRow extends StatelessWidget {
+  final bool submitted;
+  final _GradeResult? gradeResult;
+  final VoidCallback onSubmit;
+  final VoidCallback onSkip;
+  final AppThemeNotifier theme;
+
+  const _ActionRow({
+    required this.submitted,
+    required this.gradeResult,
+    required this.onSubmit,
+    required this.onSkip,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Parse error → "Try Again" + Skip
+    if (submitted && gradeResult?.error != null) {
+      return Row(
+        children: [
+          Expanded(
+            child: _Btn(
+              label: 'TRY AGAIN',
+              icon: Icons.refresh_rounded,
+              color: theme.accent,
+              onTap: onSubmit,
+            ),
+          ),
+          const SizedBox(width: 12),
+          _Btn(
+            label: 'SKIP',
+            icon: Icons.skip_next_rounded,
+            color: theme.textDim,
+            small: true,
+            onTap: onSkip,
+          ),
+        ],
+      );
+    }
+
+    // Correct → "Next Challenge"
+    if (submitted && (gradeResult?.correct ?? false)) {
+      return _Btn(
+        label: 'NEXT CHALLENGE',
+        icon: Icons.arrow_forward_rounded,
+        color: const Color(0xFF4CAF50),
+        onTap: onSubmit, // onSubmit is wired to _nextChallenge at this point
+      );
+    }
+
+    // Wrong → "Try Again" + Skip
+    if (submitted && gradeResult != null) {
+      return Row(
+        children: [
+          Expanded(
+            child: _Btn(
+              label: 'TRY AGAIN',
+              icon: Icons.refresh_rounded,
+              color: theme.error,
+              onTap: onSkip, // go to next
+            ),
+          ),
+          const SizedBox(width: 12),
+          _Btn(
+            label: 'SKIP',
+            icon: Icons.skip_next_rounded,
+            color: theme.textDim,
+            small: true,
+            onTap: onSkip,
+          ),
+        ],
+      );
+    }
+
+    // Not yet submitted → "Check" + "Skip"
+    return Row(
+      children: [
+        Expanded(
+          child: _Btn(
+            label: 'CHECK',
+            icon: Icons.check_rounded,
+            color: theme.accent,
+            onTap: onSubmit,
+          ),
+        ),
+        const SizedBox(width: 12),
+        _Btn(
+          label: 'SKIP',
+          icon: Icons.skip_next_rounded,
+          color: theme.textDim,
+          small: true,
+          onTap: onSkip,
+        ),
+      ],
+    );
+  }
+}
+
+class _Btn extends StatefulWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final bool small;
+
+  const _Btn({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.small = false,
+  });
+
+  @override
+  State<_Btn> createState() => _BtnState();
+}
+
+class _BtnState extends State<_Btn> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        padding: EdgeInsets.symmetric(
+          vertical: widget.small ? 10 : 14,
+          horizontal: widget.small ? 16 : 20,
+        ),
+        decoration: BoxDecoration(
+          color: _pressed
+              ? widget.color.withOpacity(0.22)
+              : widget.color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: widget.color.withOpacity(_pressed ? 0.9 : 0.5),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(widget.icon,
+                color: widget.color, size: widget.small ? 16 : 18),
+            const SizedBox(width: 8),
+            Text(
+              widget.label,
+              style: GoogleFonts.orbitron(
+                color: widget.color,
+                fontSize: widget.small ? 8 : 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Small chip widget
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _Chip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.orbitron(
+          color: color,
+          fontSize: 8,
+          letterSpacing: 1.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  AutomataDrawerEmbed
+//
+//  Thin wrapper around AutomataCanvasEmbed so existing call-sites in this
+//  file don't need to change.  The `mode` parameter is accepted for API
+//  compatibility but AutomataCanvasEmbed is mode-agnostic at the canvas
+//  level (mode-specific simulation is handled elsewhere).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class AutomataDrawerEmbed extends StatelessWidget {
+  final AutomataMode mode;
+  final Map<String, NodeData> initialNodes;
+  final Map<String, LineData> initialLines;
+  final StartArrowData? initialStart;
+  final void Function(
+      Map<String, NodeData>, Map<String, LineData>, StartArrowData?) onChanged;
+  final bool readOnly;
+
+  const AutomataDrawerEmbed({
+    super.key,
+    required this.mode,
+    required this.initialNodes,
+    required this.initialLines,
+    required this.initialStart,
+    required this.onChanged,
+    this.readOnly = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AutomataCanvasEmbed(
+      initialNodes: initialNodes,
+      initialLines: initialLines,
+      initialStart: initialStart,
+      onChanged: onChanged,
+      readOnly: readOnly,
+    );
+  }
 }
