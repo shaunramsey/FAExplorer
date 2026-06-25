@@ -2123,6 +2123,7 @@ class _ReadOnlyDfaPreviewState extends State<_ReadOnlyDfaPreview> {
       _nodes = result.nodes;
       _lines = result.lines;
       _start = result.startArrow;
+      _applyStudyModeLayout(_nodes!, _lines!);
     }
   }
 
@@ -2577,5 +2578,104 @@ class AutomataDrawerEmbed extends StatelessWidget {
       onChanged: onChanged,
       readOnly: readOnly,
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Study-mode layout post-processor
+//
+//  Applied to the solution graph after it is built from a regex or PDA spec,
+//  before rendering it read-only.  Two passes:
+//
+//  1. Set a default perpendicularPart of 30 on every non-self-loop line.
+//
+//  2. For every node N and every line L that does not touch N:
+//     Compute the closest point on the *chord* (straight line through the two
+//     endpoint centres) to N's centre.  If that closest point is within the
+//     clearance zone, push N away from the chord in the perpendicular direction
+//     by exactly enough to clear it.  Repeat until stable (max iterations).
+// ─────────────────────────────────────────────────────────────────────────────
+
+void _applyStudyModeLayout(
+  Map<String, NodeData> nodes,
+  Map<String, LineData> lines,
+) {
+  // ── Pass 1: default perpendicularPart on all non-self-loop lines ───────────
+  for (final line in lines.values) {
+    if (line.nodeAId != line.nodeBId) {
+      line.perpendicularPart = 30.0;
+    }
+  }
+
+  // ── Pass 2: move nodes off chord paths ────────────────────────────────────
+  const double nodeRadius   = 50.0;   // visual radius of a state circle
+  const double clearance    = nodeRadius + 30.0; // min distance: node centre ↔ chord
+  const int    iterations   = 12;     // enough passes to propagate cascades
+
+  for (int iter = 0; iter < iterations; iter++) {
+    bool anyMoved = false;
+
+    for (final node in nodes.values) {
+      if (node.isBlackBox) continue;
+
+      for (final line in lines.values) {
+        // Skip lines that directly touch this node.
+        if (line.nodeAId == node.id || line.nodeBId == node.id) continue;
+        // Skip self-loops — they don't cross other nodes.
+        if (line.nodeAId == line.nodeBId) continue;
+
+        final nodeA = nodes[line.nodeAId];
+        final nodeB = nodes[line.nodeBId];
+        if (nodeA == null || nodeB == null) continue;
+
+        final cA = nodeA.center;
+        final cB = nodeB.center;
+        final nc = node.center;
+
+        // Vector from A to B.
+        final abx = cB.dx - cA.dx;
+        final aby = cB.dy - cA.dy;
+        final abLen = sqrt(abx * abx + aby * aby);
+        if (abLen < 1) continue;
+
+        // Project node centre onto the infinite line through A and B.
+        final t = ((nc.dx - cA.dx) * abx + (nc.dy - cA.dy) * aby) / (abLen * abLen);
+
+        // Only care if the projection falls between (or near) the two endpoints.
+        if (t < -0.05 || t > 1.05) continue;
+
+        // Closest point on the chord to the node centre.
+        final closestX = cA.dx + t * abx;
+        final closestY = cA.dy + t * aby;
+
+        final dxFromChord = nc.dx - closestX;
+        final dyFromChord = nc.dy - closestY;
+        final distFromChord = sqrt(dxFromChord * dxFromChord + dyFromChord * dyFromChord);
+
+        if (distFromChord >= clearance) continue; // already clear — nothing to do
+
+        // Amount we need to push perpendicular to the chord.
+        final push = clearance - distFromChord;
+
+        // Perpendicular direction away from the chord.
+        // If the node is exactly on the chord (dist ≈ 0), push downward.
+        final Offset perp;
+        if (distFromChord < 0.5) {
+          // Perpendicular to AB, choosing the downward direction (+y).
+          final pLen = abLen; // already computed
+          perp = Offset(aby / pLen, -abx / pLen); // rotate AB by -90°
+        } else {
+          perp = Offset(dxFromChord / distFromChord, dyFromChord / distFromChord);
+        }
+
+        node.position = Offset(
+          node.position.dx + perp.dx * push,
+          node.position.dy + perp.dy * push,
+        );
+        anyMoved = true;
+      }
+    }
+
+    if (!anyMoved) break; // converged early
   }
 }

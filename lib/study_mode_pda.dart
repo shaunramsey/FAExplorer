@@ -318,6 +318,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
     final theme = widget.theme;
     if (widget.answerRevealed) {
       final graph = buildStudyPdaSolution(widget.challenge.solutionSpec);
+      _applyStudyModeLayout(graph.nodes, graph.lines);
       return Container(
         decoration: BoxDecoration(
           color: theme.surface,
@@ -454,4 +455,84 @@ String studyPdaFailureMessage(StudyPdaTestCase tc) {
   final expected = tc.expected ? 'ACCEPT' : 'REJECT';
   final got = tc.expected ? 'REJECT' : 'ACCEPT';
   return 'Input $inputDisplay: expected $expected but got $got';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Study-mode layout post-processor  (PDA copy — mirrors study_mode_screen.dart)
+//
+//  1. Sets perpendicularPart = 30 on all non-self-loop lines.
+//  2. Moves nodes off the chord (straight line between endpoint centres) of
+//     any line that doesn't touch them, using exact perpendicular displacement.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void _applyStudyModeLayout(
+  Map<String, NodeData> nodes,
+  Map<String, LineData> lines,
+) {
+  // Pass 1: default perpendicularPart on all non-self-loop lines.
+  for (final line in lines.values) {
+    if (line.nodeAId != line.nodeBId) {
+      line.perpendicularPart = 30.0;
+    }
+  }
+
+  // Pass 2: move nodes off chord paths using exact perpendicular displacement.
+  const double nodeRadius = 50.0;
+  const double clearance  = nodeRadius + 30.0;
+  const int    iterations = 12;
+
+  for (int iter = 0; iter < iterations; iter++) {
+    bool anyMoved = false;
+
+    for (final node in nodes.values) {
+      if (node.isBlackBox) continue;
+
+      for (final line in lines.values) {
+        if (line.nodeAId == node.id || line.nodeBId == node.id) continue;
+        if (line.nodeAId == line.nodeBId) continue;
+
+        final nodeA = nodes[line.nodeAId];
+        final nodeB = nodes[line.nodeBId];
+        if (nodeA == null || nodeB == null) continue;
+
+        final cA = nodeA.center;
+        final cB = nodeB.center;
+        final nc = node.center;
+
+        final abx = cB.dx - cA.dx;
+        final aby = cB.dy - cA.dy;
+        final abLen = sqrt(abx * abx + aby * aby);
+        if (abLen < 1) continue;
+
+        final t = ((nc.dx - cA.dx) * abx + (nc.dy - cA.dy) * aby) / (abLen * abLen);
+        if (t < -0.05 || t > 1.05) continue;
+
+        final closestX = cA.dx + t * abx;
+        final closestY = cA.dy + t * aby;
+
+        final dxFromChord = nc.dx - closestX;
+        final dyFromChord = nc.dy - closestY;
+        final distFromChord = sqrt(dxFromChord * dxFromChord + dyFromChord * dyFromChord);
+
+        if (distFromChord >= clearance) continue;
+
+        final push = clearance - distFromChord;
+
+        final Offset perp;
+        if (distFromChord < 0.5) {
+          perp = Offset(aby / abLen, -abx / abLen);
+        } else {
+          perp = Offset(dxFromChord / distFromChord, dyFromChord / distFromChord);
+        }
+
+        node.position = Offset(
+          node.position.dx + perp.dx * push,
+          node.position.dy + perp.dy * push,
+        );
+        anyMoved = true;
+      }
+    }
+
+    if (!anyMoved) break;
+  }
 }
