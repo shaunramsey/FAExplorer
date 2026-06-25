@@ -32,6 +32,7 @@ import 'fa_to_regex.dart';
 import 'game_level.dart';
 import 'models.dart';
 import 'regex_engine.dart';
+import 'study_mode_pda.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/app_theme_settings.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
@@ -646,11 +647,35 @@ List<_Challenge> _generateDescriptionChallenges(Random rng,
 enum _PracticeMode {
   regexToDfa('REGEX → DFA', Icons.functions),
   dfaToRegex('DFA → REGEX', Icons.account_tree_outlined),
-  describeToFa('DESCRIBE → FA', Icons.lightbulb_outline_rounded);
+  describeToFa('DESCRIBE → FA', Icons.lightbulb_outline_rounded),
+  pdaToDraw('PDA → DRAW', Icons.layers_outlined);
 
   const _PracticeMode(this.label, this.icon);
   final String label;
   final IconData icon;
+}
+
+class _AnyChallenge {
+  final _Challenge? regexChallenge;
+  final StudyPdaChallenge? pdaChallenge;
+
+  const _AnyChallenge.regex(this.regexChallenge) : pdaChallenge = null;
+  const _AnyChallenge.pda(this.pdaChallenge) : regexChallenge = null;
+
+  bool get isPda => pdaChallenge != null;
+  _Difficulty get difficulty => isPda
+      ? switch (pdaChallenge!.difficulty) {
+          StudyPdaDifficulty.easy => _Difficulty.easy,
+          StudyPdaDifficulty.medium => _Difficulty.medium,
+          StudyPdaDifficulty.hard => _Difficulty.hard,
+        }
+      : regexChallenge!.difficulty;
+  String? get description =>
+      regexChallenge?.description ?? pdaChallenge?.description;
+  String? get hint => pdaChallenge?.hint;
+  String get regex => regexChallenge?.regex ?? '';
+  Set<String> get alphabet =>
+      regexChallenge?.alphabet ?? pdaChallenge!.alphabet;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -713,8 +738,8 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   /// The mode actually used for the current challenge — drawn from [_selectedModes].
   _PracticeMode _mode = _PracticeMode.regexToDfa;
 
-  // The working queue — a shuffled copy of _kPool.
-  late List<_Challenge> _queue;
+  // The working queue — regex and PDA challenges.
+  late List<_AnyChallenge> _queue;
   int _queueIndex = 0;
 
   // Session counters
@@ -736,14 +761,22 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   /// Returns the appropriate mode for a given challenge.
   /// Description challenges always use describeToFa when that mode is selected;
   /// otherwise falls back to regexToDfa.
-  _PracticeMode _pickModeForChallenge(_Challenge challenge) {
-    if (challenge.description != null &&
+  _PracticeMode _pickModeForChallenge(_AnyChallenge challenge) {
+    if (challenge.isPda) {
+      if (_selectedModes.contains(_PracticeMode.pdaToDraw)) {
+        return _PracticeMode.pdaToDraw;
+      }
+      return _PracticeMode.pdaToDraw;
+    }
+    final rc = challenge.regexChallenge!;
+    if (rc.description != null &&
         _selectedModes.contains(_PracticeMode.describeToFa)) {
       return _PracticeMode.describeToFa;
     }
-    // For regex/DFA challenges, pick randomly from the non-describe selected modes.
     final pool = _selectedModes
-        .where((m) => m != _PracticeMode.describeToFa)
+        .where((m) =>
+            m != _PracticeMode.describeToFa &&
+            m != _PracticeMode.pdaToDraw)
         .toList();
     if (pool.isEmpty) return _PracticeMode.regexToDfa;
     return pool[_rng.nextInt(pool.length)];
@@ -791,13 +824,28 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   // ── Queue management ──────────────────────────────────────────────────────
 
   void _buildQueue() {
-    final regexChallenges = _generateChallenges(_rng);
-    final descChallenges = _generateDescriptionChallenges(_rng);
-    _queue = [...regexChallenges, ...descChallenges]..shuffle(_rng);
+    final all = <_AnyChallenge>[];
+    final hasRegexModes = _selectedModes.any((m) =>
+        m == _PracticeMode.regexToDfa ||
+        m == _PracticeMode.dfaToRegex ||
+        m == _PracticeMode.describeToFa);
+    if (hasRegexModes) {
+      all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
+      all.addAll(
+          _generateDescriptionChallenges(_rng).map(_AnyChallenge.regex));
+    }
+    if (_selectedModes.contains(_PracticeMode.pdaToDraw)) {
+      all.addAll(generateStudyPdaChallenges(_rng, count: 20)
+          .map(_AnyChallenge.pda));
+    }
+    if (all.isEmpty) {
+      all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
+    }
+    _queue = all..shuffle(_rng);
     _queueIndex = 0;
   }
 
-  _Challenge get _current => _queue[_queueIndex];
+  _AnyChallenge get _current => _queue[_queueIndex];
 
   void _nextChallenge() {
     _queueIndex++;
@@ -883,8 +931,8 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       return const _GradeResult.parseError('Draw some states first, then hit Check.');
     }
 
-    // Build target DFA from the challenge regex.
-    final targetResult = regexToDfa(_current.regex.replaceAll(' ', ''));
+    final targetResult =
+        regexToDfa(_current.regex.replaceAll(' ', ''));
     if (targetResult.isError) {
       return _GradeResult.parseError('Internal error: ${targetResult.error}');
     }
@@ -931,14 +979,36 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       startArrow2: targetResult.startArrow,
     );
 
-    if (eq.status == EquivalenceStatus.equivalent) return const _GradeResult.correct();
+    if (eq.status == EquivalenceStatus.equivalent) {
+      return const _GradeResult.correct();
+    }
     return _GradeResult.wrong(eq.witness);
   }
 
+  _GradeResult _gradePlayerPda() {
+    if (_playerStart == null || _playerNodes.isEmpty) {
+      return const _GradeResult.parseError(
+          'Draw some states first, then hit Check.');
+    }
+    final grade = gradeStudyPda(
+      nodes: _playerNodes,
+      lines: _playerLines,
+      start: _playerStart,
+      challenge: _current.pdaChallenge!,
+    );
+    if (grade.correct) return const _GradeResult.correct();
+    return _GradeResult.wrong(studyPdaFailureMessage(grade.failedCase!));
+  }
+
   void _submit() {
-    final result = _mode == _PracticeMode.dfaToRegex
-        ? _gradePlayerRegex()
-        : _gradePlayerDfa(); // both regexToDfa and describeToFa draw a DFA
+    final _GradeResult result;
+    if (_mode == _PracticeMode.pdaToDraw) {
+      result = _gradePlayerPda();
+    } else if (_mode == _PracticeMode.dfaToRegex) {
+      result = _gradePlayerRegex();
+    } else {
+      result = _gradePlayerDfa();
+    }
 
     setState(() {
       _gradeResult = result;
@@ -1154,7 +1224,9 @@ class _TopBar extends StatelessWidget {
                           ? theme.accentGreen
                           : m == _PracticeMode.describeToFa
                               ? const Color(0xFFB47FFF)
-                              : theme.accent;
+                              : m == _PracticeMode.pdaToDraw
+                                  ? const Color(0xFF26C6DA)
+                                  : theme.accent;
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: GestureDetector(
@@ -1264,7 +1336,7 @@ class _TopBar extends StatelessWidget {
 
 class _ChallengeBody extends StatelessWidget {
   final _PracticeMode mode;
-  final _Challenge challenge;
+  final _AnyChallenge challenge;
   final int queueIndex;
   final int queueTotal;
   final _GradeResult? gradeResult;
@@ -1329,21 +1401,30 @@ class _ChallengeBody extends StatelessWidget {
           Expanded(
             child: mode == _PracticeMode.dfaToRegex
                 ? _RegexInputArea(
-                    challenge: challenge,
+                    challenge: challenge.regexChallenge!,
                     controller: regexInputCtrl,
                     focusNode: regexInputFocus,
                     submitted: submitted,
                     gradeResult: gradeResult,
                     theme: theme,
                   )
-                : _DfaDrawingArea(
-                    challenge: challenge,
-                    submitted: submitted,
-                    gradeResult: gradeResult,
-                    answerRevealed: answerRevealed,
-                    onFaChanged: onPlayerFaChanged,
-                    theme: theme,
-                  ),
+                : mode == _PracticeMode.pdaToDraw
+                    ? StudyPdaDrawingArea(
+                        challenge: challenge.pdaChallenge!,
+                        submitted: submitted,
+                        answerRevealed: answerRevealed,
+                        lastCorrect: gradeResult?.correct,
+                        onFaChanged: onPlayerFaChanged,
+                        theme: theme,
+                      )
+                    : _DfaDrawingArea(
+                        challenge: challenge.regexChallenge!,
+                        submitted: submitted,
+                        gradeResult: gradeResult,
+                        answerRevealed: answerRevealed,
+                        onFaChanged: onPlayerFaChanged,
+                        theme: theme,
+                      ),
           ),
 
           const SizedBox(height: 14),
@@ -1427,7 +1508,7 @@ class _ProgressRow extends StatelessWidget {
 
 class _ChallengeCard extends StatelessWidget {
   final _PracticeMode mode;
-  final _Challenge challenge;
+  final _AnyChallenge challenge;
   final AppThemeNotifier theme;
 
   const _ChallengeCard({
@@ -1464,7 +1545,9 @@ class _ChallengeCard extends StatelessWidget {
         ? theme.accent
         : mode == _PracticeMode.describeToFa
             ? const Color(0xFFB47FFF)
-            : theme.accentGreen;
+            : mode == _PracticeMode.pdaToDraw
+                ? const Color(0xFF26C6DA)
+                : theme.accentGreen;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1570,6 +1653,45 @@ class _ChallengeCard extends StatelessWidget {
                 ),
               ),
             ),
+          ] else if (mode == _PracticeMode.pdaToDraw) ...[
+            Text(
+              'CONTEXT-FREE LANGUAGE',
+              style: GoogleFonts.orbitron(
+                color: theme.textDim,
+                fontSize: 8,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF26C6DA).withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFF26C6DA).withOpacity(0.25)),
+              ),
+              child: Text(
+                challenge.description ?? '',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF80DEEA),
+                  fontSize: 14,
+                  height: 1.55,
+                ),
+              ),
+            ),
+            if (challenge.hint != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                challenge.hint!,
+                style: GoogleFonts.sourceCodePro(
+                  color: theme.textDim,
+                  fontSize: 12,
+                  height: 1.45,
+                ),
+              ),
+            ],
           ] else ...[
             // DFA→REGEX: no description shown — alphabet is the only hint
             Text(
@@ -1621,7 +1743,9 @@ class _ChallengeCard extends StatelessWidget {
                       ? 'Draw a DFA on the canvas below whose language equals this regex.'
                       : mode == _PracticeMode.describeToFa
                           ? 'Draw a DFA on the canvas below whose language matches the description above.'
-                          : 'Type a regular expression below that describes exactly this language.',
+                          : mode == _PracticeMode.pdaToDraw
+                              ? 'Draw a PDA on the canvas below that accepts exactly this language.'
+                              : 'Type a regular expression below that describes exactly this language.',
                   style: GoogleFonts.sourceCodePro(
                     color: theme.textDim,
                     fontSize: 11,
@@ -2039,7 +2163,7 @@ class _ReadOnlyDfaPreviewState extends State<_ReadOnlyDfaPreview> {
 
 class _FeedbackBanner extends StatelessWidget {
   final _GradeResult result;
-  final _Challenge challenge;
+  final _AnyChallenge challenge;
   final _PracticeMode mode;
   final int wrongAttempts;
   final bool answerRevealed;
@@ -2077,7 +2201,9 @@ class _FeedbackBanner extends StatelessWidget {
             ? 'Your DFA is equivalent to  ${challenge.regex}.'
             : mode == _PracticeMode.describeToFa
                 ? 'Your FA correctly captures the described language!'
-                : 'Your regex describes the same language.',
+                : mode == _PracticeMode.pdaToDraw
+                    ? 'Your PDA passes every oracle test case for this language.'
+                    : 'Your regex describes the same language.',
         theme: theme,
       );
     }
@@ -2091,7 +2217,9 @@ class _FeedbackBanner extends StatelessWidget {
       // 3 tries exhausted — show the canonical answer.
       final answerText = mode == _PracticeMode.dfaToRegex
           ? 'A correct regex for this language is:\n  ${challenge.regex}'
-          : 'The correct FA has been loaded on the canvas above — study it, then move on.';
+          : mode == _PracticeMode.pdaToDraw
+              ? 'The correct PDA has been loaded on the canvas above — study it, then move on.'
+              : 'The correct FA has been loaded on the canvas above — study it, then move on.';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

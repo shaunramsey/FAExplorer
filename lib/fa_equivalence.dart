@@ -27,9 +27,12 @@
 //    on symbols outside that set.
 //  • The state-space is exponential in the worst case; a hard cap of 8 000
 //    BFS nodes is applied.  If the cap is hit the result is "unknown".
-//  • The null / ? transition and black-box nodes are NOT modelled here
-//    (they belong to the TM / black-box layer).  Transitions whose label
-//    normalises to '?' or that start from a black-box node are skipped.
+//  • Black-box nodes are NOT modelled here (they belong to the TM /
+//    black-box layer).  Transitions that start from a black-box node are
+//    skipped.
+//  • Unlabeled transitions and `~` / ε are epsilon.  `?` / `\0` are null
+//    jumps that fire once the current input prefix has been fully consumed
+//    (matching [AutomataSimulator]).
 
 import 'models.dart';
 import 'pda_simulator.dart';
@@ -413,6 +416,7 @@ String _encodeInputTokens(List<String> tokens) {
 ///
 /// Commas and newlines are delimiters only when outside double-quotes.
 List<String> _splitLabel(String label) {
+  if (label.trim().isEmpty) return const [''];
   final tokens = <String>[];
   final buf = StringBuffer();
   bool inQuote = false;
@@ -476,6 +480,13 @@ class _NfaAdapter {
     return n.isEmpty || n == '~';
   }
 
+  /// Null jumps fire only after the current input prefix is fully consumed.
+  /// Matches [AutomataSimulator]'s end-of-input `?` / `\0` handling.
+  bool _isNullJump(String raw) {
+    final n = _normalise(raw);
+    return n == '?' || n == r'\0';
+  }
+
   /// For a `.-X,"Y",...` token, returns the set of excluded symbols.
   /// For a bare `.` the excluded set is empty (matches everything in alphabet).
   Set<String> _negationExcludes(String token) {
@@ -513,7 +524,10 @@ class _NfaAdapter {
     return false;
   }
 
-  /// ε-closure of a set of NFA states.
+  /// ε-closure plus end-of-input null jumps (`?`, `\0`) of a set of NFA states.
+  ///
+  /// The BFS only calls this after the entire current witness prefix has been
+  /// consumed, which is exactly when null jumps are allowed in the simulator.
   Set<String> epsilonClosure(Set<String> states) {
     final closure = <String>{...states};
     final stack = [...states];
@@ -524,7 +538,7 @@ class _NfaAdapter {
       for (final line in lines.values) {
         if (line.nodeAId != cur) continue;
         for (final alt in _splitLabel(line.label)) {
-          if (_isEpsilon(alt)) {
+          if (_isEpsilon(alt) || _isNullJump(alt)) {
             if (closure.add(line.nodeBId)) stack.add(line.nodeBId);
           }
         }
