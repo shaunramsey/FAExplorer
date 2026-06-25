@@ -99,6 +99,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
     late final EquivalenceResult result;
     switch (g1.automataMode) {
       case AutomataMode.ndfa:
+      case AutomataMode.regex:
         result = checkEquivalence(
           nodes1: g1.nodes, lines1: g1.lines, startArrow1: g1.startArrow,
           nodes2: g2.nodes, lines2: g2.lines, startArrow2: g2.startArrow,

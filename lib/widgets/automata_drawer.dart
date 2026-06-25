@@ -7,7 +7,7 @@ import 'app_theme_settings.dart';
 //  AutomataMode  — the three simulation modes
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum AutomataMode { ndfa, pda, tm }
+enum AutomataMode { ndfa, pda, tm, regex }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  _HoverTile — list tile with tooltip description on hover, no extra height
@@ -67,6 +67,7 @@ class _ModeRadioGroup extends StatelessWidget {
     (mode: AutomataMode.ndfa, label: 'NDFA', tooltip: 'Non-deterministic Finite Automaton'),
     (mode: AutomataMode.pda, label: 'PDA', tooltip: 'Pushdown Automaton — labels use read,pop|push format'),
     (mode: AutomataMode.tm, label: 'TM', tooltip: 'Turing Machine — labels use read,write,direction format'),
+    (mode: AutomataMode.regex, label: 'RegEx', tooltip: 'Regular Expression — convert a regex to NFA or DFA on the canvas'),
   ];
 
   @override
@@ -144,6 +145,12 @@ class AutomataDrawer extends StatelessWidget {
 
   final VoidCallback onBatchSimulator;
   final VoidCallback onEquivalenceChecker;
+
+  /// Called when the user taps "NFA/DFA → Regex" in the drawer.
+  /// Optional — callers that haven't wired this up yet simply won't show the
+  /// menu item (see [build]).
+  final VoidCallback? onFaToRegex;
+
   final VoidCallback onExport;
   final VoidCallback onImport;
   final VoidCallback onExportHistory;
@@ -163,6 +170,7 @@ class AutomataDrawer extends StatelessWidget {
     required this.onModeChanged,
     required this.onBatchSimulator,
     required this.onEquivalenceChecker,
+    this.onFaToRegex,
     required this.onExport,
     required this.onImport,
     required this.onExportHistory,
@@ -244,6 +252,16 @@ class AutomataDrawer extends StatelessWidget {
                 onEquivalenceChecker();
               },
             ),
+            if (onFaToRegex != null)
+              _HoverTile(
+                leading: const Icon(Icons.functions),
+                title: const Text('NFA / DFA  →  Regex'),
+                subtitle: 'Derive a regular expression from the current automaton using state elimination.',
+                onTap: () {
+                  Navigator.pop(context);
+                  onFaToRegex!();
+                },
+              ),
 
             _HoverTile(
               leading: const Icon(Icons.upload_file),

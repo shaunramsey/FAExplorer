@@ -154,6 +154,36 @@ enum LevelDifficulty {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  PuzzleVariant
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Governs what kind of challenge the player faces and how the puzzle screen
+/// presents it.
+///
+/// [buildAutomaton]  — Classic mode: blank (or scaffolded) canvas; player draws
+///                     states and transitions; submission is checked for FA/PDA/TM
+///                     equivalence against the embedded target DSL.  This is the
+///                     original behaviour and the default for all existing levels.
+///
+/// [regexToDfa]      — The player is shown a regular expression in the goal banner
+///                     and must build a DFA whose language is equivalent to that
+///                     regex.  Submission is checked for FA equivalence against a
+///                     pre-computed DFA stored in [GameLevel.dsl].  The level must
+///                     also set [GameLevel.requiredAutomatonType] to
+///                     [RequiredAutomatonType.dfa] so the type-check fires first.
+///
+/// [dfaToRegex]      — The player is shown a DFA diagram (rendered read-only on the
+///                     canvas) and must type a regular expression into a text field.
+///                     Their regex is compiled to an NFA/DFA and then checked for
+///                     FA equivalence against the target stored in [GameLevel.dsl].
+///                     The canvas is non-interactive; only the regex input matters.
+enum PuzzleVariant {
+  buildAutomaton,
+  regexToDfa,
+  dfaToRegex,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  EasyModeNode
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -271,6 +301,24 @@ class GameLevel {
   /// Whether this level supports [LevelDifficulty.easy] mode with scaffolding.
   bool get hasEasyMode => easyModeNodes != null && easyModeNodes!.isNotEmpty;
 
+  /// Controls which kind of challenge the puzzle screen presents.
+  ///
+  /// Defaults to [PuzzleVariant.buildAutomaton] for all existing levels.
+  /// Set to [PuzzleVariant.regexToDfa] or [PuzzleVariant.dfaToRegex] for the
+  /// new regex section.
+  final PuzzleVariant puzzleVariant;
+
+  /// The regular expression string shown to the player in [PuzzleVariant.regexToDfa]
+  /// and [PuzzleVariant.dfaToRegex] levels.
+  ///
+  /// For [regexToDfa]: displayed prominently in the goal banner so the player
+  /// knows which language they must capture.
+  ///
+  /// For [dfaToRegex]: also displayed as a hint / reference alongside the
+  /// read-only DFA canvas.  The equivalence check ignores this field; only
+  /// [dsl] is used as the ground truth.
+  final String targetRegex;
+
   /// When true, the [requiredAutomatonType] constraint is relaxed in easy mode:
   /// the player may submit any finite automaton (DFA or NFA) and the type check
   /// is skipped entirely.  The language-equivalence check still runs as normal.
@@ -301,6 +349,8 @@ class GameLevel {
     this.isBoss = false,
     this.easyModeNodes,
     this.easyModeBypassTypeCheck = false,
+    this.puzzleVariant = PuzzleVariant.buildAutomaton,
+    this.targetRegex = '',
   });
 }
 
@@ -340,6 +390,13 @@ class GameLevel {
 //    Col 23 x≈0.94   TM ADVANCED   — ww/anbncn (2 levels)
 //    Col 24 x≈0.96   TM CHALLENGE  — tm_palindrome (1 level)
 //    Col 25 x≈0.98   BOSS          — level_3 TM boss (boss, alone)
+//
+//    ═══ REGEX SECTION (x: 1.00–1.12) ════════════════════════════════════════
+//    Col 26 x≈1.00   TUTORIAL      — Regular Expressions (alone)
+//    Col 27 x≈1.03   REGEX→DFA A   — regex_to_dfa_ab_star / regex_to_dfa_starts_a / regex_to_dfa_ends_b (3 levels)
+//    Col 28 x≈1.06   REGEX→DFA B   — regex_to_dfa_a_or_b_star / regex_to_dfa_aba / regex_to_dfa_no_aa (3 levels)
+//    Col 29 x≈1.09   DFA→REGEX A   — dfa_to_regex_single_a / dfa_to_regex_ends_b / dfa_to_regex_even_as (3 levels)
+//    Col 30 x≈1.12   DFA→REGEX B   — dfa_to_regex_starts_ab / dfa_to_regex_no_consec_b / dfa_to_regex_binary_mod2 (3 levels)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const List<GameLevel> kAllLevels = [
@@ -2522,6 +2579,535 @@ const List<GameLevel> kAllLevels = [
     x: 0.990,
     y: 0.50,
     tag: 'tm',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  LAYER 26 — TUTORIAL: REGULAR EXPRESSIONS  (x ≈ 1.00)
+  //  Requires TM palindrome (last TM level).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'tutorial_regex',
+    title: 'Regular Expressions',
+    description: 'Learn the connection between regular expressions and finite automata.',
+    svgAsset: '',
+    unlockRule: RequireLevel('tm_palindrome'),
+    x: 1.00,
+    y: 0.50,
+    tag: 'tutorial',
+    isTutorial: true,
+    tutorialSlides: [
+      TutorialSlide(
+        headline: 'What is a Regular Expression?',
+        body: 'A **regular expression** (regex) is a compact notation for describing a '
+            'regular language — the same class of languages recognised by DFAs and NFAs.\n\n'
+            'Operators used in these puzzles:\n'
+            '• **a** — literal symbol "a"\n'
+            '• **ab** — concatenation (a then b)\n'
+            '• **a+b** — alternation / union (a OR b)\n'
+            '• **a*** — Kleene star (zero or more a)\n'
+            '• **(…)** — grouping',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Regex ↔ Automaton',
+        body: 'Every regular expression describes exactly the same set of strings '
+            'as some DFA (and vice versa). This is why they are called *regular* languages.\n\n'
+            'This section has two challenge types:\n\n'
+            '**Regex → DFA** — You are given a regex and must build a DFA whose language '
+            'matches it exactly.\n\n'
+            '**DFA → Regex** — You are shown a read-only DFA diagram and must type a '
+            'regex that describes the same language.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Notation Reference',
+        body: 'The checker uses the following notation:\n\n'
+            '• **~** — empty string ε  (e.g. a+~ means "a or nothing")\n'
+            '• **∅** — empty language (matches nothing)\n'
+            '• **+** — alternation  (a+b means a OR b)\n'
+            '• ***** — Kleene star, postfix  (a* = zero or more a)\n'
+            '• Concatenation is implicit: **ab** means a then b\n\n'
+            'Precedence (high→low): star → concat → union.\n'
+            'Use parentheses to override: (a+b)* = any string over {a,b}.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Tips: Regex → DFA',
+        body: 'When you see a regex, ask: "what pattern must a string satisfy?"\n\n'
+            '• **ab*** — any number of b\'s after exactly one a\n'
+            '• **(a+b)*abb** — anything, ending in "abb"\n'
+            '• **(ab)*** — alternating pairs: ε, ab, abab, …\n\n'
+            'Think about what the machine must *remember*. '
+            'Each memory unit (e.g. "last symbol seen") usually becomes a state.',
+        illustrationType: TutorialIllustration.none,
+      ),
+      TutorialSlide(
+        headline: 'Tips: DFA → Regex',
+        body: 'To derive a regex from a DFA, try **state elimination**:\n\n'
+            '1. Add a super-start → original start and all accept states → super-accept '
+            'with ε-transitions.\n'
+            '2. Remove inner states one by one, merging their transitions into '
+            'regex labels on the remaining edges.\n'
+            '3. The final label on the super-start → super-accept edge is your regex.\n\n'
+            'In practice, pattern recognition is often faster: '
+            'spot self-loops (→ *), linear paths (→ concat), branches (→ +).',
+        illustrationType: TutorialIllustration.none,
+      ),
+    ],
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  LAYER 27 — REGEX → DFA  (BASIC)  (x ≈ 1.03)
+  //  All three require the regex tutorial.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'regex_to_dfa_ab_star',
+    title: 'Regex → DFA: ab*',
+    description:
+        'Build a DFA over {a, b} equivalent to the regular expression:\n\n'
+        '    ab*\n\n'
+        'Matches "a" followed by any number of b\'s: "a", "ab", "abb", "abbb", …',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n2 = dead
+      n0 = (320.0, 360.0)
+      n1 = (660.0, 360.0)
+      n2 = (660.0, 580.0)
+      n1 is accepted
+      n0 to n1 = a
+      n0 to n2 = b
+      n1 to n1 = b
+      n1 to n2 = a
+      n2 to n2 = a,b
+      l2(b) loop angle = -1.5708
+      l4(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('tutorial_regex'),
+    x: 1.03,
+    y: 0.20,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.regexToDfa,
+    targetRegex: 'ab*',
+  ),
+
+  GameLevel(
+    id: 'regex_to_dfa_starts_a',
+    title: 'Regex → DFA: a(a+b)*',
+    description:
+        'Build a DFA over {a, b} equivalent to the regular expression:\n\n'
+        '    a(a+b)*\n\n'
+        'Matches all strings that start with "a": "a", "aa", "ab", "aba", …',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n2 = dead
+      n0 = (320.0, 360.0)
+      n1 = (660.0, 360.0)
+      n2 = (660.0, 580.0)
+      n1 is accepted
+      n0 to n1 = a
+      n0 to n2 = b
+      n1 to n1 = a,b
+      n2 to n2 = a,b
+      l2(a,b) loop angle = -1.5708
+      l3(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('tutorial_regex'),
+    x: 1.03,
+    y: 0.50,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.regexToDfa,
+    targetRegex: 'a(a+b)*',
+  ),
+
+  GameLevel(
+    id: 'regex_to_dfa_ends_b',
+    title: 'Regex → DFA: (a+b)*b',
+    description:
+        'Build a DFA over {a, b} equivalent to the regular expression:\n\n'
+        '    (a+b)*b\n\n'
+        'Matches all strings that end with "b": "b", "ab", "bb", "aab", …',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n0 = (400.0, 360.0)
+      n1 = (780.0, 360.0)
+      n1 is accepted
+      n0 to n1 = b
+      n0 to n0 = a
+      n1 to n0 = a
+      n1 to n1 = b
+      l0(a) loop angle = -1.5708
+      l3(b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireLevel('tutorial_regex'),
+    x: 1.03,
+    y: 0.80,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.regexToDfa,
+    targetRegex: '(a+b)*b',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  LAYER 28 — REGEX → DFA  (INTERMEDIATE)  (x ≈ 1.06)
+  //  Unlock from any level in layer 27.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  GameLevel(
+    id: 'regex_to_dfa_a_or_b_star',
+    title: 'Regex → DFA: (a+b)*',
+    description:
+        'Build a DFA over {a, b} equivalent to the regular expression:\n\n'
+        '    (a+b)*\n\n'
+        'Matches every string over {a, b} — including the empty string ε.',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n0 = (600.0, 360.0)
+      n0 is accepted
+      n0 to n0 = a,b
+      a,b loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['regex_to_dfa_ab_star', 'regex_to_dfa_starts_a', 'regex_to_dfa_ends_b']),
+    x: 1.06,
+    y: 0.20,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.regexToDfa,
+    targetRegex: '(a+b)*',
+  ),
+
+  GameLevel(
+    id: 'regex_to_dfa_aba',
+    title: 'Regex → DFA: (a+b)*aba(a+b)*',
+    description:
+        'Build a DFA over {a, b} equivalent to the regular expression:\n\n'
+        '    (a+b)*aba(a+b)*\n\n'
+        'Matches all strings containing "aba" as a substring.',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n2 = q2
+      n3 = q3
+      n0 = (280.0, 360.0)
+      n1 = (580.0, 360.0)
+      n2 = (880.0, 360.0)
+      n3 = (1180.0, 360.0)
+      n3 is accepted
+      n0 to n1 = a
+      n0 to n0 = b
+      n1 to n1 = a
+      n1 to n2 = b
+      n2 to n3 = a
+      n3 to n3 = a,b
+      n2 to n0 = b
+      l0(b) loop angle = -1.5708
+      l2(a) loop angle = -1.5708
+      l5(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['regex_to_dfa_ab_star', 'regex_to_dfa_starts_a', 'regex_to_dfa_ends_b']),
+    x: 1.06,
+    y: 0.50,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.regexToDfa,
+    targetRegex: '(a+b)*aba(a+b)*',
+  ),
+
+  GameLevel(
+    id: 'regex_to_dfa_even_as',
+    title: 'Regex → DFA: b*(ab*ab*)*',
+    description:
+        'Build a DFA over {a, b} equivalent to the regular expression:\n\n'
+        '    b*(ab*ab*)*\n\n'
+        "Matches all strings with an even number of a's (including zero a's).",
+    svgAsset: '',
+    dsl: '''
+      n0 = even
+      n1 = odd
+      n0 = (500.0, 360.0)
+      n1 = (900.0, 360.0)
+      n0 is accepted
+      n0 to n1 = a
+      n1 to n0 = a
+      n0 to n0 = b
+      n1 to n1 = b
+      l0(a) curve = -80.0
+      l1(a) curve = -80.0
+      l2(b) loop angle = -1.5708
+      l3(b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['regex_to_dfa_ab_star', 'regex_to_dfa_starts_a', 'regex_to_dfa_ends_b']),
+    x: 1.06,
+    y: 0.80,
+    requiredAutomatonType: RequiredAutomatonType.dfa,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.regexToDfa,
+    targetRegex: 'b*(ab*ab*)*',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  LAYER 29 — DFA → REGEX  (BASIC)  (x ≈ 1.09)
+  //  Unlock from any level in layer 28.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// DFA accepts exactly "a".  Canonical answer: a
+  GameLevel(
+    id: 'dfa_to_regex_single_a',
+    title: 'DFA → Regex: Accept "a"',
+    description:
+        'A read-only DFA is shown on the canvas. Type a regular expression '
+        'in the input box whose language is exactly what this DFA accepts.\n\n'
+        'This DFA accepts only the single-character string "a".',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n2 = dead
+      n0 = (320.0, 360.0)
+      n1 = (660.0, 360.0)
+      n2 = (660.0, 580.0)
+      n1 is accepted
+      n0 to n1 = a
+      n0 to n2 = b
+      n1 to n2 = a,b
+      n2 to n2 = a,b
+      l3(a,b) loop angle = -1.5708
+      l2(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['regex_to_dfa_a_or_b_star', 'regex_to_dfa_aba', 'regex_to_dfa_even_as']),
+    x: 1.09,
+    y: 0.20,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.dfaToRegex,
+    targetRegex: 'a',
+  ),
+
+  /// DFA accepts strings ending in "b".  Canonical answer: (a+b)*b
+  GameLevel(
+    id: 'dfa_to_regex_ends_b',
+    title: 'DFA → Regex: Ends with b',
+    description:
+        'A read-only DFA is shown on the canvas. Type a regular expression '
+        'in the input box whose language is exactly what this DFA accepts.\n\n'
+        'This DFA accepts all strings over {a, b} that end with "b".',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n0 = (400.0, 360.0)
+      n1 = (780.0, 360.0)
+      n1 is accepted
+      n0 to n1 = b
+      n0 to n0 = a
+      n1 to n0 = a
+      n1 to n1 = b
+      l0(a) loop angle = -1.5708
+      l3(b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['regex_to_dfa_a_or_b_star', 'regex_to_dfa_aba', 'regex_to_dfa_even_as']),
+    x: 1.09,
+    y: 0.50,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.dfaToRegex,
+    targetRegex: '(a+b)*b',
+  ),
+
+  /// DFA accepts strings with even number of a's.  Canonical answer: b*(ab*ab*)*
+  GameLevel(
+    id: 'dfa_to_regex_even_as',
+    title: "DFA → Regex: Even a's",
+    description:
+        'A read-only DFA is shown on the canvas. Type a regular expression '
+        'in the input box whose language is exactly what this DFA accepts.\n\n'
+        "This DFA accepts all strings over {a, b} with an even number of a's.",
+    svgAsset: '',
+    dsl: '''
+      n0 = even
+      n1 = odd
+      n0 = (500.0, 360.0)
+      n1 = (900.0, 360.0)
+      n0 is accepted
+      n0 to n1 = a
+      n1 to n0 = a
+      n0 to n0 = b
+      n1 to n1 = b
+      l0(a) curve = -80.0
+      l1(a) curve = -80.0
+      l2(b) loop angle = -1.5708
+      l3(b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['regex_to_dfa_a_or_b_star', 'regex_to_dfa_aba', 'regex_to_dfa_even_as']),
+    x: 1.09,
+    y: 0.80,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.dfaToRegex,
+    targetRegex: 'b*(ab*ab*)*',
+  ),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  LAYER 30 — DFA → REGEX  (INTERMEDIATE)  (x ≈ 1.12)
+  //  Unlock from any level in layer 29.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// DFA accepts strings starting with "ab".  Canonical answer: ab(a+b)*
+  GameLevel(
+    id: 'dfa_to_regex_starts_ab',
+    title: 'DFA → Regex: Starts with ab',
+    description:
+        'A read-only DFA is shown on the canvas. Type a regular expression '
+        'in the input box whose language is exactly what this DFA accepts.\n\n'
+        'This DFA accepts all strings over {a, b} that start with "ab".',
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n2 = q2
+      n3 = dead
+      n0 = (240.0, 360.0)
+      n1 = (560.0, 360.0)
+      n2 = (880.0, 360.0)
+      n3 = (560.0, 600.0)
+      n2 is accepted
+      n0 to n1 = a
+      n0 to n3 = b
+      n1 to n2 = b
+      n1 to n3 = a
+      n2 to n2 = a,b
+      n3 to n3 = a,b
+      l4(a,b) loop angle = -1.5708
+      l5(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['dfa_to_regex_single_a', 'dfa_to_regex_ends_b', 'dfa_to_regex_even_as']),
+    x: 1.12,
+    y: 0.20,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.dfaToRegex,
+    targetRegex: 'ab(a+b)*',
+  ),
+
+  /// DFA accepts strings with no consecutive b's.  Canonical answer: a*(ba+)*b?
+  GameLevel(
+    id: 'dfa_to_regex_no_consec_b',
+    title: "DFA → Regex: No Consecutive b's",
+    description:
+        'A read-only DFA is shown on the canvas. Type a regular expression '
+        'in the input box whose language is exactly what this DFA accepts.\n\n'
+        "This DFA accepts all strings over {a, b} containing no two consecutive b's.",
+    svgAsset: '',
+    dsl: '''
+      n0 = q0
+      n1 = q1
+      n2 = dead
+      n0 = (400.0, 340.0)
+      n1 = (780.0, 340.0)
+      n2 = (580.0, 580.0)
+      n0 is accepted
+      n1 is accepted
+      n0 to n1 = b
+      n0 to n0 = a
+      n1 to n0 = a
+      n1 to n2 = b
+      n2 to n2 = a,b
+      l0(a) loop angle = -1.5708
+      l4(a,b) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['dfa_to_regex_single_a', 'dfa_to_regex_ends_b', 'dfa_to_regex_even_as']),
+    x: 1.12,
+    y: 0.50,
+    alphabet: {'a', 'b'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.dfaToRegex,
+    targetRegex: 'a*(ba+)*b?',
+  ),
+
+  /// DFA accepts binary strings with even number of 0s.  Canonical answer: 1*(01*01*)*
+  GameLevel(
+    id: 'dfa_to_regex_binary_mod2',
+    title: 'DFA → Regex: Even 0s',
+    description:
+        'A read-only DFA is shown on the canvas. Type a regular expression '
+        'in the input box whose language is exactly what this DFA accepts.\n\n'
+        'This DFA accepts binary strings over {0, 1} with an even number of 0s.',
+    svgAsset: '',
+    dsl: '''
+      n0 = even
+      n1 = odd
+      n0 = (504.7, 310.0)
+      n1 = (1030.0, 314.0)
+      n0 is accepted
+      n0 to n1 = 0
+      n1 to n0 = 0
+      n0 to n0 = 1
+      n1 to n1 = 1
+      l0(0) curve = -74.1
+      l1(0) curve = -72.7
+      l2(1) loop angle = -1.5708
+      l3(1) loop angle = -1.5708
+      to n0
+      to n0 angle = -1.0000, 0.0000
+    ''',
+    automataMode: AutomataMode.ndfa,
+    unlockRule: RequireAny(['dfa_to_regex_single_a', 'dfa_to_regex_ends_b', 'dfa_to_regex_even_as']),
+    x: 1.12,
+    y: 0.80,
+    alphabet: {'0', '1'},
+    tag: 'regex',
+    puzzleVariant: PuzzleVariant.dfaToRegex,
+    targetRegex: '1*(01*01*)*',
   ),
 
 ];

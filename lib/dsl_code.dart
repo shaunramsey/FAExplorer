@@ -92,6 +92,10 @@ class DslCodec {
 
   static Offset _defaultPosition(int count) {
     if (count == 0) return const Offset(300, 300);
+    // Arrange nodes in concentric rings around a centre point.
+    // Ring 0 holds 7 nodes, ring 1 holds 13, ring 2 holds 19, …
+    // Ring radius is capped at 280 px so even deep rings stay within a
+    // typical ~800×600 viewport when the canvas origin is near (0,0).
     int ring = 0, capacity = 0, ringSize = 7;
     while (capacity + ringSize <= count) {
       capacity += ringSize;
@@ -100,7 +104,8 @@ class DslCodec {
     }
     final pos = count - capacity;
     final angle = (2 * pi * pos) / ringSize - pi / 2;
-    final radius = 180.0 * (ring + 1);
+    // Cap radius growth so nodes don't fly off-screen for large graphs.
+    final radius = min(280.0, 150.0 + ring * 80.0);
     return Offset(300 + cos(angle) * radius, 300 + sin(angle) * radius);
   }
 
@@ -114,6 +119,9 @@ class DslCodec {
       out.add('');
     } else if (g.automataMode == AutomataMode.tm) {
       out.add('tm mode');
+      out.add('');
+    } else if (g.automataMode == AutomataMode.regex) {
+      out.add('regex mode');
       out.add('');
     }
 
@@ -138,6 +146,12 @@ class DslCodec {
           out.add('  ${dslLine}');
         }
         out.add('}');
+        if (n.blackBoxReadTape != 1) {
+          out.add('${n.id} blackbox read tape = ${n.blackBoxReadTape}');
+        }
+        if (n.blackBoxWriteTape != 1) {
+          out.add('${n.id} blackbox write tape = ${n.blackBoxWriteTape}');
+        }
       }
     }
     if (g.nodes.isNotEmpty) out.add('');
@@ -278,7 +292,7 @@ class DslCodec {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
 
-      // ── pda mode [on|off] / tm mode [on|off] ─────────────────────────────
+      // ── pda mode [on|off] / tm mode [on|off] / regex mode [on|off] ────────
       final pdaModeMatch = RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
       if (pdaModeMatch != null) {
         final flag = pdaModeMatch.group(1)?.toLowerCase();
@@ -289,6 +303,12 @@ class DslCodec {
       if (tmModeMatch != null) {
         final flag = tmModeMatch.group(1)?.toLowerCase();
         if (flag != 'off') automataMode = AutomataMode.tm;
+        continue;
+      }
+      final regexModeMatch = RegExp(r'^regex\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
+      if (regexModeMatch != null) {
+        final flag = regexModeMatch.group(1)?.toLowerCase();
+        if (flag != 'off') automataMode = AutomataMode.regex;
         continue;
       }
 
@@ -462,6 +482,40 @@ class DslCodec {
         final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
         node.blackBoxDsl = _decodeMaybeLegacyBase64(encoded);
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
+        continue;
+      }
+
+      // ── nN blackbox read tape = N ────────────────────────────────────────
+      final bbReadTapeMatch = RegExp(r'^(n\d+)\s+blackbox\s+read\s+tape\s*=\s*(\d+)$', caseSensitive: false).firstMatch(line);
+      if (bbReadTapeMatch != null) {
+        final id = bbReadTapeMatch.group(1)!;
+        final tapeNum = int.tryParse(bbReadTapeMatch.group(2)!) ?? 1;
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
+        node.isBlackBox = true;
+        node.blackBoxReadTape = tapeNum < 1 ? 1 : tapeNum;
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
+        continue;
+      }
+
+      // ── nN blackbox write tape = N ───────────────────────────────────────
+      final bbWriteTapeMatch = RegExp(r'^(n\d+)\s+blackbox\s+write\s+tape\s*=\s*(\d+)$', caseSensitive: false).firstMatch(line);
+      if (bbWriteTapeMatch != null) {
+        final id = bbWriteTapeMatch.group(1)!;
+        final tapeNum = int.tryParse(bbWriteTapeMatch.group(2)!) ?? 1;
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
+        node.isBlackBox = true;
+        node.blackBoxWriteTape = tapeNum < 1 ? 1 : tapeNum;
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
         }

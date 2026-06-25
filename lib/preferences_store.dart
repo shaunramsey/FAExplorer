@@ -12,6 +12,8 @@ abstract final class PreferenceKeys {
   static const showHelpOverlay = 'show_help_overlay';
   static const simInput = 'sim_input';
   static const simStep = 'sim_step';
+  /// JSON-encoded list of strings: content for tapes 2, 3, … (index 0 = tape 2).
+  static const additionalTapeInputs = 'additional_tape_inputs';
 }
 
 class PersistedSnapshot {
@@ -21,6 +23,10 @@ class PersistedSnapshot {
   final bool showHelpOverlay;
   final String simInput;
   final int simStep;
+  /// Content for tapes 2, 3, … (index 0 = tape 2, index 1 = tape 3, …).
+  /// Each string is the raw user input for that tape, tokenised the same way
+  /// as [simInput].  Empty list means all extra tapes start blank.
+  final List<String> additionalTapeInputs;
 
   const PersistedSnapshot({
     this.graphDsl,
@@ -29,6 +35,7 @@ class PersistedSnapshot {
     this.showHelpOverlay = false,
     this.simInput = '',
     this.simStep = -1,
+    this.additionalTapeInputs = const [],
   });
 }
 
@@ -50,6 +57,9 @@ class PreferencesStore {
       showHelpOverlay: _prefs.getBool(PreferenceKeys.showHelpOverlay) ?? false,
       simInput: _prefs.getString(PreferenceKeys.simInput) ?? '',
       simStep: _prefs.getInt(PreferenceKeys.simStep) ?? -1,
+      additionalTapeInputs: _decodeTapeInputs(
+        _prefs.getString(PreferenceKeys.additionalTapeInputs),
+      ),
     );
   }
 
@@ -92,6 +102,7 @@ class PreferencesStore {
   Future<void> saveSimulator({
     required String input,
     required int step,
+    List<String> additionalTapeInputs = const [],
   }) async {
     if (input.isEmpty) {
       await _prefs.remove(PreferenceKeys.simInput);
@@ -99,6 +110,19 @@ class PreferencesStore {
       await _prefs.setString(PreferenceKeys.simInput, input);
     }
     await _prefs.setInt(PreferenceKeys.simStep, step);
+
+    // Persist extra-tape inputs.  Remove the key entirely when all tapes are
+    // blank so we don't store unnecessary noise for single-tape machines.
+    final nonEmpty = additionalTapeInputs.map((s) => s).toList();
+    final allBlank = nonEmpty.every((s) => s.isEmpty);
+    if (allBlank) {
+      await _prefs.remove(PreferenceKeys.additionalTapeInputs);
+    } else {
+      await _prefs.setString(
+        PreferenceKeys.additionalTapeInputs,
+        jsonEncode(nonEmpty),
+      );
+    }
   }
 
   Future<void> clearAll() async {
@@ -106,6 +130,7 @@ class PreferencesStore {
     await _prefs.remove(PreferenceKeys.savedExports);
     await _prefs.remove(PreferenceKeys.simInput);
     await _prefs.remove(PreferenceKeys.simStep);
+    await _prefs.remove(PreferenceKeys.additionalTapeInputs);
   }
 
   static List<SavedExport> _decodeExports(String? raw) {
@@ -141,6 +166,18 @@ class PreferencesStore {
         }
       }
       return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Decodes a JSON-encoded list of tape-input strings.
+  /// Returns an empty list on any parse error so callers always get a safe value.
+  static List<String> _decodeTapeInputs(String? raw) {
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return [for (final item in list) item?.toString() ?? ''];
     } catch (_) {
       return [];
     }

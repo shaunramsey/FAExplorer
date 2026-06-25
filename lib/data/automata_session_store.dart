@@ -30,6 +30,7 @@ class LocalSessionStore implements AutomataSessionStore {
     await _prefs.saveSimulator(
       input: snapshot.simInput,
       step: snapshot.simStep,
+      additionalTapeInputs: snapshot.additionalTapeInputs,
     );
   }
 }

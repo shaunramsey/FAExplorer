@@ -21,6 +21,8 @@ import 'widgets/help_overlay.dart';
 import 'widgets/rubber_band_painter.dart';
 import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
+import 'tm_simulator.dart';
+import 'widgets/tm_config_panel.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -76,6 +78,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   late final AutomataSimulator _simulator;
   late final PdaSimulator _pdaSimulator;     // ← NEW
+  late final TmSimulator _tmSimulator;       // ← TM
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
   Timer? _persistTimer;
   bool _persistenceReady = false;
@@ -111,6 +114,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   /// At the accepted final step, union all nodes/lines from every step to
   /// highlight the complete accepted path. Otherwise show only the current step.
   Set<String> get _simActiveNodes {
+    if (_automataMode == AutomataMode.tm) {
+      return _tmSimulator.activeNodes;
+    }
     if (_automataMode == AutomataMode.pda) {
       // Use _simulator.step directly so we never lag one frame behind the
       // onStepChanged callback that would normally sync _pdaSimulator.step.
@@ -125,6 +131,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   Set<String> get _simActiveLines {
+    if (_automataMode == AutomataMode.tm) {
+      return _tmSimulator.activeLines;
+    }
     if (_automataMode == AutomataMode.pda) {
       // Use _simulator.step directly — same reason as above.
       if (_simulator.step < 0) return {};
@@ -183,7 +192,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _nodeCounter = state.nodeCounter;
         _lineCounter = state.lineCounter;
         _automataMode =
-    state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
+            state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
+        _normalizeReversePairs();
       } catch (_) {
         // Ignore corrupt saved graphs.
       }
@@ -214,6 +224,10 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _pdaSimulator.rebuild(_simController.text, startArrow: _startArrow);
     if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
       _pdaSimulator.step = _pdaSimulator.tokens.length;
+    }
+    _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
+    if (_tmSimulator.step > _tmSimulator.maxStep) {
+      _tmSimulator.step = _tmSimulator.maxStep;
     }
   }
 
@@ -324,6 +338,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       lines: _lines,
     );
 
+    _tmSimulator = TmSimulator(           // ← TM
+      nodes: _nodes,
+      lines: _lines,
+    );
+
     _simController.addListener(_schedulePersist);
     WidgetsBinding.instance.addObserver(this);
     _loadPreferences();
@@ -379,6 +398,18 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   String _exportToDsl() => DslCodec.exportToDsl(_graphState);
 
 
+  /// Ensures every line with a negative perpendicularPart is flipped positive.
+  /// Because each line's perpendicular normal is derived from its own A→B
+  /// direction (flipped for a reverse line), +55 on both lines in a pair
+  /// naturally curves them to opposite sides — a negative value is never needed.
+  void _normalizeReversePairs() {
+    for (final line in _lines.values) {
+      if (line.perpendicularPart < 0) {
+        line.perpendicularPart = line.perpendicularPart.abs();
+      }
+    }
+  }
+
   void _applyGraphState(GraphState state) {
     setState(() {
       _nodes
@@ -391,10 +422,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       _nodeCounter = state.nodeCounter;
       _lineCounter = state.lineCounter;
       _automataMode =
-    state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
+          state.pdaMode ? AutomataMode.pda : AutomataMode.ndfa;
       _draggingNodeId = null;
       _draggingLineId = null;
       _lineSourceNodeId = null;
+      _normalizeReversePairs();
     });
     _refreshSimulation();
   }
@@ -771,7 +803,26 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
           setState(() {
             final id = _nextId('l');
 
-            final line = LineData(id: id, nodeAId: srcId, nodeBId: destId);
+            // If a line already exists in the opposite direction (destId → srcId),
+            // both lines get +55. Each line's perpendicular normal is computed
+            // from its own A→B direction, which is flipped for the reverse line,
+            // so +55 on both naturally curves them to opposite sides of the chord.
+            const double defaultPerp = 20.0;
+            final _reverseMatches = _lines.values
+                .where((l) => l.nodeAId == destId && l.nodeBId == srcId)
+                .toList();
+            final reverseLine = _reverseMatches.isNotEmpty ? _reverseMatches.first : null;
+
+            final line = LineData(
+              id: id,
+              nodeAId: srcId,
+              nodeBId: destId,
+              perpendicularPart: reverseLine != null ? defaultPerp : 0,
+            );
+
+            if (reverseLine != null) {
+              reverseLine.perpendicularPart = defaultPerp;
+            }
 
             _lines[id] = line;
 

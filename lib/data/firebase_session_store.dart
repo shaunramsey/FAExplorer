@@ -40,6 +40,7 @@ class FirebaseSessionStore implements AutomataSessionStore {
       showHelpOverlay: data['showHelpOverlay'] as bool? ?? false,
       simInput: data['simInput'] as String? ?? '',
       simStep: (data['simStep'] as num?)?.toInt() ?? -1,
+      additionalTapeInputs: _decodeTapeInputs(data['additionalTapeInputs']),
     );
   }
 
@@ -65,6 +66,7 @@ class FirebaseSessionStore implements AutomataSessionStore {
         'showHelpOverlay': snapshot.showHelpOverlay,
         'simInput': snapshot.simInput,
         'simStep': snapshot.simStep,
+        'additionalTapeInputs': snapshot.additionalTapeInputs,
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -86,5 +88,14 @@ class FirebaseSessionStore implements AutomataSessionStore {
                 item['blackBoxDescription']?.toString() ?? '',
           ),
     ];
+  }
+
+  /// Decodes the Firestore `additionalTapeInputs` field (a Firestore array of
+  /// strings, or null/absent for older documents) into a plain Dart list.
+  /// Any non-string element is coerced to an empty string so the result is
+  /// always a safe `List<String>`.
+  static List<String> _decodeTapeInputs(dynamic raw) {
+    if (raw is! List) return [];
+    return [for (final item in raw) item?.toString() ?? ''];
   }
 }

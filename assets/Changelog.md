@@ -1,3 +1,24 @@
+# June 17th, 2026
+* Fixed further issues with multitape logic
+* TM mode now allows the edit of multiple tapes
+
+# June 16th, 2026
+* Fixed some issues with blackboxes and multitape logic
+
+# June 15th, 2026
+* Fixed issues with easy mode not properly launching
+* Added in the ability for blackboxes to edit the tape they are not reading and vice versa
+
+# June 11th, 2026
+* Rearranged levels to make them easier to view on mobile and make more sense overall
+* Fixed small issues with specific levels
+* Added in difficulties for levels to allow for easier gameplay
+* Fixed all levels to have their proper alphabet
+
+# June 10th, 2026
+* Implemented LaTeX export
+* Implemented tutorial levels
+
 # June 9th, 2026
 * Added in . to mean everything can take that jump and .-"WORD/CHARACTER" to mean that everything but that word, character is allowed to take that jump
 * Implemented a way for game mode to check if it was NFA vs DFA

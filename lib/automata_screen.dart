@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'models.dart';
 import 'data/automata_session_store.dart';
@@ -18,6 +17,7 @@ import 'saved_export.dart';
 import 'dialogs/automata_dialogs.dart';
 import 'dialogs/batch_simulator_dialog.dart';
 import 'dialogs/equivalence_dialog.dart';
+import 'dialogs/fa_to_regex_dialog.dart';
 import 'widgets/automata_drawer.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/help_overlay.dart';
@@ -27,6 +27,9 @@ import 'widgets/string_simulator_panel.dart';
 import 'widgets/pda_stack_panel.dart';
 import 'tm_simulator.dart';
 import 'widgets/tm_config_panel.dart';
+import 'widgets/black_box_input_dialog.dart';
+import 'widgets/regex_panel.dart';
+import 'regex_engine.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -58,6 +61,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   bool _showHelpOverlay = false;
   bool _showSimulator = true;
+  bool _showRegexPanel = false;   // ← shown automatically when mode == regex
+  String? _regexPanelInitialText; // ← pre-filled when coming from FA→Regex
   AutomataMode _automataMode = AutomataMode.ndfa;
 
   StartArrowData? _startArrow;
@@ -86,6 +91,15 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   late final PdaSimulator _pdaSimulator;     // ← NEW
   late final TmSimulator _tmSimulator;       // ← TM
   final GlobalKey _simulatorPanelBoundaryKey = GlobalKey();
+
+  /// Which tape tab is active in the string-simulator panel (0-based).
+  /// Only meaningful in TM mode with more than one tape.
+  int _activeTapeIndex = 0;
+
+  /// Input strings for tapes 2, 3, … (index 0 = tape 2, index 1 = tape 3, …).
+  /// Each controller holds what the user typed for that tape.
+  /// The list grows/shrinks with [_tmSimulator.tapeCount].
+  final List<TextEditingController> _tapeControllers = [];
   Timer? _persistTimer;
   bool _persistenceReady = false;
   bool _loadingPrefs = true;
@@ -146,7 +160,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   }
 
   void _refreshSimulation() {
-    if (_simController.text.isEmpty && _simulator.states.isEmpty) {
+    // Only skip the rebuild when there is truly nothing to simulate: no input
+    // text, no start arrow, and the simulator has never run.  In particular,
+    // DO NOT skip when a start arrow exists — black-box DSL edits must always
+    // propagate even if the user hasn't typed an input string yet.
+    if (_simController.text.isEmpty &&
+        _startArrow == null &&
+        _simulator.states.isEmpty) {
       return;
     }
     _simRebuild();
@@ -170,6 +190,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         showHelpOverlay: _showHelpOverlay,
         simInput: _simController.text,
         simStep: _simulator.step,
+        additionalTapeInputs: _tapeControllers.map((c) => c.text).toList(),
       ),
     );
   }
@@ -201,6 +222,17 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _simController.text = snapshot.simInput;
     _simulator.step = snapshot.simStep;
 
+    // Restore extra-tape inputs.  _simRebuild() will grow _tapeControllers to
+    // the right length; we pre-populate them here so the text is already set
+    // when _simRebuild calls rebuild() on the TM simulator.
+    for (int i = 0; i < snapshot.additionalTapeInputs.length; i++) {
+      // Grow the list if needed (it may still be empty at this point).
+      while (_tapeControllers.length <= i) {
+        _tapeControllers.add(TextEditingController());
+      }
+      _tapeControllers[i].text = snapshot.additionalTapeInputs[i];
+    }
+
     if (_simController.text.isNotEmpty || _startArrow != null) {
       _simRebuild();
     }
@@ -212,6 +244,72 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     }
   }
 
+  /// Scans all transition labels and black-box DSLs in the current graph to
+  /// find the highest tape index referenced anywhere, then returns that value
+  /// (minimum 1).  This drives [TmSimulator.tapeCount] so the simulator always
+  /// allocates enough tapes even when the user hasn't manually added them via
+  /// the tape tab strip.
+  int _autoDetectTapeCount() {
+    int maxTape = 1;
+
+    // Helper: extract the highest tape index mentioned in a single label string
+    // using the same formats the simulator parsers accept.
+    void scanLabel(String label) {
+      if (label.trim().isEmpty) return;
+
+      for (final raw in label.split('\n')) {
+        final s = raw.trim();
+        if (s.isEmpty) continue;
+
+        // bN compound format: "1:aXR,b2,2:01S" — scan for N: prefixes.
+        final prefixes = RegExp(r'(\d+):').allMatches(s);
+        for (final m in prefixes) {
+          final n = int.tryParse(m.group(1)!);
+          if (n != null && n > maxTape) maxTape = n;
+        }
+
+        // Compact 3*N shorthand without tape prefixes: aXRa1L = 2 tapes.
+        // Only count this when there are no N: prefixes and no commas (to
+        // avoid misinterpreting bN compound labels).
+        if (!s.contains(':') && !s.contains(',')) {
+          final runes = s.runes.toList();
+          if (runes.length >= 6 && runes.length % 3 == 0) {
+            bool allDirsValid = true;
+            final inferredTapes = runes.length ~/ 3;
+            for (int i = 0; i < inferredTapes; i++) {
+              final d = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
+              if (d != 'R' && d != 'L' && d != 'S' && d != '~') {
+                allDirsValid = false;
+                break;
+              }
+            }
+            if (allDirsValid && inferredTapes > maxTape) maxTape = inferredTapes;
+          }
+        }
+      }
+    }
+
+    for (final line in _lines.values) {
+      scanLabel(line.label);
+    }
+
+    // Also scan DSLs inside black-box nodes — their labels count toward the
+    // outer tape count because _executeBlackBoxDsl sets tapeCount = outerTapeCount.
+    for (final node in _nodes.values) {
+      if (!node.isBlackBox || node.blackBoxDsl.trim().isEmpty) continue;
+      try {
+        final graph = DslCodec.importFromDsl(node.blackBoxDsl);
+        for (final innerLine in graph.lines.values) {
+          scanLabel(innerLine.label);
+        }
+      } catch (_) {
+        // Malformed DSL — ignore.
+      }
+    }
+
+    return maxTape;
+  }
+
   void _simRebuild() {
     _simulator.rebuild(_simController.text, startArrow: _startArrow);
     if (_simulator.step > _simulator.tokens.length) {
@@ -221,7 +319,30 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
       _pdaSimulator.step = _pdaSimulator.tokens.length;
     }
-    _tmSimulator.rebuild(_simController.text, startArrow: _startArrow);
+    // Auto-detect required tape count from the graph so the simulator always
+    // has enough tapes even if the user hasn't manually added them via the UI.
+    // Only raise the count; never silently lower it below what the user set.
+    final detectedTapes = _autoDetectTapeCount();
+    if (detectedTapes > _tmSimulator.tapeCount) {
+      _tmSimulator.tapeCount = detectedTapes;
+      // Also clamp the active tape index so the UI tab stays valid.
+      if (_activeTapeIndex >= _tmSimulator.tapeCount) {
+        _activeTapeIndex = _tmSimulator.tapeCount - 1;
+      }
+    }
+    // Ensure _tapeControllers has exactly (tapeCount - 1) entries.
+    while (_tapeControllers.length < _tmSimulator.tapeCount - 1) {
+      _tapeControllers.add(TextEditingController());
+    }
+    while (_tapeControllers.length > _tmSimulator.tapeCount - 1) {
+      _tapeControllers.removeLast().dispose();
+    }
+    final additionalInputs = _tapeControllers.map((c) => c.text).toList();
+    _tmSimulator.rebuild(
+      _simController.text,
+      startArrow: _startArrow,
+      additionalTapeInputs: additionalInputs,
+    );
   }
 
   void _cancelRubberBand() {
@@ -351,6 +472,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _simController.removeListener(_schedulePersist);
     _focusNode.dispose();
     _simController.dispose();
+    for (final c in _tapeControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -454,10 +578,54 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     );
   }
 
+  /// Called by [RegexPanel] when the user converts a regex to NFA or DFA.
+  /// The resulting graph is loaded onto the canvas; the mode is switched to
+  /// NDFA so the standard NFA/DFA simulator drives it.
+  void _onRegexConvert(RegexConversionResult result, bool isDfa) {
+    final nextCounter = result.nodes.length;
+    final lineCount = result.lines.length;
+    // Remap node/line counters to avoid collisions with any existing content.
+    final state = GraphState(
+      nodes: result.nodes,
+      lines: result.lines,
+      startArrow: result.startArrow,
+      nodeCounter: nextCounter,
+      lineCounter: lineCount,
+      automataMode: AutomataMode.ndfa,   // always simulate as NDFA/DFA
+    );
+    _applyGraphState(state);
+    // Keep the regex panel open and stay in regex mode so the user can
+    // tweak the expression and re-convert without reopening the panel.
+    setState(() {
+      _automataMode = AutomataMode.regex;
+      _showRegexPanel = true;
+    });
+    _schedulePersist();
+  }
+
   void _showEquivalenceDialog() {
     showEquivalenceDialog(
       context,
       initialDsl: _exportToDsl(),
+    );
+  }
+
+  /// Opens the NFA/DFA → Regex dialog.  The user can optionally load the
+  /// derived expression directly into the Regex Panel.
+  void _showFaToRegexDialog() {
+    showFaToRegexDialog(
+      context,
+      nodes: _nodes,
+      lines: _lines,
+      startArrow: _startArrow,
+      onLoadIntoRegexPanel: (regex) {
+        setState(() {
+          _automataMode = AutomataMode.regex;
+          _showRegexPanel = true;
+          _regexPanelInitialText = regex;
+        });
+        _schedulePersist();
+      },
     );
   }
 
@@ -495,125 +663,22 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _schedulePersist();
   }
 
-  /// Opens a dialog letting the user configure which tape a black-box reads
-  /// from and which tape it writes to.
-  void _showBlackBoxTapeDialog(NodeData node) {
-    int readTape  = node.blackBoxReadTape;
-    int writeTape = node.blackBoxWriteTape;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            Widget tapeSpinner({
-              required String label,
-              required int value,
-              required ValueChanged<int> onChanged,
-            }) {
-              return Row(
-                children: [
-                  SizedBox(
-                    width: 88,
-                    child: Text(
-                      label,
-                      style: GoogleFonts.courierPrime(
-                        fontSize: 13,
-                        color: Theme.of(ctx).colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.remove, size: 18),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: value > 1
-                        ? () => setLocal(() => onChanged(value - 1))
-                        : null,
-                  ),
-                  SizedBox(
-                    width: 32,
-                    child: Text(
-                      '$value',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.courierPrime(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(ctx).colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add, size: 18),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: value < 9
-                        ? () => setLocal(() => onChanged(value + 1))
-                        : null,
-                  ),
-                ],
-              );
-            }
-
-            return AlertDialog(
-              title: Text(
-                'Black-box tape assignment',
-                style: GoogleFonts.courierPrime(fontWeight: FontWeight.bold),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '"${node.label.isEmpty ? node.id : node.label}"',
-                    style: GoogleFonts.courierPrime(
-                      fontSize: 12,
-                      color: Theme.of(ctx).colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  tapeSpinner(
-                    label: 'Read tape:',
-                    value: readTape,
-                    onChanged: (v) => readTape = v,
-                  ),
-                  const SizedBox(height: 8),
-                  tapeSpinner(
-                    label: 'Write tape:',
-                    value: writeTape,
-                    onChanged: (v) => writeTape = v,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Long-press any black-box to reopen this dialog.',
-                    style: GoogleFonts.courierPrime(
-                      fontSize: 10,
-                      color: Theme.of(ctx).colorScheme.onSurface.withOpacity(0.45),
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    setState(() {
-                      node.blackBoxReadTape  = readTape;
-                      node.blackBoxWriteTape = writeTape;
-                    });
-                    _schedulePersist();
-                    Navigator.of(ctx).pop();
-                  },
-                  child: const Text('Apply'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  /// Opens a dialog letting the user view/edit the inner machine (DSL) and
+  /// description that a black-box node runs against the tape(s) it touches.
+  /// Tape routing is now encoded directly in the outgoing line labels
+  /// (RWD triples per tape, e.g. aXRa1R), so there is no separate
+  /// tape-routing dialog — only the DSL editor is needed here.
+  Future<void> _showBlackBoxEditDialog(NodeData node) async {
+    final changed = await BlackBoxEditDialog.show(
+      context,
+      node: node,
     );
+    if (changed == true) {
+      setState(() {
+        _refreshSimulation();
+      });
+      _schedulePersist();
+    }
   }
 
   void _showExportHistory() {
@@ -974,17 +1039,22 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onModeChanged: (mode) {
           setState(() {
             _automataMode = mode;
+            _activeTapeIndex = 0; // reset tape selection on mode switch
             _simRebuild();
             if (mode == AutomataMode.pda) {
               _pdaSimulator.step = _simulator.step;
             } else if (mode == AutomataMode.tm) {
               _tmSimulator.step = _simulator.step.clamp(-1, _tmSimulator.maxStep);
             }
+            // Auto-show the regex panel when entering regex mode,
+            // auto-hide it when leaving.
+            _showRegexPanel = (mode == AutomataMode.regex);
           });
           _schedulePersist();
         },
         onBatchSimulator: _openBatchSimulatorDialog,
         onEquivalenceChecker: _showEquivalenceDialog,
+        onFaToRegex: _showFaToRegexDialog,
         onExport: _showExportDialog,
         onImport: _showImportDialog,
         onExportHistory: _showExportHistory,
@@ -1198,8 +1268,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                     });
                   },
 
-                  onBlackBoxTapeEdit: node.isBlackBox
-                      ? () => _showBlackBoxTapeDialog(node)
+                  onBlackBoxEdit: node.isBlackBox
+                      ? () => _showBlackBoxEditDialog(node)
                       : null,
                 ),
               ),
@@ -1230,6 +1300,46 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   setState(() {});
                   _schedulePersist();
                 },
+                tapeNames: _automataMode == AutomataMode.tm
+                    ? List.generate(
+                        _tmSimulator.tapeCount,
+                        (i) => 'Tape ${i + 1}',
+                      )
+                    : const [],
+                activeTapeIndex: _activeTapeIndex,
+                additionalTapeControllers: _automataMode == AutomataMode.tm
+                    ? _tapeControllers
+                    : const [],
+                onTapeInputChanged: () {
+                  setState(() => _simRebuild());
+                  _schedulePersist();
+                },
+                onTapeSelected: (i) => setState(() => _activeTapeIndex = i),
+                onTapeAdded: _automataMode == AutomataMode.tm
+                    ? () {
+                        setState(() {
+                          _tmSimulator.tapeCount += 1;
+                          _activeTapeIndex = _tmSimulator.tapeCount - 1;
+                          // _simRebuild will grow _tapeControllers to match.
+                        });
+                        _simRebuild();
+                        _schedulePersist();
+                      }
+                    : null,
+                onTapeRemoved: _automataMode == AutomataMode.tm &&
+                        _tmSimulator.tapeCount > 1
+                    ? (int i) {
+                        setState(() {
+                          _tmSimulator.tapeCount =
+                              (_tmSimulator.tapeCount - 1).clamp(1, 99);
+                          if (_activeTapeIndex >= _tmSimulator.tapeCount) {
+                            _activeTapeIndex = _tmSimulator.tapeCount - 1;
+                          }
+                        });
+                        _simRebuild();
+                        _schedulePersist();
+                      }
+                    : null,
               ),
 
             // ── PDA Stack Panel ────────────────────────────────────────
@@ -1239,6 +1349,31 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             // ── TM Config Panel ───────────────────────────────────────
             if (_showSimulator && _automataMode == AutomataMode.tm)
               TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
+
+            // ── Regex Panel ───────────────────────────────────────────
+            if (_automataMode == AutomataMode.regex && _showRegexPanel)
+              RegexPanel(
+                onConvert: _onRegexConvert,
+                onClose: () => setState(() => _showRegexPanel = false),
+                initialText: _regexPanelInitialText,
+                onInitialTextConsumed: () =>
+                    setState(() => _regexPanelInitialText = null),
+              ),
+
+            // ── Regex show-panel FAB (when panel is closed) ───────────
+            if (_automataMode == AutomataMode.regex && !_showRegexPanel)
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16, bottom: 16),
+                  child: FloatingActionButton.extended(
+                    heroTag: 'regexOpen',
+                    onPressed: () => setState(() => _showRegexPanel = true),
+                    icon: const Icon(Icons.text_fields),
+                    label: const Text('Open Regex'),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

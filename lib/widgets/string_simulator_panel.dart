@@ -33,6 +33,8 @@ class StringSimulatorPanel extends StatefulWidget {
     required this.onStepChanged,
     this.tapeNames = const [],
     this.activeTapeIndex = 0,
+    this.additionalTapeControllers = const [],
+    this.onTapeInputChanged,
     this.onTapeSelected,
     this.onTapeAdded,
     this.onTapeRemoved,
@@ -56,6 +58,15 @@ class StringSimulatorPanel extends StatefulWidget {
 
   /// Index of the currently active tape within [tapeNames].
   final int activeTapeIndex;
+
+  /// Controllers for the input strings of tapes 2, 3, … (index 0 = tape 2).
+  /// When non-empty, the active non-tape-1 tab shows an input field so the
+  /// user can type a separate starting string for that tape.
+  final List<TextEditingController> additionalTapeControllers;
+
+  /// Called whenever a per-tape input field changes so the parent can
+  /// rebuild the simulation with the new additional tape content.
+  final VoidCallback? onTapeInputChanged;
 
   /// Called when the user taps a tape tab to switch to it.
   final ValueChanged<int>? onTapeSelected;
@@ -425,7 +436,11 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
     final currentChipIndex = (step >= 0 && step < tokens.length) ? step : -1;
 
-    final tapeView = isTmMode ? tm.tapeView : null;
+    // For multi-tape TM mode, show the tape selected by the tab strip.
+    // For single-tape TM mode, always show tape 1 (backward-compatible).
+    final tapeView = isTmMode
+        ? tm.tapeViewForTape(widget.activeTapeIndex + 1)
+        : null;
 
     return Align(
       alignment: Alignment.topLeft,
@@ -583,6 +598,158 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
                     // Token/Tape display
                     if (isTmMode && tapeView != null) ...[
+                      // ── Tape tab strip (TM mode, always shown so user
+                      //    can add tapes even when only 1 exists) ─────────
+                      if (isTmMode) ...[
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: 24,
+                          child: Row(
+                            children: [
+                              // Scrollable tab list
+                              Expanded(
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: widget.tapeNames.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 4),
+                                  itemBuilder: (context, i) {
+                                    final isActive = i == widget.activeTapeIndex;
+                                    final canRemove = widget.tapeNames.length > 1 &&
+                                        widget.onTapeRemoved != null;
+                                    return GestureDetector(
+                                      onTap: () =>
+                                          widget.onTapeSelected?.call(i),
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 140),
+                                        padding: const EdgeInsets.only(
+                                            left: 8, right: 4, top: 2, bottom: 2),
+                                        decoration: BoxDecoration(
+                                          color: isActive
+                                              ? theme.accent.withOpacity(0.15)
+                                              : Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(5),
+                                          border: Border.all(
+                                            color: isActive
+                                                ? theme.accent.withOpacity(0.7)
+                                                : theme.borderMid,
+                                            width: isActive ? 1.5 : 1,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              widget.tapeNames[i],
+                                              style: GoogleFonts.courierPrime(
+                                                fontSize: 10,
+                                                fontWeight: isActive
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                                color: isActive
+                                                    ? theme.accent
+                                                    : theme.textDim,
+                                              ),
+                                            ),
+                                            // × remove button — only on active tab
+                                            // when more than 1 tape exists
+                                            if (isActive && canRemove) ...[
+                                              const SizedBox(width: 4),
+                                              GestureDetector(
+                                                onTap: () => widget
+                                                    .onTapeRemoved?.call(i),
+                                                child: Icon(
+                                                  Icons.close,
+                                                  size: 10,
+                                                  color: theme.textDim,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              // + add-tape button
+                              if (widget.onTapeAdded != null) ...[
+                                const SizedBox(width: 4),
+                                Tooltip(
+                                  message: 'Add tape',
+                                  child: GestureDetector(
+                                    onTap: widget.onTapeAdded,
+                                    child: Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: BoxDecoration(
+                                        color: Colors.transparent,
+                                        borderRadius: BorderRadius.circular(5),
+                                        border: Border.all(
+                                            color: theme.borderMid),
+                                      ),
+                                      child: Icon(
+                                        Icons.add,
+                                        size: 13,
+                                        color: theme.textMid,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                      // ── Per-tape input field (tapes 2+) ─────────────
+                      // Shown when the selected tab is a non-tape-1 tape
+                      // and we have a controller for it.
+                      if (widget.activeTapeIndex > 0 &&
+                          widget.activeTapeIndex - 1 <
+                              widget.additionalTapeControllers.length) ...[
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: widget.additionalTapeControllers[
+                              widget.activeTapeIndex - 1],
+                          onChanged: (_) {
+                            widget.onTapeInputChanged?.call();
+                          },
+                          style: GoogleFonts.courierPrime(
+                              fontSize: 13, color: theme.textLight),
+                          cursorColor: theme.accent,
+                          decoration: InputDecoration(
+                            hintText: widget.activeTapeIndex < widget.tapeNames.length
+                                ? '${widget.tapeNames[widget.activeTapeIndex]} input…'
+                                : 'Tape input…',
+                            hintStyle: GoogleFonts.courierPrime(
+                              color: theme.textDim,
+                              fontSize: 13,
+                            ),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 7,
+                            ),
+                            filled: true,
+                            fillColor: const Color(0xFF080D14),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide(color: theme.borderMid),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide(color: theme.borderMid),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide:
+                                  BorderSide(color: theme.accent, width: 1.5),
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 6),
                       SizedBox(
                         height: 36,

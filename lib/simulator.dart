@@ -87,6 +87,7 @@ class AutomataSimulator {
   }
 
   void rebuildGraph({StartArrowData? startArrow}) {
+    _blackBoxResultCache.clear(); // ← match rebuild()'s cache invalidation
     _buildSimulation(startArrow: startArrow);
     if (step > tokens.length) {
       step = tokens.length;
@@ -224,6 +225,7 @@ class AutomataSimulator {
       final input = slicedTokens.join();
       switch (graph.automataMode) {
         case AutomataMode.ndfa:
+        case AutomataMode.regex:
           final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
           final accepted = sim.finalResult() == SimResult.accept;
@@ -245,6 +247,13 @@ class AutomataSimulator {
           );
         case AutomataMode.tm:
           final sim = TmSimulator(nodes: graph.nodes, lines: graph.lines);
+          // The outer machine here (NFA/PDA) has no tape concept of its own,
+          // so there's no "outer tape count" to inherit. But the black box's
+          // *own* DSL may still use multiple tapes purely for its internal
+          // computation (e.g. a scratch tape) — without this, the simulator
+          // would default to a single tape and silently ignore any
+          // transition inside the box that targets tape 2+.
+          sim.tapeCount = detectRequiredTapeCount(graph.nodes, graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
           while (sim.computeNext()) {}
           if (sim.result != TmResult.accept) {
@@ -322,14 +331,23 @@ class AutomataSimulator {
       end--;
     }
 
-    final outputTokens =
-        start >= end ? const <String>[] : cells.sublist(start, end);
+    // Normalize cell values: the inner TM tape stores blanks as kBlank='∅',
+    // but the outer FA simulator represents blanks as '' (empty string).
+    // Without this, any cell the inner TM wrote as blank would appear as the
+    // literal '∅' token in the reconstructed outer token list, breaking
+    // downstream matching.  Non-blank symbols are passed through unchanged.
+    final outputTokens = start >= end
+        ? const <String>[]
+        : cells.sublist(start, end).map((c) => (c.isEmpty || c == kBlank) ? '' : c).toList();
 
     // Translate the absolute head position to an index in outputTokens.
-    // Clamp so it always points at a valid position (or 0 for an empty tape).
+    // Allow one-past-end (== outputTokens.length) so that a head that moved
+    // off the right edge of the non-blank content (A→B→C→ case) is not
+    // snapped back onto the last symbol.  The outer sim treats an inputPos
+    // equal to tokens.length as "all input consumed", which is exactly right.
     int outputHeadPos = 0;
     if (outputTokens.isNotEmpty) {
-      outputHeadPos = (rawHeadPos - start).clamp(0, outputTokens.length - 1);
+      outputHeadPos = (rawHeadPos - start).clamp(0, outputTokens.length);
     }
 
     return (outputTokens: outputTokens, outputHeadPos: outputHeadPos);
@@ -464,13 +482,28 @@ class AutomataSimulator {
         }
 
         // If the black box (or normal config) has consumed all tokens, it
-        // cannot fire a normal consuming transition — but it CAN take a null
-        // (`?`) epsilon jump.  Forward it into nextConfigs so _epsilonClosure
-        // can pick up those null transitions.  Mark consumedAny=true because
-        // the black box itself did consume input.
+        // cannot fire a normal consuming transition — but it CAN take outgoing
+        // transitions (treated as unconditional hops) because the black box
+        // itself did the consumption.  Follow every outgoing line from the
+        // black-box node as an epsilon hop so chaining works without requiring
+        // ~ labels after the black box.  Also add the effective config itself
+        // so _epsilonClosure can pick up any null/epsilon transitions on the
+        // black-box node.
         if (effective.inputPos >= effective.tokens.length) {
           if (node.isBlackBox) {
             consumedAny = true;
+            // Follow every outgoing line as an unconditional hop.
+            for (final line in lines.values) {
+              if (line.nodeAId != effective.nodeId) continue;
+              nextConfigs.add(_SimConfig(
+                nodeId: line.nodeBId,
+                tokens: effective.tokens,
+                inputPos: effective.inputPos,
+              ));
+              stepLines.add(line.id);
+            }
+            // Also add the effective config itself so epsilon/null transitions
+            // on the BB node are picked up by _epsilonClosure.
             nextConfigs.add(effective);
           }
           continue;
