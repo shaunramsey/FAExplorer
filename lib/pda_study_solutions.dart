@@ -175,7 +175,6 @@ GraphState _graph({
   required String startId,
 }) {
   final nodes = <String, NodeData>{};
-  final lines = <String, LineData>{};
   for (int i = 0; i < states.length; i++) {
     final (id, label, accept) = states[i];
     nodes[id] = NodeData(
@@ -185,14 +184,38 @@ GraphState _graph({
       isAccept: accept,
     );
   }
-  int li = 0;
+
+  // ── Merge parallel edges (same from→to) into one LineData with \n-joined
+  //    labels.  This means "read a OR b" situations render in a single textbox
+  //    on the canvas instead of as two separate arrows.
+  //
+  //    Ordering is preserved: the first occurrence of a (from,to) pair wins
+  //    the stable position in the iteration order; subsequent labels are
+  //    appended with a newline separator, which the simulator already splits on.
+  final edgeOrder = <(String, String)>[];          // insertion-order keys
+  final edgeLabels = <(String, String), List<String>>{};
+
   for (final (from, to, label) in transitions) {
+    final key = (from, to);
+    if (!edgeLabels.containsKey(key)) {
+      edgeOrder.add(key);
+      edgeLabels[key] = [];
+    }
+    edgeLabels[key]!.add(label);
+  }
+
+  final lines = <String, LineData>{};
+  int li = 0;
+  for (final key in edgeOrder) {
+    final (from, to) = key;
+    final mergedLabel = edgeLabels[key]!.join('\n');
     final id = 'l$li';
-    lines[id] = LineData(id: id, nodeAId: from, nodeBId: to, label: label);
+    lines[id] = LineData(id: id, nodeAId: from, nodeBId: to, label: mergedLabel);
     nodes[from]!.connectedLineIds.add(id);
-    nodes[to]!.connectedLineIds.add(id);
+    if (to != from) nodes[to]!.connectedLineIds.add(id);
     li++;
   }
+
   return GraphState(
     nodes: nodes,
     lines: lines,
