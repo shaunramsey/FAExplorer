@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app_theme.dart';
-import 'app_theme_presets.dart';
 
 /// Opens the appearance bottom sheet.
 /// Set [popRoute] true when launching from the automata drawer (closes drawer first).

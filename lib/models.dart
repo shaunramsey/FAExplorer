@@ -335,6 +335,31 @@ class StartArrowData {
     if (dist == 0) return const Offset(-1, 0);
     return Offset(offset.dx / dist, offset.dy / dist);
   }
+
+  /// True when [point] is near the start-arrow shaft or tail (for drag/delete).
+  bool containsPoint(Offset point, Offset nodeCenter, {double tapRadius = 44}) {
+    var dir = direction();
+    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
+      dir = const Offset(-0.7071, -0.7071);
+    }
+
+    const radius = 50.0;
+    final end = Offset(nodeCenter.dx + dir.dx * radius, nodeCenter.dy + dir.dy * radius);
+    final tail = Offset(end.dx + dir.dx * length, end.dy + dir.dy * length);
+
+    if ((point - tail).distance < tapRadius) return true;
+
+    final seg = end - tail;
+    final lenSq = seg.dx * seg.dx + seg.dy * seg.dy;
+    if (lenSq == 0) return false;
+
+    final t = ((point.dx - tail.dx) * seg.dx + (point.dy - tail.dy) * seg.dy) / lenSq;
+    final proj = Offset(
+      tail.dx + seg.dx * t.clamp(0.0, 1.0),
+      tail.dy + seg.dy * t.clamp(0.0, 1.0),
+    );
+    return (point - proj).distance < tapRadius;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

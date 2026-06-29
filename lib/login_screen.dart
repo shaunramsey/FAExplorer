@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import 'auth/auth_service.dart';
+import 'auth.dart';
 import 'widgets/app_theme.dart';
 
 const _kError = Color(0xFFFF1744);

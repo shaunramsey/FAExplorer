@@ -28,9 +28,7 @@ import 'models.dart';
 import 'automaton_type_checker.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/palette_fab.dart';
-import 'node.dart';
-import 'line.dart';
-import 'start_arrow.dart';
+import 'widgets/graph_widgets.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class GamePuzzleScreen extends StatefulWidget {
@@ -266,21 +264,18 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     return '$prefix${_lineCounter++}';
   }
 
-  NodeData? _nodeAt(Offset p) {
-    for (final n in _nodes.values) {
-      if (n.containsPoint(p)) return n;
-    }
-    return null;
-  }
+  GraphState get _graphState => GraphState(
+        nodes: _nodes,
+        lines: _lines,
+        startArrow: _startArrow,
+        nodeCounter: _nodeCounter,
+        lineCounter: _lineCounter,
+        automataMode: widget.level.automataMode,
+      );
 
-  LineData? _lineAt(Offset p) {
-    for (final l in _lines.values) {
-      final a = _nodes[l.nodeAId], b = _nodes[l.nodeBId];
-      if (a == null || b == null) continue;
-      if (l.containsPoint(p, a.center, b.center)) return l;
-    }
-    return null;
-  }
+  NodeData? _nodeAt(Offset p) => _graphState.nodeAt(p);
+
+  LineData? _lineAt(Offset p) => _graphState.lineAt(p);
 
   bool _isLabelTaken(String label, String currentId) {
     final n = label.trim();
@@ -309,27 +304,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     _lines.remove(id);
   }
 
-  bool _hitStartArrow(Offset point) {
-    if (_startArrow == null) return false;
-    final node = _nodes[_startArrow!.nodeId];
-    if (node == null) return false;
-    var dir = _startArrow!.direction();
-    if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071);
-    const r = 50.0;
-    final end = Offset(node.center.dx + dir.dx * r, node.center.dy + dir.dy * r);
-    final start = Offset(end.dx + dir.dx * _startArrow!.length,
-        end.dy + dir.dy * _startArrow!.length);
-    if ((point - start).distance < 44) return true;
-    final line = end - start;
-    final lenSq = line.dx * line.dx + line.dy * line.dy;
-    if (lenSq == 0) return false;
-    double t =
-        ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) /
-            lenSq;
-    t = t.clamp(0.0, 1.0);
-    final proj = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
-    return (point - proj).distance < 44;
-  }
+  bool _hitStartArrow(Offset point) => _graphState.hitStartArrow(point);
 
   // ── pan / drag handlers ─────────────────────────────────────────────────
 

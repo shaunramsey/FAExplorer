@@ -2,7 +2,23 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'saved_export.dart';
+enum SavedExportType { graph, blackBox }
+
+class SavedExport {
+  String name;
+  String dsl;
+  SavedExportType type;
+  String blackBoxDescription;
+
+  SavedExport({
+    required this.name,
+    required this.dsl,
+    this.type = SavedExportType.graph,
+    this.blackBoxDescription = '',
+  });
+
+  bool get isBlackBox => type == SavedExportType.blackBox;
+}
 
 /// Keys used in [SharedPreferences] for FAExplorer session data.
 abstract final class PreferenceKeys {

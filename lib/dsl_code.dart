@@ -19,6 +19,30 @@ class GraphState {
   /// Convenience getter for code that still checks the PDA flag.
   bool get pdaMode => automataMode == AutomataMode.pda;
 
+  NodeData? nodeAt(Offset point) {
+    for (final node in nodes.values) {
+      if (node.containsPoint(point)) return node;
+    }
+    return null;
+  }
+
+  LineData? lineAt(Offset point) {
+    for (final line in lines.values) {
+      final a = nodes[line.nodeAId];
+      final b = nodes[line.nodeBId];
+      if (a == null || b == null) continue;
+      if (line.containsPoint(point, a.center, b.center)) return line;
+    }
+    return null;
+  }
+
+  bool hitStartArrow(Offset point) {
+    if (startArrow == null) return false;
+    final node = nodes[startArrow!.nodeId];
+    if (node == null) return false;
+    return startArrow!.containsPoint(point, node.center);
+  }
+
   const GraphState({
     required this.nodes,
     required this.lines,

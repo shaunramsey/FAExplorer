@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'auth_mode.dart';
+enum AuthMode { guest, account }
 
 abstract final class AuthPreferenceKeys {
   static const authMode = 'auth_mode';

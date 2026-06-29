@@ -1,9 +1,41 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../preferences_store.dart';
-import '../saved_export.dart';
-import 'automata_session_store.dart';
+import 'preferences_store.dart';
+
+/// Loads and saves automata workspace data (graph, exports, simulator, UI).
+abstract class AutomataSessionStore {
+  Future<PersistedSnapshot> load();
+  Future<void> save(PersistedSnapshot snapshot);
+}
+
+class LocalSessionStore implements AutomataSessionStore {
+  LocalSessionStore(this._prefs);
+
+  final PreferencesStore _prefs;
+
+  static Future<LocalSessionStore> open() async {
+    return LocalSessionStore(await PreferencesStore.open());
+  }
+
+  @override
+  Future<PersistedSnapshot> load() async => _prefs.load();
+
+  @override
+  Future<void> save(PersistedSnapshot snapshot) async {
+    await _prefs.saveGraphDsl(snapshot.graphDsl ?? '');
+    await _prefs.saveSavedExports(snapshot.savedExports);
+    await _prefs.saveUi(
+      showSimulator: snapshot.showSimulator,
+      showHelpOverlay: snapshot.showHelpOverlay,
+    );
+    await _prefs.saveSimulator(
+      input: snapshot.simInput,
+      step: snapshot.simStep,
+      additionalTapeInputs: snapshot.additionalTapeInputs,
+    );
+  }
+}
 
 /// Persists workspace data under `users/{uid}/workspace/main` in Firestore.
 class FirebaseSessionStore implements AutomataSessionStore {
@@ -84,16 +116,11 @@ class FirebaseSessionStore implements AutomataSessionStore {
             type: item['type']?.toString() == SavedExportType.blackBox.name
                 ? SavedExportType.blackBox
                 : SavedExportType.graph,
-            blackBoxDescription:
-                item['blackBoxDescription']?.toString() ?? '',
+            blackBoxDescription: item['blackBoxDescription']?.toString() ?? '',
           ),
     ];
   }
 
-  /// Decodes the Firestore `additionalTapeInputs` field (a Firestore array of
-  /// strings, or null/absent for older documents) into a plain Dart list.
-  /// Any non-string element is coerced to an empty string so the result is
-  /// always a safe `List<String>`.
   static List<String> _decodeTapeInputs(dynamic raw) {
     if (raw is! List) return [];
     return [for (final item in raw) item?.toString() ?? ''];

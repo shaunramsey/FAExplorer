@@ -2585,15 +2585,22 @@ class AutomataDrawerEmbed extends StatelessWidget {
 //  Study-mode layout post-processor
 //
 //  Applied to the solution graph after it is built from a regex or PDA spec,
-//  before rendering it read-only.  Two passes:
+//  before rendering it read-only.  Three passes:
 //
 //  1. Set a default perpendicularPart of 30 on every non-self-loop line.
 //
-//  2. For every node N and every line L that does not touch N:
-//     Compute the closest point on the *chord* (straight line through the two
-//     endpoint centres) to N's centre.  If that closest point is within the
-//     clearance zone, push N away from the chord in the perpendicular direction
-//     by exactly enough to clear it.  Repeat until stable (max iterations).
+//  2+3. For every node N and every line L that does not touch N, run two
+//     sub-checks inside a single convergence loop so both can react to each
+//     other rather than fighting across two separate loops:
+//
+//     2. CHORD CLEARANCE — closest point on the straight chord through the two
+//        endpoint centres.  If within clearance, push N perpendicularly away.
+//
+//     3. TEXTBOX CLEARANCE — axis-aligned bounding rect of the line's label
+//        (computed by LineData.getTextBoxLocation).  If the node circle
+//        overlaps the rect, push N away from the nearest edge.
+//
+//     Repeat until stable (max iterations).
 // ─────────────────────────────────────────────────────────────────────────────
 
 void _applyStudyModeLayout(
@@ -2607,10 +2614,13 @@ void _applyStudyModeLayout(
     }
   }
 
-  // ── Pass 2: move nodes off chord paths ────────────────────────────────────
-  const double nodeRadius   = 50.0;   // visual radius of a state circle
-  const double clearance    = nodeRadius + 30.0; // min distance: node centre ↔ chord
-  const int    iterations   = 12;     // enough passes to propagate cascades
+  // ── Pass 2+3: move nodes off chord paths and label textboxes ──────────────
+  const double nodeRadius  = 50.0;              // visual radius of a state circle
+  const double clearance   = nodeRadius + 30.0; // min distance: node centre ↔ chord
+  const double textBuffer  = 12.0;              // extra padding around textbox rect
+  const double boxWidth    = 120.0;             // must match LineWidget / StartArrowWidget
+  const double lineHeight  = 36.0;              // single-line height used by those widgets
+  const int    iterations  = 20;                // enough passes to propagate cascades
 
   for (int iter = 0; iter < iterations; iter++) {
     bool anyMoved = false;
@@ -2630,49 +2640,105 @@ void _applyStudyModeLayout(
 
         final cA = nodeA.center;
         final cB = nodeB.center;
-        final nc = node.center;
 
-        // Vector from A to B.
-        final abx = cB.dx - cA.dx;
-        final aby = cB.dy - cA.dy;
-        final abLen = sqrt(abx * abx + aby * aby);
-        if (abLen < 1) continue;
+        // ── sub-check 2: chord clearance ─────────────────────────────────
+        {
+          final nc = node.center;
 
-        // Project node centre onto the infinite line through A and B.
-        final t = ((nc.dx - cA.dx) * abx + (nc.dy - cA.dy) * aby) / (abLen * abLen);
+          // Vector from A to B.
+          final abx = cB.dx - cA.dx;
+          final aby = cB.dy - cA.dy;
+          final abLen = sqrt(abx * abx + aby * aby);
 
-        // Only care if the projection falls between (or near) the two endpoints.
-        if (t < -0.05 || t > 1.05) continue;
+          if (abLen >= 1) {
+            // Project node centre onto the infinite line through A and B.
+            final t = ((nc.dx - cA.dx) * abx + (nc.dy - cA.dy) * aby) / (abLen * abLen);
 
-        // Closest point on the chord to the node centre.
-        final closestX = cA.dx + t * abx;
-        final closestY = cA.dy + t * aby;
+            // Only care if the projection falls between (or near) the endpoints.
+            if (t >= -0.05 && t <= 1.05) {
+              final closestX = cA.dx + t * abx;
+              final closestY = cA.dy + t * aby;
 
-        final dxFromChord = nc.dx - closestX;
-        final dyFromChord = nc.dy - closestY;
-        final distFromChord = sqrt(dxFromChord * dxFromChord + dyFromChord * dyFromChord);
+              final dxFromChord = nc.dx - closestX;
+              final dyFromChord = nc.dy - closestY;
+              final distFromChord = sqrt(dxFromChord * dxFromChord + dyFromChord * dyFromChord);
 
-        if (distFromChord >= clearance) continue; // already clear — nothing to do
+              if (distFromChord < clearance) {
+                final push = clearance - distFromChord;
 
-        // Amount we need to push perpendicular to the chord.
-        final push = clearance - distFromChord;
+                // Perpendicular direction away from the chord.
+                // If the node is exactly on the chord (dist ≈ 0), push downward.
+                final Offset perp;
+                if (distFromChord < 0.5) {
+                  perp = Offset(aby / abLen, -abx / abLen); // rotate AB by -90°
+                } else {
+                  perp = Offset(dxFromChord / distFromChord, dyFromChord / distFromChord);
+                }
 
-        // Perpendicular direction away from the chord.
-        // If the node is exactly on the chord (dist ≈ 0), push downward.
-        final Offset perp;
-        if (distFromChord < 0.5) {
-          // Perpendicular to AB, choosing the downward direction (+y).
-          final pLen = abLen; // already computed
-          perp = Offset(aby / pLen, -abx / pLen); // rotate AB by -90°
-        } else {
-          perp = Offset(dxFromChord / distFromChord, dyFromChord / distFromChord);
+                node.position = Offset(
+                  node.position.dx + perp.dx * push,
+                  node.position.dy + perp.dy * push,
+                );
+                anyMoved = true;
+              }
+            }
+          }
         }
 
-        node.position = Offset(
-          node.position.dx + perp.dx * push,
-          node.position.dy + perp.dy * push,
-        );
-        anyMoved = true;
+        // ── sub-check 3: textbox clearance ───────────────────────────────
+        // Re-fetch node.center after the potential chord push above so the
+        // textbox test sees the already-updated position.
+        if (line.label.isNotEmpty) {
+          final nc = node.center;
+
+          final lineCount = '\n'.allMatches(line.label).length + 1;
+          final double boxHeight = lineHeight * lineCount;
+
+          // Top-left corner of the label textbox, as rendered by LineWidget.
+          final Offset topLeft =
+              line.getTextBoxLocation(cA, cB, boxWidth, boxHeight, line.label);
+
+          // Expand by textBuffer on all sides to give a small clearance gap.
+          final double rLeft   = topLeft.dx - textBuffer;
+          final double rTop    = topLeft.dy - textBuffer;
+          final double rRight  = topLeft.dx + boxWidth  + textBuffer;
+          final double rBottom = topLeft.dy + boxHeight + textBuffer;
+
+          // Closest point on the (expanded) rect to the node centre.
+          final closestX = nc.dx.clamp(rLeft, rRight);
+          final closestY = nc.dy.clamp(rTop, rBottom);
+
+          final dxFromBox = nc.dx - closestX;
+          final dyFromBox = nc.dy - closestY;
+          final distFromBox = sqrt(dxFromBox * dxFromBox + dyFromBox * dyFromBox);
+
+          if (distFromBox < nodeRadius) {
+            final push = nodeRadius - distFromBox;
+
+            // Push direction: away from the closest point on the rect.
+            // If the node centre is already inside the rect, push away from
+            // the rect's centre instead.
+            final Offset pushDir;
+            if (distFromBox < 0.5) {
+              final rcx = (rLeft + rRight) / 2;
+              final rcy = (rTop + rBottom) / 2;
+              final awayDx = nc.dx - rcx;
+              final awayDy = nc.dy - rcy;
+              final awayLen = sqrt(awayDx * awayDx + awayDy * awayDy);
+              pushDir = awayLen < 0.5
+                  ? const Offset(0, 1) // fallback: push straight down
+                  : Offset(awayDx / awayLen, awayDy / awayLen);
+            } else {
+              pushDir = Offset(dxFromBox / distFromBox, dyFromBox / distFromBox);
+            }
+
+            node.position = Offset(
+              node.position.dx + pushDir.dx * push,
+              node.position.dy + pushDir.dy * push,
+            );
+            anyMoved = true;
+          }
+        }
       }
     }
 
