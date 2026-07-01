@@ -966,12 +966,17 @@ class TmSimulator {
   }) {
     tokens = _tokenize(input);
     _build(startArrow: startArrow, additionalTapeInputs: additionalTapeInputs);
-    if (step >= steps.length) step = steps.length - 1;
+    // step uses a -1 offset (see _snapshotAt): valid range is -1..maxStep.
+    // Clamping against steps.length directly is off-by-one and can leave
+    // step pointing past the end of the rebuilt snapshot list, which makes
+    // currentSnapshot/activeNodes/activeLines return null/empty — i.e. the
+    // TM head/tape highlighting silently disappears after any edit.
+    if (step > maxStep) step = maxStep;
   }
 
   void rebuildGraph({StartArrowData? startArrow}) {
     _build(startArrow: startArrow);
-    if (step >= steps.length) step = steps.length - 1;
+    if (step > maxStep) step = maxStep;
   }
 
   void _build({

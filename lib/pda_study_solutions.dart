@@ -226,11 +226,23 @@ GraphState _graph({
   );
 }
 
-String _push(String read, [String marker = _m]) => '$read,∅|$marker';
-String _pop(String read, [String marker = _m]) => '$read,$marker|∅';
-String _read(String sym) => '$sym,∅|∅';
-String _eps() => '~,∅|∅';
-String _pushSym(String sym) => '$sym,∅|$sym';
+// PDA label helpers  — format: read,pop|push
+//
+// The simulator normalises ~ and ε to "" (no-op) but treats ∅ as the
+// literal stack-bottom sentinel kStackBottom.  Using ∅ in the push
+// position would therefore *push* the sentinel instead of pushing nothing.
+// We must use ~ (not ∅) wherever we want "push nothing" or "pop nothing".
+//
+//   _push  : read a symbol, don't pop anything, push a marker
+//   _pop   : read a symbol, pop a marker,       push nothing  (~ = no push)
+//   _read  : read a symbol, don't touch stack at all           (~ = no pop/push)
+//   _eps   : epsilon move, don't touch stack at all            (~ = no pop/push)
+//   _pushSym: read a symbol, push that same symbol (used for palindromes)
+String _push(String read, [String marker = _m]) => '$read,~|$marker';
+String _pop(String read, [String marker = _m]) => '$read,$marker|~';
+String _read(String sym) => '$sym,~|~';
+String _eps() => '~,~|~';
+String _pushSym(String sym) => '$sym,~|$sym';
 
 // ── Language families ───────────────────────────────────────────────────────
 
@@ -274,7 +286,7 @@ GraphState _buildRatio(String a, String b, int k, int j) {
       trans.add(('a$i', 'a${i + 1}', _read(a)));
     } else {
       final push = List.filled(j, _m).join(' ');
-      trans.add(('a$i', 'a0', '$a,∅|$push'));
+      trans.add(('a$i', 'a0', '$a,~|$push'));
     }
     if (j == 1) {
       trans.add(('a$i', 'a0', _pop(b)));

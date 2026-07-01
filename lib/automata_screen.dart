@@ -1185,6 +1185,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                     _simRebuild();
                     _simulator.step = -1;
                     _pdaSimulator.step = -1;          // ← NEW
+                    _tmSimulator.step = -1;           // ← reset TM tracking too
                   });
                   _schedulePersist();
                 },
