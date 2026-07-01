@@ -6,9 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models.dart';
 import 'app_theme.dart';
-import '../pda_simulator.dart';
 import '../simulator.dart';
-import '../tm_simulator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Speed levels (ms per step)

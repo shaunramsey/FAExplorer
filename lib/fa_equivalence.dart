@@ -35,8 +35,7 @@
 //    (matching [AutomataSimulator]).
 
 import 'models.dart';
-import 'pda_simulator.dart';
-import 'tm_simulator.dart';
+import 'simulator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Public result types

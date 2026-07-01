@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
-import '../tm_simulator.dart';
+import '../simulator.dart';
 import 'app_theme.dart';
 
 /// Floating panel: NTM configurations (state, head position, tape) per step.

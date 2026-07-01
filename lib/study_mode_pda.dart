@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'models.dart';
-import 'pda_simulator.dart';
+import 'simulator.dart';
 import 'pda_study_solutions.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;

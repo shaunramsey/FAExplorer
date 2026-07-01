@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../widgets/app_theme.dart';
 import '../models.dart';
 import '../simulator.dart';
-import '../tm_simulator.dart';
 
 class _BatchHighlightController extends TextEditingController {
   _BatchHighlightController({required this.isAccepted, required this.isRejected});

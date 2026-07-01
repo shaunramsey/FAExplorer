@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
-import '../pda_simulator.dart';
+import '../simulator.dart';
 import 'app_theme.dart';
 
 /// Floating panel: NPDA configurations (state, remaining input, stack) per step.
