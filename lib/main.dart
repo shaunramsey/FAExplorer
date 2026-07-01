@@ -4,8 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'app_gate.dart';
-import 'auth.dart';
-import 'firebase_options.dart';
+import 'persistence.dart';
 import 'widgets/app_theme.dart';
 
 export 'automata_screen.dart';

@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import 'auth.dart';
 import 'automata_screen.dart';
-import 'game_progress_store.dart';
+import 'game_data.dart';
 import 'level_select_screen.dart';
 import 'login_screen.dart';
-import 'session_store.dart';
+import 'persistence.dart';
 import 'study_mode_screen.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/app_theme_settings.dart';

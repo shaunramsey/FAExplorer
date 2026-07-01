@@ -7,7 +7,7 @@ import '../widgets/app_theme.dart';
 import '../models.dart';
 import '../dsl_code.dart';
 import '../latex_export.dart';
-import '../preferences_store.dart';
+import '../persistence.dart';
 import '../simulator.dart';
 import '../svg_export.dart';
 import '../widgets/automata_drawer.dart' show AutomataMode;

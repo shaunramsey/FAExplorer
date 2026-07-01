@@ -2940,6 +2940,8 @@ const List<GameLevel> kAllLevels = [
       n0 to n0 = a
       n1 to n0 = a
       n1 to n1 = b
+      l1(a) curve = 30.0
+      l2(b) curve = 30.0
       l0(a) loop angle = -1.5708
       l3(b) loop angle = -1.5708
       to n0
@@ -2974,8 +2976,8 @@ const List<GameLevel> kAllLevels = [
       n1 to n0 = a
       n0 to n0 = b
       n1 to n1 = b
-      l0(a) curve = -80.0
-      l1(a) curve = -80.0
+      l0(a) curve = 30.0
+      l1(a) curve = 30.0
       l2(b) loop angle = -1.5708
       l3(b) loop angle = -1.5708
       to n0
@@ -3021,6 +3023,10 @@ const List<GameLevel> kAllLevels = [
       n1 to n3 = a
       n2 to n2 = a,b
       n3 to n3 = a,b
+      l0(a) curve = 30.0
+      l1(b) curve = 30.0
+      l2(b) curve = 30.0
+      l3(a) curve = 30.0
       l4(a,b) loop angle = -1.5708
       l5(a,b) loop angle = -1.5708
       to n0
@@ -3059,7 +3065,10 @@ const List<GameLevel> kAllLevels = [
       n1 to n0 = a
       n1 to n2 = b
       n2 to n2 = a,b
-      l0(a) loop angle = -1.5708
+      l0(a) loop angle = 30
+      l1(a) curve = 30
+      l0(b) curve = 30.0
+      l1(b) curve = 30.0
       l4(a,b) loop angle = -1.5708
       to n0
       to n0 angle = -1.0000, 0.0000

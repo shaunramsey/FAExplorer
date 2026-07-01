@@ -19,7 +19,7 @@ import 'widgets/app_theme.dart';
 
 import 'game_level.dart';
 // LevelDifficulty and PuzzleVariant are declared in game_level.dart.
-import 'game_progress_store.dart';
+import 'game_data.dart';
 import 'tutorial_screen.dart';
 import 'dsl_code.dart';
 import 'fa_equivalence.dart';
