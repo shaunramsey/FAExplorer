@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -399,34 +400,82 @@ class AppThemeData {
       );
 
   /// Shifts backgrounds darker/lighter together (amount -1..1).
-  AppThemeData withBackgroundDepth(double amount) {
-    Color shift(Color c, double amt) {
-      final hsl = HSLColor.fromColor(c);
+  AppThemeData withBackgroundDepth(double amount, {AppThemeData? baseTheme}) {
+    final base = baseTheme ?? this;
+    Color shift(Color c, Color baselineColor, double amt) {
+      final hsl = HSLColor.fromColor(baselineColor);
       final l = (hsl.lightness + amt).clamp(0.02, 0.98);
       return hsl.withLightness(l).toColor();
     }
     return copyWith(
-      bg: shift(bg, amount * 0.08),
-      surface: shift(surface, amount * 0.07),
-      gridLine: shift(gridLine, amount * 0.06),
-      border: shift(border, amount * 0.05),
-      borderMid: shift(borderMid, amount * 0.05),
+      bg: shift(bg, base.bg, amount * 0.08),
+      surface: shift(surface, base.surface, amount * 0.07),
+      gridLine: shift(gridLine, base.gridLine, amount * 0.06),
+      border: shift(border, base.border, amount * 0.05),
+      borderMid: shift(borderMid, base.borderMid, amount * 0.05),
     );
   }
 
-  /// Adjust text readability together.
-  AppThemeData withTextContrast(double amount) {
-    Color shift(Color c, double amt) {
-      final hsl = HSLColor.fromColor(c);
-      final l = (hsl.lightness + amt).clamp(0.05, 0.95);
-      return hsl.withLightness(l).toColor();
+  /// Adjust text readability together while keeping contrast readable.
+  AppThemeData withTextContrast(double amount, {AppThemeData? baseTheme}) {
+    final base = baseTheme ?? this;
+    final bg = base.bg;
+
+    Color shift(Color color, Color baselineColor, double amt, {required double minRatio}) {
+      final hsl = HSLColor.fromColor(baselineColor);
+      final targetLightness = (hsl.lightness + amt).clamp(0.02, 0.98);
+      final adjusted = hsl.withLightness(targetLightness).toColor();
+      return _ensureReadableContrast(adjusted, bg, minRatio: minRatio);
     }
-    final delta = amount * 0.12;
+
+    final delta = amount * 0.08;
     return copyWith(
-      textDim: shift(textDim, -delta),
-      textMid: shift(textMid, delta * 0.5),
-      textLight: shift(textLight, delta),
+      textDim: shift(textDim, base.textDim, -delta * 0.8, minRatio: 2.4),
+      textMid: shift(textMid, base.textMid, delta * 0.5, minRatio: 3.2),
+      textLight: shift(textLight, base.textLight, delta, minRatio: 4.4),
     );
+  }
+
+  static Color _ensureReadableContrast(Color color, Color background, {required double minRatio}) {
+    final source = HSLColor.fromColor(color);
+    final bgLum = background.computeLuminance();
+    final targetIsDarker = bgLum > 0.5;
+
+    double lightness = source.lightness;
+    for (var i = 0; i < 80; i++) {
+      final candidate = HSLColor.fromAHSL(
+        source.alpha,
+        source.hue,
+        source.saturation,
+        lightness,
+      ).toColor();
+      if (_contrastRatio(candidate, background) >= minRatio) {
+        return candidate;
+      }
+      lightness = (lightness + (targetIsDarker ? -0.01 : 0.01)).clamp(0.02, 0.98);
+    }
+
+    return HSLColor.fromAHSL(
+      source.alpha,
+      source.hue,
+      source.saturation,
+      targetIsDarker ? 0.02 : 0.98,
+    ).toColor();
+  }
+
+  static double _contrastRatio(Color foreground, Color background) {
+    final fgLum = _relativeLuminance(foreground);
+    final bgLum = _relativeLuminance(background);
+    final lighter = math.max(fgLum, bgLum);
+    final darker = math.min(fgLum, bgLum);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  static double _relativeLuminance(Color color) {
+    final r = color.r <= 0.03928 ? color.r / 12.92 : math.pow((color.r + 0.055) / 1.055, 2.4).toDouble();
+    final g = color.g <= 0.03928 ? color.g / 12.92 : math.pow((color.g + 0.055) / 1.055, 2.4).toDouble();
+    final b = color.b <= 0.03928 ? color.b / 12.92 : math.pow((color.b + 0.055) / 1.055, 2.4).toDouble();
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
   AppThemeData withLinkedHighlights() => copyWith(
@@ -602,15 +651,15 @@ class AppThemeNotifier extends ChangeNotifier {
     await _persist();
   }
 
-  Future<void> applyBackgroundDepth(double amount) async {
-    _data = _data.withBackgroundDepth(amount);
+  Future<void> applyBackgroundDepth(double amount, {AppThemeData? baseTheme}) async {
+    _data = _data.withBackgroundDepth(amount, baseTheme: baseTheme);
     _presetId = null;
     notifyListeners();
     await _persist();
   }
 
-  Future<void> applyTextContrast(double amount) async {
-    _data = _data.withTextContrast(amount);
+  Future<void> applyTextContrast(double amount, {AppThemeData? baseTheme}) async {
+    _data = _data.withTextContrast(amount, baseTheme: baseTheme);
     _presetId = null;
     notifyListeners();
     await _persist();
@@ -946,6 +995,7 @@ class AppThemeSettingsSheet extends StatefulWidget {
 
 class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
   late AppThemeData _live;
+  late AppThemeData _baselineTheme;
   bool _advancedOpen = false;
   double _bgDepth = 0;
   double _textContrast = 0;
@@ -955,6 +1005,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
   void initState() {
     super.initState();
     _live = widget.notifier.data;
+    _baselineTheme = _live;
     widget.notifier.addListener(_onNotifierChanged);
   }
 
@@ -1217,7 +1268,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     label: _bgDepth == 0 ? 'Default' : (_bgDepth > 0 ? 'Lighter' : 'Darker'),
                     onChanged: (v) {
                       setState(() => _bgDepth = v);
-                      widget.notifier.applyBackgroundDepth(v);
+                      widget.notifier.applyBackgroundDepth(v, baseTheme: _baselineTheme);
                     },
                   ),
 
@@ -1231,7 +1282,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     label: _textContrast == 0 ? 'Balanced' : (_textContrast > 0 ? 'Sharper' : 'Softer'),
                     onChanged: (v) {
                       setState(() => _textContrast = v);
-                      widget.notifier.applyTextContrast(v);
+                      widget.notifier.applyTextContrast(v, baseTheme: _baselineTheme);
                     },
                   ),
 
