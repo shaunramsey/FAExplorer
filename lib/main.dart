@@ -1,13 +1,15 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import 'automata_screen.dart';
+import 'game_data.dart';
+import 'level_select_screen.dart';
+import 'login_screen.dart';
+import 'persistence.dart';
+import 'study_mode_screen.dart';
 import 'widgets/app_theme.dart';
-import 'game_gate.dart';
-import 'auth/auth_service.dart';
-import 'firebase_options.dart';
 
 export 'automata_screen.dart';
 
@@ -16,7 +18,6 @@ Future<void> main() async {
 
   final themeNotifier = await AppThemeNotifier.load();
 
-  // Keep status/nav bars transparent so the dark bg bleeds through.
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarBrightness: Brightness.dark,
@@ -75,175 +76,140 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Automata Designer',
       debugShowCheckedModeBanner: false,
-      theme: _buildTheme(c),
+      theme: buildMaterialTheme(c),
       home: AppGate(
         authService: authService,
         firebaseEnabled: firebaseEnabled,
       ),
     );
   }
+}
 
-  static ThemeData _buildTheme(AppThemeData c) {
-    final base = c.isLightTheme ? ThemeData.light() : ThemeData.dark();
+// ─────────────────────────────────────────────────────────────────────────────
+//  AppGate — post-launch router. Handles auth-gating (waits for AuthService,
+//  falls back to LoginScreen), lazily opens the session/progress stores once
+//  signed in, then switches between Sandbox / Game / Study mode screens.
+//  Sole consumer is MyApp above, so it lives here rather than its own file.
+// ─────────────────────────────────────────────────────────────────────────────
 
-    return base.copyWith(
-      scaffoldBackgroundColor: c.bg,
-      canvasColor: c.surface,
-      cardColor: c.surface,
+enum _AppMode { none, sandbox, game, study }
 
-      colorScheme: (c.isLightTheme ? ColorScheme.light : ColorScheme.dark)(
-        primary:          c.accent,
-        onPrimary:        c.bg,
-        secondary:        c.accentGreen,
-        onSecondary:      c.bg,
-        surface:          c.surface,
-        onSurface:        c.textLight,
-        error:            c.error,
-        onError:          c.bg,
-        outline:          c.borderMid,
-      ),
+class AppGate extends StatefulWidget {
+  const AppGate({
+    super.key,
+    required this.authService,
+    required this.firebaseEnabled,
+  });
 
-      // AppBar
-      appBarTheme: AppBarTheme(
-        backgroundColor: c.surface,
-        foregroundColor: c.textLight,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.orbitron(
-          color: c.accent,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 3,
-        ),
-        iconTheme: IconThemeData(color: c.textMid),
-        systemOverlayStyle: c.isLightTheme
-            ? SystemUiOverlayStyle.dark
-            : SystemUiOverlayStyle.light,
-      ),
+  final AuthService authService;
+  final bool firebaseEnabled;
 
-      // Drawer
-      drawerTheme: DrawerThemeData(
-        backgroundColor: c.surface,
-        surfaceTintColor: Colors.transparent,
-      ),
+  @override
+  State<AppGate> createState() => _AppGateState();
+}
 
-      // Dividers
-      dividerTheme: DividerThemeData(color: c.borderMid, thickness: 1),
+class _AppGateState extends State<AppGate> {
+  bool _authenticated = false;
+  _AppMode _mode = _AppMode.none;
+  AutomataSessionStore? _sessionStore;
+  GameProgressStore? _progressStore;
+  bool _loadingStores = false;
 
-      // Input fields
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: c.surface,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: c.borderMid),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: c.borderMid),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: c.accent, width: 1.5),
-        ),
-        labelStyle: GoogleFonts.orbitron(color: c.textMid, fontSize: 12, letterSpacing: 1),
-        hintStyle: GoogleFonts.sourceCodePro(color: c.textDim, fontSize: 13),
-        errorStyle: GoogleFonts.sourceCodePro(color: c.error, fontSize: 11),
-      ),
+  @override
+  void initState() {
+    super.initState();
+    _initializeAuth();
+  }
 
-      // Filled / elevated buttons
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: c.accent.withOpacity(0.12),
-          foregroundColor: c.accent,
-          side: BorderSide(color: c.accent, width: 1),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-          textStyle: GoogleFonts.orbitron(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2,
+  Future<void> _initializeAuth() async {
+    await widget.authService.init();
+    if (!mounted) return;
+    setState(() {
+      _authenticated = widget.authService.isSignedIn || widget.authService.isGuest;
+    });
+    if (_authenticated) await _initStores();
+  }
+
+  Future<void> _initStores() async {
+    setState(() => _loadingStores = true);
+    final session = widget.authService.isGuest
+        ? await LocalSessionStore.open()
+        : FirebaseSessionStore();
+    final progress = await GameProgressStore.open();
+    if (!mounted) return;
+    setState(() {
+      _sessionStore = session;
+      _progressStore = progress;
+      _loadingStores = false;
+    });
+  }
+
+  Future<void> _handleAuthenticated() async {
+    setState(() => _authenticated = true);
+    await _initStores();
+  }
+
+  Future<void> _handleSignOut() async {
+    await widget.authService.signOut();
+    setState(() {
+      _authenticated = false;
+      _mode = _AppMode.none;
+      _sessionStore = null;
+      _progressStore = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_authenticated) {
+      return LoginScreen(
+        authService: widget.authService,
+        firebaseEnabled: widget.firebaseEnabled,
+        onAuthenticated: _handleAuthenticated,
+      );
+    }
+
+    if (_loadingStores || _sessionStore == null || _progressStore == null) {
+      return Scaffold(
+        backgroundColor: context.watch<AppThemeNotifier>().bg,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: context.watch<AppThemeNotifier>().accent,
           ),
         ),
-      ),
+      );
+    }
 
-      // Outlined buttons
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: c.textMid,
-          side: BorderSide(color: c.borderMid),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-          textStyle: GoogleFonts.orbitron(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.5,
-          ),
-        ),
-      ),
-
-      // Text buttons
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: c.textMid,
-          textStyle: GoogleFonts.orbitron(fontSize: 10, letterSpacing: 1.5),
-        ),
-      ),
-
-      // Floating action buttons
-      floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: c.surface,
-        foregroundColor: c.textLight,
-        elevation: 4,
-        highlightElevation: 8,
-      ),
-
-      // Chips
-      chipTheme: ChipThemeData(
-        backgroundColor: c.surface,
-        labelStyle: GoogleFonts.orbitron(color: c.textMid, fontSize: 9, letterSpacing: 1.5),
-        side: BorderSide(color: c.borderMid),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      ),
-
-      // Progress indicators
-      progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: c.accent,
-        linearTrackColor: c.gridLine,
-      ),
-
-      // Snackbars
-      snackBarTheme: SnackBarThemeData(
-        backgroundColor: c.surface,
-        contentTextStyle: GoogleFonts.sourceCodePro(color: c.textLight, fontSize: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: c.borderMid),
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
-
-      // Bottom sheets
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-      ),
-
-      // Text theme
-      textTheme: GoogleFonts.orbitronTextTheme(base.textTheme).copyWith(
-        bodyLarge:   GoogleFonts.sourceCodePro(color: c.textLight, fontSize: 14),
-        bodyMedium:  GoogleFonts.sourceCodePro(color: c.textMid,   fontSize: 13),
-        bodySmall:   GoogleFonts.sourceCodePro(color: c.textDim,   fontSize: 11),
-        labelLarge:  GoogleFonts.orbitron(color: c.textLight, fontSize: 12, letterSpacing: 1.5, fontWeight: FontWeight.w700),
-        labelMedium: GoogleFonts.orbitron(color: c.textMid,   fontSize: 10, letterSpacing: 1.2),
-        labelSmall:  GoogleFonts.orbitron(color: c.textDim,   fontSize: 8,  letterSpacing: 1.0),
-      ),
-      primaryTextTheme: GoogleFonts.orbitronTextTheme(base.primaryTextTheme),
-
-      // Icons
-      iconTheme: IconThemeData(color: c.textMid, size: 22),
-      primaryIconTheme: IconThemeData(color: c.accent),
-    );
+    switch (_mode) {
+      case _AppMode.none:
+        return ModeSelectScreen(
+          onSandbox: () => setState(() => _mode = _AppMode.sandbox),
+          onGame: () => setState(() => _mode = _AppMode.game),
+          onStudy: () => setState(() => _mode = _AppMode.study),
+          onSignOut: _handleSignOut,
+          isGuest: widget.authService.isGuest,
+          progressStore: _progressStore!,
+        );
+      case _AppMode.sandbox:
+        return AutomataScreen(
+          sessionStore: _sessionStore!,
+          isGuest: widget.authService.isGuest,
+          userEmail: widget.authService.user?.email,
+          onSignOut: _handleSignOut,
+          onGoToGame: () => setState(() => _mode = _AppMode.game),
+        );
+      case _AppMode.study:
+        return StudyModeScreen(
+          progressStore: _progressStore!,
+          onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
+          onGoToStudy: () => setState(() => _mode = _AppMode.study),
+        );
+      case _AppMode.game:
+        return LevelSelectScreen(
+          progressStore: _progressStore!,
+          onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
+          onGoToStudy: () => setState(() => _mode = _AppMode.study),
+        );
+    }
   }
 }

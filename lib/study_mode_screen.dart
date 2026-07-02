@@ -27,13 +27,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import 'fa_equivalence.dart';
-import 'fa_to_regex.dart';
+import 'dialogs/equivalence_dialog.dart'
+    show checkEquivalence, EquivalenceResult, EquivalenceStatus;
+import 'import_export.dart';
 import 'game_level.dart';
 import 'models.dart';
-import 'regex_engine.dart';
+import 'simulator.dart';
+import 'study_mode_pda.dart';
 import 'widgets/app_theme.dart';
-import 'widgets/app_theme_settings.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
 
@@ -646,11 +647,35 @@ List<_Challenge> _generateDescriptionChallenges(Random rng,
 enum _PracticeMode {
   regexToDfa('REGEX → DFA', Icons.functions),
   dfaToRegex('DFA → REGEX', Icons.account_tree_outlined),
-  describeToFa('DESCRIBE → FA', Icons.lightbulb_outline_rounded);
+  describeToFa('DESCRIBE → FA', Icons.lightbulb_outline_rounded),
+  pdaToDraw('PDA → DRAW', Icons.layers_outlined);
 
   const _PracticeMode(this.label, this.icon);
   final String label;
   final IconData icon;
+}
+
+class _AnyChallenge {
+  final _Challenge? regexChallenge;
+  final StudyPdaChallenge? pdaChallenge;
+
+  const _AnyChallenge.regex(this.regexChallenge) : pdaChallenge = null;
+  const _AnyChallenge.pda(this.pdaChallenge) : regexChallenge = null;
+
+  bool get isPda => pdaChallenge != null;
+  _Difficulty get difficulty => isPda
+      ? switch (pdaChallenge!.difficulty) {
+          StudyPdaDifficulty.easy => _Difficulty.easy,
+          StudyPdaDifficulty.medium => _Difficulty.medium,
+          StudyPdaDifficulty.hard => _Difficulty.hard,
+        }
+      : regexChallenge!.difficulty;
+  String? get description =>
+      regexChallenge?.description ?? pdaChallenge?.description;
+  String? get hint => pdaChallenge?.hint;
+  String get regex => regexChallenge?.regex ?? '';
+  Set<String> get alphabet =>
+      regexChallenge?.alphabet ?? pdaChallenge!.alphabet;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -713,8 +738,8 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   /// The mode actually used for the current challenge — drawn from [_selectedModes].
   _PracticeMode _mode = _PracticeMode.regexToDfa;
 
-  // The working queue — a shuffled copy of _kPool.
-  late List<_Challenge> _queue;
+  // The working queue — regex and PDA challenges.
+  late List<_AnyChallenge> _queue;
   int _queueIndex = 0;
 
   // Session counters
@@ -736,14 +761,22 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   /// Returns the appropriate mode for a given challenge.
   /// Description challenges always use describeToFa when that mode is selected;
   /// otherwise falls back to regexToDfa.
-  _PracticeMode _pickModeForChallenge(_Challenge challenge) {
-    if (challenge.description != null &&
+  _PracticeMode _pickModeForChallenge(_AnyChallenge challenge) {
+    if (challenge.isPda) {
+      if (_selectedModes.contains(_PracticeMode.pdaToDraw)) {
+        return _PracticeMode.pdaToDraw;
+      }
+      return _PracticeMode.pdaToDraw;
+    }
+    final rc = challenge.regexChallenge!;
+    if (rc.description != null &&
         _selectedModes.contains(_PracticeMode.describeToFa)) {
       return _PracticeMode.describeToFa;
     }
-    // For regex/DFA challenges, pick randomly from the non-describe selected modes.
     final pool = _selectedModes
-        .where((m) => m != _PracticeMode.describeToFa)
+        .where((m) =>
+            m != _PracticeMode.describeToFa &&
+            m != _PracticeMode.pdaToDraw)
         .toList();
     if (pool.isEmpty) return _PracticeMode.regexToDfa;
     return pool[_rng.nextInt(pool.length)];
@@ -791,13 +824,28 @@ class _StudyModeScreenState extends State<StudyModeScreen>
   // ── Queue management ──────────────────────────────────────────────────────
 
   void _buildQueue() {
-    final regexChallenges = _generateChallenges(_rng);
-    final descChallenges = _generateDescriptionChallenges(_rng);
-    _queue = [...regexChallenges, ...descChallenges]..shuffle(_rng);
+    final all = <_AnyChallenge>[];
+    final hasRegexModes = _selectedModes.any((m) =>
+        m == _PracticeMode.regexToDfa ||
+        m == _PracticeMode.dfaToRegex ||
+        m == _PracticeMode.describeToFa);
+    if (hasRegexModes) {
+      all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
+      all.addAll(
+          _generateDescriptionChallenges(_rng).map(_AnyChallenge.regex));
+    }
+    if (_selectedModes.contains(_PracticeMode.pdaToDraw)) {
+      all.addAll(generateStudyPdaChallenges(_rng, count: 20)
+          .map(_AnyChallenge.pda));
+    }
+    if (all.isEmpty) {
+      all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
+    }
+    _queue = all..shuffle(_rng);
     _queueIndex = 0;
   }
 
-  _Challenge get _current => _queue[_queueIndex];
+  _AnyChallenge get _current => _queue[_queueIndex];
 
   void _nextChallenge() {
     _queueIndex++;
@@ -883,8 +931,8 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       return const _GradeResult.parseError('Draw some states first, then hit Check.');
     }
 
-    // Build target DFA from the challenge regex.
-    final targetResult = regexToDfa(_current.regex.replaceAll(' ', ''));
+    final targetResult =
+        regexToDfa(_current.regex.replaceAll(' ', ''));
     if (targetResult.isError) {
       return _GradeResult.parseError('Internal error: ${targetResult.error}');
     }
@@ -931,14 +979,36 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       startArrow2: targetResult.startArrow,
     );
 
-    if (eq.status == EquivalenceStatus.equivalent) return const _GradeResult.correct();
+    if (eq.status == EquivalenceStatus.equivalent) {
+      return const _GradeResult.correct();
+    }
     return _GradeResult.wrong(eq.witness);
   }
 
+  _GradeResult _gradePlayerPda() {
+    if (_playerStart == null || _playerNodes.isEmpty) {
+      return const _GradeResult.parseError(
+          'Draw some states first, then hit Check.');
+    }
+    final grade = gradeStudyPda(
+      nodes: _playerNodes,
+      lines: _playerLines,
+      start: _playerStart,
+      challenge: _current.pdaChallenge!,
+    );
+    if (grade.correct) return const _GradeResult.correct();
+    return _GradeResult.wrong(studyPdaFailureMessage(grade.failedCase!));
+  }
+
   void _submit() {
-    final result = _mode == _PracticeMode.dfaToRegex
-        ? _gradePlayerRegex()
-        : _gradePlayerDfa(); // both regexToDfa and describeToFa draw a DFA
+    final _GradeResult result;
+    if (_mode == _PracticeMode.pdaToDraw) {
+      result = _gradePlayerPda();
+    } else if (_mode == _PracticeMode.dfaToRegex) {
+      result = _gradePlayerRegex();
+    } else {
+      result = _gradePlayerDfa();
+    }
 
     setState(() {
       _gradeResult = result;
@@ -1154,7 +1224,9 @@ class _TopBar extends StatelessWidget {
                           ? theme.accentGreen
                           : m == _PracticeMode.describeToFa
                               ? const Color(0xFFB47FFF)
-                              : theme.accent;
+                              : m == _PracticeMode.pdaToDraw
+                                  ? const Color(0xFF26C6DA)
+                                  : theme.accent;
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: GestureDetector(
@@ -1264,7 +1336,7 @@ class _TopBar extends StatelessWidget {
 
 class _ChallengeBody extends StatelessWidget {
   final _PracticeMode mode;
-  final _Challenge challenge;
+  final _AnyChallenge challenge;
   final int queueIndex;
   final int queueTotal;
   final _GradeResult? gradeResult;
@@ -1329,21 +1401,30 @@ class _ChallengeBody extends StatelessWidget {
           Expanded(
             child: mode == _PracticeMode.dfaToRegex
                 ? _RegexInputArea(
-                    challenge: challenge,
+                    challenge: challenge.regexChallenge!,
                     controller: regexInputCtrl,
                     focusNode: regexInputFocus,
                     submitted: submitted,
                     gradeResult: gradeResult,
                     theme: theme,
                   )
-                : _DfaDrawingArea(
-                    challenge: challenge,
-                    submitted: submitted,
-                    gradeResult: gradeResult,
-                    answerRevealed: answerRevealed,
-                    onFaChanged: onPlayerFaChanged,
-                    theme: theme,
-                  ),
+                : mode == _PracticeMode.pdaToDraw
+                    ? StudyPdaDrawingArea(
+                        challenge: challenge.pdaChallenge!,
+                        submitted: submitted,
+                        answerRevealed: answerRevealed,
+                        lastCorrect: gradeResult?.correct,
+                        onFaChanged: onPlayerFaChanged,
+                        theme: theme,
+                      )
+                    : _DfaDrawingArea(
+                        challenge: challenge.regexChallenge!,
+                        submitted: submitted,
+                        gradeResult: gradeResult,
+                        answerRevealed: answerRevealed,
+                        onFaChanged: onPlayerFaChanged,
+                        theme: theme,
+                      ),
           ),
 
           const SizedBox(height: 14),
@@ -1427,7 +1508,7 @@ class _ProgressRow extends StatelessWidget {
 
 class _ChallengeCard extends StatelessWidget {
   final _PracticeMode mode;
-  final _Challenge challenge;
+  final _AnyChallenge challenge;
   final AppThemeNotifier theme;
 
   const _ChallengeCard({
@@ -1464,7 +1545,9 @@ class _ChallengeCard extends StatelessWidget {
         ? theme.accent
         : mode == _PracticeMode.describeToFa
             ? const Color(0xFFB47FFF)
-            : theme.accentGreen;
+            : mode == _PracticeMode.pdaToDraw
+                ? const Color(0xFF26C6DA)
+                : theme.accentGreen;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1570,6 +1653,45 @@ class _ChallengeCard extends StatelessWidget {
                 ),
               ),
             ),
+          ] else if (mode == _PracticeMode.pdaToDraw) ...[
+            Text(
+              'CONTEXT-FREE LANGUAGE',
+              style: GoogleFonts.orbitron(
+                color: theme.textDim,
+                fontSize: 8,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF26C6DA).withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFF26C6DA).withOpacity(0.25)),
+              ),
+              child: Text(
+                challenge.description ?? '',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFF80DEEA),
+                  fontSize: 14,
+                  height: 1.55,
+                ),
+              ),
+            ),
+            if (challenge.hint != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                challenge.hint!,
+                style: GoogleFonts.sourceCodePro(
+                  color: theme.textDim,
+                  fontSize: 12,
+                  height: 1.45,
+                ),
+              ),
+            ],
           ] else ...[
             // DFA→REGEX: no description shown — alphabet is the only hint
             Text(
@@ -1621,7 +1743,9 @@ class _ChallengeCard extends StatelessWidget {
                       ? 'Draw a DFA on the canvas below whose language equals this regex.'
                       : mode == _PracticeMode.describeToFa
                           ? 'Draw a DFA on the canvas below whose language matches the description above.'
-                          : 'Type a regular expression below that describes exactly this language.',
+                          : mode == _PracticeMode.pdaToDraw
+                              ? 'Draw a PDA on the canvas below that accepts exactly this language.'
+                              : 'Type a regular expression below that describes exactly this language.',
                   style: GoogleFonts.sourceCodePro(
                     color: theme.textDim,
                     fontSize: 11,
@@ -1999,6 +2123,7 @@ class _ReadOnlyDfaPreviewState extends State<_ReadOnlyDfaPreview> {
       _nodes = result.nodes;
       _lines = result.lines;
       _start = result.startArrow;
+      _applyStudyModeLayout(_nodes!, _lines!);
     }
   }
 
@@ -2039,7 +2164,7 @@ class _ReadOnlyDfaPreviewState extends State<_ReadOnlyDfaPreview> {
 
 class _FeedbackBanner extends StatelessWidget {
   final _GradeResult result;
-  final _Challenge challenge;
+  final _AnyChallenge challenge;
   final _PracticeMode mode;
   final int wrongAttempts;
   final bool answerRevealed;
@@ -2077,7 +2202,9 @@ class _FeedbackBanner extends StatelessWidget {
             ? 'Your DFA is equivalent to  ${challenge.regex}.'
             : mode == _PracticeMode.describeToFa
                 ? 'Your FA correctly captures the described language!'
-                : 'Your regex describes the same language.',
+                : mode == _PracticeMode.pdaToDraw
+                    ? 'Your PDA passes every oracle test case for this language.'
+                    : 'Your regex describes the same language.',
         theme: theme,
       );
     }
@@ -2091,7 +2218,9 @@ class _FeedbackBanner extends StatelessWidget {
       // 3 tries exhausted — show the canonical answer.
       final answerText = mode == _PracticeMode.dfaToRegex
           ? 'A correct regex for this language is:\n  ${challenge.regex}'
-          : 'The correct FA has been loaded on the canvas above — study it, then move on.';
+          : mode == _PracticeMode.pdaToDraw
+              ? 'The correct PDA has been loaded on the canvas above — study it, then move on.'
+              : 'The correct FA has been loaded on the canvas above — study it, then move on.';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2449,5 +2578,170 @@ class AutomataDrawerEmbed extends StatelessWidget {
       onChanged: onChanged,
       readOnly: readOnly,
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Study-mode layout post-processor
+//
+//  Applied to the solution graph after it is built from a regex or PDA spec,
+//  before rendering it read-only.  Three passes:
+//
+//  1. Set a default perpendicularPart of 30 on every non-self-loop line.
+//
+//  2+3. For every node N and every line L that does not touch N, run two
+//     sub-checks inside a single convergence loop so both can react to each
+//     other rather than fighting across two separate loops:
+//
+//     2. CHORD CLEARANCE — closest point on the straight chord through the two
+//        endpoint centres.  If within clearance, push N perpendicularly away.
+//
+//     3. TEXTBOX CLEARANCE — axis-aligned bounding rect of the line's label
+//        (computed by LineData.getTextBoxLocation).  If the node circle
+//        overlaps the rect, push N away from the nearest edge.
+//
+//     Repeat until stable (max iterations).
+// ─────────────────────────────────────────────────────────────────────────────
+
+void _applyStudyModeLayout(
+  Map<String, NodeData> nodes,
+  Map<String, LineData> lines,
+) {
+  // ── Pass 1: default perpendicularPart on all non-self-loop lines ───────────
+  for (final line in lines.values) {
+    if (line.nodeAId != line.nodeBId) {
+      line.perpendicularPart = 30.0;
+    }
+  }
+
+  // ── Pass 2+3: move nodes off chord paths and label textboxes ──────────────
+  const double nodeRadius  = 50.0;              // visual radius of a state circle
+  const double clearance   = nodeRadius + 30.0; // min distance: node centre ↔ chord
+  const double textBuffer  = 12.0;              // extra padding around textbox rect
+  const double boxWidth    = 120.0;             // must match LineWidget / StartArrowWidget
+  const double lineHeight  = 36.0;              // single-line height used by those widgets
+  const int    iterations  = 20;                // enough passes to propagate cascades
+
+  for (int iter = 0; iter < iterations; iter++) {
+    bool anyMoved = false;
+
+    for (final node in nodes.values) {
+      if (node.isBlackBox) continue;
+
+      for (final line in lines.values) {
+        // Skip lines that directly touch this node.
+        if (line.nodeAId == node.id || line.nodeBId == node.id) continue;
+        // Skip self-loops — they don't cross other nodes.
+        if (line.nodeAId == line.nodeBId) continue;
+
+        final nodeA = nodes[line.nodeAId];
+        final nodeB = nodes[line.nodeBId];
+        if (nodeA == null || nodeB == null) continue;
+
+        final cA = nodeA.center;
+        final cB = nodeB.center;
+
+        // ── sub-check 2: chord clearance ─────────────────────────────────
+        {
+          final nc = node.center;
+
+          // Vector from A to B.
+          final abx = cB.dx - cA.dx;
+          final aby = cB.dy - cA.dy;
+          final abLen = sqrt(abx * abx + aby * aby);
+
+          if (abLen >= 1) {
+            // Project node centre onto the infinite line through A and B.
+            final t = ((nc.dx - cA.dx) * abx + (nc.dy - cA.dy) * aby) / (abLen * abLen);
+
+            // Only care if the projection falls between (or near) the endpoints.
+            if (t >= -0.05 && t <= 1.05) {
+              final closestX = cA.dx + t * abx;
+              final closestY = cA.dy + t * aby;
+
+              final dxFromChord = nc.dx - closestX;
+              final dyFromChord = nc.dy - closestY;
+              final distFromChord = sqrt(dxFromChord * dxFromChord + dyFromChord * dyFromChord);
+
+              if (distFromChord < clearance) {
+                final push = clearance - distFromChord;
+
+                // Perpendicular direction away from the chord.
+                // If the node is exactly on the chord (dist ≈ 0), push downward.
+                final Offset perp;
+                if (distFromChord < 0.5) {
+                  perp = Offset(aby / abLen, -abx / abLen); // rotate AB by -90°
+                } else {
+                  perp = Offset(dxFromChord / distFromChord, dyFromChord / distFromChord);
+                }
+
+                node.position = Offset(
+                  node.position.dx + perp.dx * push,
+                  node.position.dy + perp.dy * push,
+                );
+                anyMoved = true;
+              }
+            }
+          }
+        }
+
+        // ── sub-check 3: textbox clearance ───────────────────────────────
+        // Re-fetch node.center after the potential chord push above so the
+        // textbox test sees the already-updated position.
+        if (line.label.isNotEmpty) {
+          final nc = node.center;
+
+          final lineCount = '\n'.allMatches(line.label).length + 1;
+          final double boxHeight = lineHeight * lineCount;
+
+          // Top-left corner of the label textbox, as rendered by LineWidget.
+          final Offset topLeft =
+              line.getTextBoxLocation(cA, cB, boxWidth, boxHeight, line.label);
+
+          // Expand by textBuffer on all sides to give a small clearance gap.
+          final double rLeft   = topLeft.dx - textBuffer;
+          final double rTop    = topLeft.dy - textBuffer;
+          final double rRight  = topLeft.dx + boxWidth  + textBuffer;
+          final double rBottom = topLeft.dy + boxHeight + textBuffer;
+
+          // Closest point on the (expanded) rect to the node centre.
+          final closestX = nc.dx.clamp(rLeft, rRight);
+          final closestY = nc.dy.clamp(rTop, rBottom);
+
+          final dxFromBox = nc.dx - closestX;
+          final dyFromBox = nc.dy - closestY;
+          final distFromBox = sqrt(dxFromBox * dxFromBox + dyFromBox * dyFromBox);
+
+          if (distFromBox < nodeRadius) {
+            final push = nodeRadius - distFromBox;
+
+            // Push direction: away from the closest point on the rect.
+            // If the node centre is already inside the rect, push away from
+            // the rect's centre instead.
+            final Offset pushDir;
+            if (distFromBox < 0.5) {
+              final rcx = (rLeft + rRight) / 2;
+              final rcy = (rTop + rBottom) / 2;
+              final awayDx = nc.dx - rcx;
+              final awayDy = nc.dy - rcy;
+              final awayLen = sqrt(awayDx * awayDx + awayDy * awayDy);
+              pushDir = awayLen < 0.5
+                  ? const Offset(0, 1) // fallback: push straight down
+                  : Offset(awayDx / awayLen, awayDy / awayLen);
+            } else {
+              pushDir = Offset(dxFromBox / distFromBox, dyFromBox / distFromBox);
+            }
+
+            node.position = Offset(
+              node.position.dx + pushDir.dx * push,
+              node.position.dy + pushDir.dy * push,
+            );
+            anyMoved = true;
+          }
+        }
+      }
+    }
+
+    if (!anyMoved) break; // converged early
   }
 }

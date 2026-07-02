@@ -1,5 +1,5 @@
 import 'widgets/app_theme.dart';
-import 'automaton_type_checker.dart' show RequiredAutomatonType;
+import 'dialogs/equivalence_dialog.dart' show RequiredAutomatonType;
 import 'tutorial_screen.dart' show TutorialSlide, TutorialIllustration;
 
 // ─────────────────────────────────────────────────────────────────────────────

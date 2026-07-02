@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  sim_panels.dart
+//
+//  Floating panels shown only while a simulation is active. Merged from the
+//  formerly-separate pda_stack_panel.dart, tm_config_panel.dart,
+//  regex_panel.dart, and string_simulator_panel.dart, which all lived in the
+//  same "simulation UI" niche and shared theme/model dependencies:
+//
+//    • PdaStackPanel          — NPDA configurations (state, input, stack)
+//    • TmConfigPanel          — NTM configurations (state, head, tape)
+//    • RegexPanel             — regex → DFA conversion panel
+//    • StringSimulatorPanel   — token/tape scrubber + playback transport
+// ─────────────────────────────────────────────────────────────────────────────
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -5,10 +19,1140 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
-import 'app_theme.dart';
-import '../pda_simulator.dart';
 import '../simulator.dart';
-import '../tm_simulator.dart';
+import 'app_theme.dart';
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  PDA STACK PANEL
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Floating panel: NPDA configurations (state, remaining input, stack) per step.
+class PdaStackPanel extends StatelessWidget {
+  final PdaSimulator simulator;
+  final Map<String, NodeData> nodes;
+
+  const PdaStackPanel({
+    super.key,
+    required this.simulator,
+    required this.nodes,
+  });
+
+  String _stateLabel(String nodeId) => displayNodeLabel(nodeId, nodes);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final configs = simulator.activeConfigs;
+    final result = simulator.finalResult();
+    final atEnd = simulator.step == simulator.tokens.length;
+
+    Color? headerColor;
+    if (atEnd && simulator.tokens.isNotEmpty) {
+      headerColor = switch (result) {
+        PdaSimResult.accept => const Color(0xFF1FD99A),
+        PdaSimResult.reject => const Color(0xFFFF1744),
+      };
+    }
+
+    return Align(
+      alignment: Alignment.bottomLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16, bottom: 16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300, maxHeight: 480),
+          child: Card(
+            color: theme.surface,
+            elevation: 6,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: theme.borderMid),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.layers, size: 18,
+                          color: headerColor ?? theme.accent),
+                      const SizedBox(width: 6),
+                      Text(
+                        'PDA (NPDA)',
+                        style: GoogleFonts.courierPrime(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: headerColor ?? theme.textLight,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (atEnd && simulator.tokens.isNotEmpty)
+                        Text(
+                          switch (result) {
+                            PdaSimResult.accept => 'ACCEPT',
+                            PdaSimResult.reject => 'REJECT',
+                          },
+                          style: GoogleFonts.courierPrime(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: headerColor,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    simulator.tokens.isEmpty
+                        ? 'No input'
+                        : simulator.step < 0
+                            ? 'Before input'
+                            : 'After token ${simulator.step} / ${simulator.tokens.length}',
+                    style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim),
+                  ),
+                  Divider(height: 16, color: theme.borderMid),
+                  if (simulator.stackGrowthLoopDetected)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Stopped: ε-closure stack became too large '
+                        '(typical unbounded free-push like ~,~|X). '
+                        'If you want to drain a loop, use ~,symbol|~.',
+                        style: GoogleFonts.courierPrime(
+                          fontSize: 12,
+                          color: const Color(0xFFFF9E40),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  if (configs.isEmpty)
+                    Text(
+                      simulator.stackGrowthLoopDetected
+                          ? 'Simulation aborted'
+                          : 'No active configuration',
+                      style: GoogleFonts.courierPrime(
+                          fontSize: 13, color: const Color(0xFFFF1744)),
+                    )
+                  else
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (int i = 0; i < configs.length; i++) ...[
+                              if (configs.length > 1)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    'Configuration ${i + 1}',
+                                    style: GoogleFonts.courierPrime(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.textDim,
+                                    ),
+                                  ),
+                                ),
+                              _ConfigCard(
+                                stateLabel: _stateLabel(configs[i].nodeId),
+                                remaining: simulator.remainingInputAt(i),
+                                stack: configs[i].stack,
+                              ),
+                              if (i < configs.length - 1)
+                                const SizedBox(height: 12),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfigCard extends StatelessWidget {
+  final String stateLabel;
+  final String remaining;
+  final List<String> stack;
+
+  const _ConfigCard({
+    required this.stateLabel,
+    required this.remaining,
+    required this.stack,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: theme.bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.borderMid),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _RowLabel(label: 'state', value: stateLabel),
+          const SizedBox(height: 4),
+          _RowLabel(
+            label: 'input',
+            value: remaining.isEmpty ? 'ε' : remaining,
+            muted: remaining.isEmpty,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'stack',
+            style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
+          ),
+          const SizedBox(height: 4),
+          _StackView(stack: stack),
+        ],
+      ),
+    );
+  }
+}
+
+class _RowLabel extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool muted;
+
+  const _RowLabel({
+    required this.label,
+    required this.value,
+    this.muted = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 44,
+          child: Text(
+            label,
+            style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: GoogleFonts.courierPrime(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: muted ? theme.textDim : theme.textLight,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StackView extends StatelessWidget {
+  final List<String> stack;
+
+  const _StackView({required this.stack});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    if (stack.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+        decoration: BoxDecoration(
+          color: theme.bg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: theme.borderMid),
+        ),
+        child: Text(
+          '(empty)',
+          style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textDim),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final displayItems = stack.reversed.toList();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (int i = 0; i < displayItems.length; i++)
+          _StackCell(
+            symbol: displayItems[i],
+            isTop: i == 0,
+            isBottom: i == displayItems.length - 1,
+          ),
+      ],
+    );
+  }
+}
+
+class _StackCell extends StatelessWidget {
+  final String symbol;
+  final bool isTop;
+  final bool isBottom;
+
+  const _StackCell({
+    required this.symbol,
+    required this.isTop,
+    required this.isBottom,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final display = symbol.isEmpty ? 'ε' : symbol;
+    final isBottomMarker = symbol == kStackBottom;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 1),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+      decoration: BoxDecoration(
+        color: isTop ? const Color(0xFF0A1929) : const Color(0xFF080D14),
+        borderRadius: BorderRadius.vertical(
+          top: isTop ? const Radius.circular(6) : Radius.zero,
+          bottom: isBottom ? const Radius.circular(6) : Radius.zero,
+        ),
+        border: Border.all(
+          color: isTop ? theme.accent : theme.borderMid,
+          width: isTop ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          if (isTop) ...[
+            Icon(Icons.arrow_right, size: 16, color: theme.accent),
+            const SizedBox(width: 4),
+          ] else
+            const SizedBox(width: 20),
+          Expanded(
+            child: Text(
+              display,
+              style: GoogleFonts.courierPrime(
+                fontSize: 15,
+                fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
+                color: isTop ? theme.accent : theme.textMid,
+              ),
+            ),
+          ),
+          if (isTop)
+            Text(
+              'top',
+              style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
+            ),
+          if (isBottom && isBottomMarker)
+            Text(
+              'btm',
+              style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  TM CONFIG PANEL
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Floating panel: NTM configurations (state, head position, tape) per step.
+class TmConfigPanel extends StatelessWidget {
+  final TmSimulator simulator;
+  final Map<String, NodeData> nodes;
+
+  const TmConfigPanel({
+    super.key,
+    required this.simulator,
+    required this.nodes,
+  });
+
+  String _stateLabel(String nodeId) => displayNodeLabel(nodeId, nodes);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final configs = simulator.activeConfigs;
+    final result  = simulator.result;
+    final isDone  = result != TmResult.running;
+
+    Color? headerColor;
+    if (isDone) {
+      headerColor = switch (result) {
+        TmResult.accept  => const Color(0xFF1FD99A),
+        TmResult.reject  => const Color(0xFFFF1744),
+        TmResult.running => null,
+      };
+    }
+
+    return Align(
+      alignment: Alignment.bottomLeft,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16, bottom: 16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340, maxHeight: 520),
+          child: Card(
+            color: theme.surface,
+            elevation: 6,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: theme.borderMid),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Header ───────────────────────────────────────────
+                  Row(
+                    children: [
+                      Icon(Icons.memory, size: 18,
+                          color: headerColor ?? theme.accent),
+                      const SizedBox(width: 6),
+                      Text(
+                        'TM (NTM)',
+                        style: GoogleFonts.courierPrime(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: headerColor ?? theme.textLight,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (isDone)
+                        Text(
+                          switch (result) {
+                            TmResult.accept  => 'ACCEPT',
+                            TmResult.reject  => 'REJECT',
+                            TmResult.running => '',
+                          },
+                          style: GoogleFonts.courierPrime(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: headerColor,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // ── Step label ───────────────────────────────────────
+                  Text(
+                    'Step ${simulator.step < 0 ? 0 : simulator.step + 1} '
+                    '/ ${simulator.steps.isEmpty ? 0 : simulator.steps.length - 1}',
+                    style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim),
+                  ),
+                  Divider(height: 16, color: theme.borderMid),
+
+                  // ── Configs list ─────────────────────────────────────
+                  if (configs.isEmpty)
+                    Text(
+                      'No active configuration',
+                      style: GoogleFonts.courierPrime(
+                          fontSize: 13, color: const Color(0xFFFF1744)),
+                    )
+                  else
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (int i = 0; i < configs.length; i++) ...[
+                              if (configs.length > 1)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    'Branch ${i + 1}',
+                                    style: GoogleFonts.courierPrime(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.textDim,
+                                    ),
+                                  ),
+                                ),
+                              _TmConfigCard(
+                                stateLabel: _stateLabel(configs[i].nodeId),
+                                headPos: configs[i].readHeadPos,
+                                tape: configs[i].tape,
+                                isAccepted: () {
+                                  final node = nodes[configs[i].nodeId];
+                                  return node != null && node.isHaltAccept;
+                                }(),
+                                isRejected: () {
+                                  final node = nodes[configs[i].nodeId];
+                                  return node != null && node.isHaltReject;
+                                }(),
+                              ),
+                              if (i < configs.length - 1)
+                                const SizedBox(height: 12),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Single config card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TmConfigCard extends StatelessWidget {
+  final String stateLabel;
+  final int headPos;
+  final TmTape tape;
+  final bool isAccepted;
+  final bool isRejected;
+
+  const _TmConfigCard({
+    required this.stateLabel,
+    required this.headPos,
+    required this.tape,
+    required this.isAccepted,
+    required this.isRejected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final borderColor = isAccepted
+        ? theme.accentGreen
+        : isRejected
+            ? const Color(0xFFFF1744)
+            : theme.borderMid;
+
+    final bgColor = isAccepted
+        ? theme.accentGreen.withOpacity(0.08)
+        : isRejected
+            ? const Color(0xFF1A0005)
+            : theme.bg;
+
+    final stateTextColor = isAccepted
+        ? theme.accentGreen
+        : isRejected
+            ? const Color(0xFFFF1744)
+            : theme.textLight;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // State row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 44,
+                child: Text(
+                  'state',
+                  style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  stateLabel,
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: stateTextColor,
+                  ),
+                ),
+              ),
+              if (isAccepted)
+                Text(
+                  'ACCEPT',
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: theme.accentGreen,
+                  ),
+                ),
+              if (isRejected)
+                Text(
+                  'REJECT',
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFFFF1744),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Text(
+            'tape',
+            style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
+          ),
+          const SizedBox(height: 4),
+
+          _TapeStrip(tape: tape, headPos: headPos),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Tape strip — horizontal scrollable row of cells
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TapeStrip extends StatelessWidget {
+  final TmTape tape;
+  final int headPos;
+
+  const _TapeStrip({required this.tape, required this.headPos});
+
+  @override
+  Widget build(BuildContext context) {
+    const pad = 3;
+    final startAbs = -pad;
+    final endAbs   = tape.cells.length - tape.headOffset + pad;
+
+    final items = <({String symbol, bool isHead})>[];
+    for (int rel = startAbs; rel < endAbs; rel++) {
+      final abs = tape.absolutePos(rel);
+      final sym = (abs >= 0 && abs < tape.cells.length) ? tape.cells[abs] : kBlank;
+      items.add((symbol: sym.isEmpty ? kBlank : sym, isHead: abs == headPos));
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final item in items)
+            _TapeCell(symbol: item.symbol, isHead: item.isHead),
+        ],
+      ),
+    );
+  }
+}
+
+class _TapeCell extends StatelessWidget {
+  final String symbol;
+  final bool isHead;
+
+  const _TapeCell({required this.symbol, required this.isHead});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return Container(
+      width: 32,
+      height: 32,
+      margin: const EdgeInsets.symmetric(horizontal: 1),
+      decoration: BoxDecoration(
+        color: isHead ? theme.surface : theme.bg,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: isHead ? theme.accent : theme.borderMid,
+          width: isHead ? 2 : 1,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Center(
+            child: Text(
+              symbol,
+              style: GoogleFonts.courierPrime(
+                fontSize: 14,
+                fontWeight: isHead ? FontWeight.bold : FontWeight.normal,
+                color: isHead ? theme.accent : theme.textMid,
+              ),
+            ),
+          ),
+          if (isHead)
+            Positioned(
+              bottom: 1,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  '▲',
+                  style: TextStyle(fontSize: 7, color: theme.accent.withOpacity(0.7)),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  REGEX PANEL
+// ═════════════════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
+//  regex_panel.dart
+//
+//  Floating panel shown when the automata mode is set to RegEx.
+//  Lets the user type a simple regex and convert it to a DFA
+//  that is displayed on the canvas.
+//
+//  Supported syntax:
+//    *  = Kleene star (zero or more of the preceding atom)
+//    +  = union / alternation (either side), equivalent to | in standard regex
+//    () = grouping
+//    All other characters are literals (single characters).
+//
+//  Examples:
+//    (0 + 1(01*0)*1)*   — strings whose binary value is divisible by 3
+//    a*b*               — any number of a followed by any number of b
+//    (a + b)*abb        — strings ending in "abb" over {a,b}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Public callback type ────────────────────────────────────────────────────
+
+typedef RegexConvertCallback = void Function(RegexConversionResult result, bool isDfa);
+
+// ─── Panel widget ─────────────────────────────────────────────────────────────
+
+class RegexPanel extends StatefulWidget {
+  /// Called when the user clicks "Convert to DFA".
+  /// The parent screen is responsible for loading the resulting graph.
+  final RegexConvertCallback onConvert;
+
+  /// Called when the user closes the panel.
+  final VoidCallback onClose;
+
+  /// Optional text to pre-fill the expression field with (e.g. when the panel
+  /// is opened from the NFA/DFA → Regex dialog).
+  final String? initialText;
+
+  /// Called once after [initialText] has been copied into the text field so
+  /// the parent can clear it and avoid re-seeding on rebuilds.
+  final VoidCallback? onInitialTextConsumed;
+
+  const RegexPanel({
+    super.key,
+    required this.onConvert,
+    required this.onClose,
+    this.initialText,
+    this.onInitialTextConsumed,
+  });
+
+  @override
+  State<RegexPanel> createState() => _RegexPanelState();
+}
+
+class _RegexPanelState extends State<RegexPanel> {
+  final TextEditingController _ctrl = TextEditingController();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialText != null && widget.initialText!.isNotEmpty) {
+      _ctrl.text = widget.initialText!;
+      // Notify the parent that the seed has been consumed so it doesn't
+      // re-apply it on the next rebuild.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onInitialTextConsumed?.call();
+      });
+    }
+  }
+
+  /// Picks up a new [initialText] when the panel is already mounted — this
+  /// happens when the user loads a derived regex from the FA→Regex dialog
+  /// while the Regex Panel is already visible.
+  @override
+  void didUpdateWidget(RegexPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final incoming = widget.initialText;
+    if (incoming != null &&
+        incoming.isNotEmpty &&
+        incoming != oldWidget.initialText) {
+      setState(() {
+        _ctrl.text = incoming;
+        _error = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onInitialTextConsumed?.call();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _convert() {
+    // Use the raw text — the parser skips all whitespace internally,
+    // so spaces around operators (e.g. "0 + 1") are handled correctly.
+    final pattern = _ctrl.text;
+    if (pattern.trim().isEmpty) {
+      setState(() => _error = 'Please enter a regular expression.');
+      return;
+    }
+
+    final result = regexToDfa(pattern);
+
+    if (result.isError) {
+      setState(() => _error = result.error);
+      return;
+    }
+
+    setState(() => _error = null);
+    widget.onConvert(result, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 16, bottom: 16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Card(
+            color: theme.surface,
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: theme.borderMid),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── Header ─────────────────────────────────────────────
+                  Row(
+                    children: [
+                      Icon(Icons.text_fields, color: theme.accent, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Regular Expression',
+                        style: GoogleFonts.courierPrime(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: theme.textLight,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(Icons.close, color: theme.textMid, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: widget.onClose,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Syntax reminder ────────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.bg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: theme.borderMid),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Syntax',
+                          style: GoogleFonts.courierPrime(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: theme.textDim,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        _SyntaxRow(symbol: '*', desc: 'zero or more (Kleene star)', theme: theme),
+                        _SyntaxRow(symbol: '+', desc: 'or / union (alternation)', theme: theme),
+                        _SyntaxRow(symbol: '()', desc: 'grouping', theme: theme),
+                        _SyntaxRow(symbol: 'a–z, 0–9, …', desc: 'literal character', theme: theme),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Regex input ────────────────────────────────────────
+                  Text(
+                    'Expression',
+                    style: GoogleFonts.courierPrime(
+                      fontSize: 12,
+                      color: theme.textDim,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: theme.bg,
+                      border: Border.all(
+                        color: _error != null
+                            ? const Color(0xFFFF1744)
+                            : theme.accent.withOpacity(0.6),
+                        width: 1.5,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextField(
+                      controller: _ctrl,
+                      style: GoogleFonts.courierPrime(
+                        fontSize: 18,
+                        color: theme.textLight,
+                        letterSpacing: 1.2,
+                      ),
+                      cursorColor: theme.accent,
+                      onSubmitted: (_) => _convert(),
+                      onChanged: (_) {
+                        if (_error != null) setState(() => _error = null);
+                      },
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: InputBorder.none,
+                        hintText: '(0 + 1(01*0)*1)*',
+                        hintStyle: GoogleFonts.courierPrime(
+                          fontSize: 16,
+                          color: theme.textDim,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  if (_error != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      _error!,
+                      style: GoogleFonts.courierPrime(
+                        fontSize: 12,
+                        color: const Color(0xFFFF1744),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+
+                  // ── Convert button ─────────────────────────────────────
+                  FilledButton.icon(
+                    onPressed: _convert,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: theme.accent,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.transform, size: 18),
+                    label: Text(
+                      'Convert to DFA',
+                      style: GoogleFonts.courierPrime(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // ── Examples ───────────────────────────────────────────
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Examples',
+                      style: GoogleFonts.courierPrime(
+                        fontSize: 12,
+                        color: theme.textDim,
+                      ),
+                    ),
+                    iconColor: theme.textDim,
+                    collapsedIconColor: theme.textDim,
+                    children: [
+                      _ExampleTile(
+                        pattern: '(0 + 1(01*0)*1)*',
+                        desc: 'Divisible by 3 in binary',
+                        onTap: () {
+                          _ctrl.text = '(0 + 1(01*0)*1)*';
+                          setState(() => _error = null);
+                        },
+                        theme: theme,
+                      ),
+                      _ExampleTile(
+                        pattern: 'a*b*',
+                        desc: "Any a's then b's",
+                        onTap: () {
+                          _ctrl.text = 'a*b*';
+                          setState(() => _error = null);
+                        },
+                        theme: theme,
+                      ),
+                      _ExampleTile(
+                        pattern: '(a + b)*abb',
+                        desc: 'Strings ending in "abb"',
+                        onTap: () {
+                          _ctrl.text = '(a + b)*abb';
+                          setState(() => _error = null);
+                        },
+                        theme: theme,
+                      ),
+                      _ExampleTile(
+                        pattern: '(0 + 1)*1(0 + 1)',
+                        desc: 'Second-to-last bit is 1',
+                        onTap: () {
+                          _ctrl.text = '(0 + 1)*1(0 + 1)';
+                          setState(() => _error = null);
+                        },
+                        theme: theme,
+                      ),
+                      _ExampleTile(
+                        pattern: '(0 + 1(001*0(101*0)*0 + 1(101*0)*0)*(001*0(101*0)*11 + 01 + 1(101*0)*11))*',
+                        desc: 'Divisible by 5 in binary',
+                        onTap: () {
+                          _ctrl.text = '(0 + 1(001*0(101*0)*0 + 1(101*0)*0)*(001*0(101*0)*11 + 01 + 1(101*0)*11))*';
+                          setState(() => _error = null);
+                        },
+                        theme: theme,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Helper widgets ───────────────────────────────────────────────────────────
+
+class _SyntaxRow extends StatelessWidget {
+  final String symbol;
+  final String desc;
+  final AppThemeNotifier theme;
+
+  const _SyntaxRow({
+    required this.symbol,
+    required this.desc,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              symbol,
+              style: GoogleFonts.courierPrime(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: theme.accent,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              desc,
+              style: GoogleFonts.courierPrime(
+                fontSize: 12,
+                color: theme.textMid,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExampleTile extends StatelessWidget {
+  final String pattern;
+  final String desc;
+  final VoidCallback onTap;
+  final AppThemeNotifier theme;
+
+  const _ExampleTile({
+    required this.pattern,
+    required this.desc,
+    required this.onTap,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    pattern,
+                    style: GoogleFonts.courierPrime(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: theme.textLight,
+                    ),
+                  ),
+                  Text(
+                    desc,
+                    style: GoogleFonts.courierPrime(
+                      fontSize: 11,
+                      color: theme.textDim,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 12, color: theme.textDim),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  STRING SIMULATOR PANEL
+// ═════════════════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Speed levels (ms per step)

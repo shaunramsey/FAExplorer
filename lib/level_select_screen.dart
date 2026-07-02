@@ -27,11 +27,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'game_level.dart';
-import 'game_progress_store.dart';
+import 'game_data.dart';
 import 'game_puzzle.dart';
 import 'tutorial_screen.dart';
 import 'widgets/app_theme.dart';
-import 'widgets/app_theme_settings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants

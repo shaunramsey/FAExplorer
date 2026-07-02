@@ -4,10 +4,41 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/app_theme.dart';
-import '../batch_highlight_controller.dart';
 import '../models.dart';
 import '../simulator.dart';
-import '../tm_simulator.dart';
+
+class _BatchHighlightController extends TextEditingController {
+  _BatchHighlightController({required this.isAccepted, required this.isRejected});
+
+  final bool Function(int lineIndex) isAccepted;
+  final bool Function(int lineIndex) isRejected;
+
+  @override
+  TextSpan buildTextSpan({required BuildContext context, TextStyle? style, required bool withComposing}) {
+    final lines = text.split('\n');
+    final children = <InlineSpan>[];
+
+    for (int i = 0; i < lines.length; i++) {
+      final color = isAccepted(i)
+          ? Colors.green
+          : isRejected(i)
+              ? Colors.red
+              : Colors.white;
+      children.add(TextSpan(
+        text: lines[i],
+        style: GoogleFonts.courierPrime(color: color, fontSize: 16),
+      ));
+      if (i != lines.length - 1) {
+        children.add(TextSpan(
+          text: '\n',
+          style: GoogleFonts.courierPrime(color: Colors.white, fontSize: 16),
+        ));
+      }
+    }
+
+    return TextSpan(children: children);
+  }
+}
 
 Future<void> showBatchSimulatorDialog(
   BuildContext context, {
@@ -17,7 +48,7 @@ Future<void> showBatchSimulatorDialog(
 }) async {
   final accepted = <int>{};
   final rejected = <int>{};
-  late BatchHighlightController controller;
+  late _BatchHighlightController controller;
 
   void rebuildResults() {
     accepted.clear();
@@ -73,7 +104,7 @@ Future<void> showBatchSimulatorDialog(
     }
   }
 
-  controller = BatchHighlightController(
+  controller = _BatchHighlightController(
     isAccepted: (i) => accepted.contains(i),
     isRejected: (i) => rejected.contains(i),
   );

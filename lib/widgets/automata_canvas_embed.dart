@@ -4,12 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
-import '../node.dart';
-import '../line.dart';
-import '../start_arrow.dart';
-import 'rubber_band_painter.dart';
+import '../import_export.dart';
+import 'graph_widgets.dart';
 import 'app_theme.dart';
-import 'palette_fab.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  AutomataCanvasEmbed
@@ -116,6 +113,14 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
   String _nextNodeId() => 'n${_nodeCounter++}';
   String _nextLineId() => 'l${_lineCounter++}';
 
+  GraphState get _graphState => GraphState(
+        nodes: _nodes,
+        lines: _lines,
+        startArrow: _startArrow,
+        nodeCounter: _nodeCounter,
+        lineCounter: _lineCounter,
+      );
+
   // ── Hit-testing helpers ─────────────────────────────────────────────────
 
   bool _isLabelTaken(String label, String currentId) {
@@ -127,48 +132,11 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
   bool _canStartLineFrom(String? id) =>
       _nodes[id]?.canHaveOutgoingTransitions ?? false;
 
-  NodeData? _nodeAt(Offset pt) {
-    for (final n in _nodes.values) {
-      if (n.containsPoint(pt)) return n;
-    }
-    return null;
-  }
+  NodeData? _nodeAt(Offset pt) => _graphState.nodeAt(pt);
 
-  LineData? _lineAt(Offset pt) {
-    for (final l in _lines.values) {
-      final a = _nodes[l.nodeAId];
-      final b = _nodes[l.nodeBId];
-      if (a == null || b == null) continue;
-      if (l.containsPoint(pt, a.center, b.center)) return l;
-    }
-    return null;
-  }
+  LineData? _lineAt(Offset pt) => _graphState.lineAt(pt);
 
-  bool _hitStartArrow(Offset pt) {
-    if (_startArrow == null) return false;
-    final node = _nodes[_startArrow!.nodeId];
-    if (node == null) return false;
-
-    var dir = _startArrow!.direction();
-    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
-      dir = const Offset(-0.7071, -0.7071);
-    }
-
-    const double radius = 50;
-    final end  = Offset(node.center.dx + dir.dx * radius, node.center.dy + dir.dy * radius);
-    final tail = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
-
-    if ((pt - tail).distance < 44) return true;
-
-    final seg   = end - tail;
-    final lenSq = seg.dx * seg.dx + seg.dy * seg.dy;
-    if (lenSq == 0) return false;
-
-    final t = ((pt.dx - tail.dx) * seg.dx + (pt.dy - tail.dy) * seg.dy) / lenSq;
-    final proj = Offset(tail.dx + seg.dx * t.clamp(0.0, 1.0),
-                        tail.dy + seg.dy * t.clamp(0.0, 1.0));
-    return (pt - proj).distance < 44;
-  }
+  bool _hitStartArrow(Offset pt) => _graphState.hitStartArrow(pt);
 
   // ── Deletion helpers ────────────────────────────────────────────────────
 

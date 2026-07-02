@@ -1,3 +1,20 @@
+# June 25th, 2026
+* Added in PDA study mode 
+* Improved study mode correct results screen
+
+# June 24th, 2026
+* study mode working for regex to dfa and vice versa
+* Added in description fa questions for study mode 
+
+# June 23th, 2026
+* regex panel now stays open
+* nodes are now further apart
+* Added in cheat codes for debugging
+* started logic for study mode
+
+# June 18th, 2026 
+* Implementation of regex logic to allow for further utilization of software in the theory of computation course
+
 # June 17th, 2026
 * Fixed further issues with multitape logic
 * TM mode now allows the edit of multiple tapes

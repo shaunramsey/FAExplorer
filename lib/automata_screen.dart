@@ -5,31 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'models.dart';
-import 'data/automata_session_store.dart';
-import 'preferences_store.dart';
-import 'node.dart';
-import 'line.dart';
-import 'start_arrow.dart';
-import 'dsl_code.dart';
+import 'persistence.dart';
+import 'widgets/graph_widgets.dart';
+import 'import_export.dart';
 import 'simulator.dart';
-import 'pda_simulator.dart';
-import 'saved_export.dart';
 import 'dialogs/automata_dialogs.dart';
 import 'dialogs/batch_simulator_dialog.dart';
 import 'dialogs/equivalence_dialog.dart';
-import 'dialogs/fa_to_regex_dialog.dart';
 import 'widgets/automata_drawer.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/help_overlay.dart';
-import 'widgets/palette_fab.dart';
-import 'widgets/rubber_band_painter.dart';
-import 'widgets/string_simulator_panel.dart';
-import 'widgets/pda_stack_panel.dart';
-import 'tm_simulator.dart';
-import 'widgets/tm_config_panel.dart';
 import 'widgets/black_box_input_dialog.dart';
-import 'widgets/regex_panel.dart';
-import 'regex_engine.dart';
+import 'widgets/sim_panels.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({
@@ -107,6 +94,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Future<void> _openBatchSimulatorDialog() => showBatchSimulatorDialog(
         context,
         simulator: _simulator,
+        tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
         startArrow: _startArrow,
       );
 
@@ -131,32 +119,21 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     return _simulator.finalResult() == SimResult.accept;
   }
 
-  /// At the accepted final step, union all nodes/lines from every step to
-  /// highlight the complete accepted path. Otherwise show only the current step.
-  Set<String> get _simActiveNodes {
-    if (_automataMode == AutomataMode.pda) {
-      return _pdaSimulator.activeNodes;
+  ({Set<String> nodes, Set<String> lines}) get _simHighlight {
+    switch (_automataMode) {
+      case AutomataMode.pda:
+        return (nodes: _pdaSimulator.activeNodes, lines: _pdaSimulator.activeLines);
+      case AutomataMode.tm:
+        return (nodes: _tmSimulator.activeNodes, lines: _tmSimulator.activeLines);
+      default:
+        if (_isAtAcceptedFinalStep) {
+          return (
+            nodes: _simulator.states.expand((s) => s).toSet(),
+            lines: _simulator.usedLines.expand((s) => s).toSet(),
+          );
+        }
+        return (nodes: _simulator.activeNodes, lines: _simulator.activeLines);
     }
-    if (_automataMode == AutomataMode.tm) {
-      return _tmSimulator.activeNodes;
-    }
-    if (_isAtAcceptedFinalStep) {
-      return _simulator.states.expand((s) => s).toSet();
-    }
-    return _simulator.activeNodes;
-  }
-
-  Set<String> get _simActiveLines {
-    if (_automataMode == AutomataMode.pda) {
-      return _pdaSimulator.activeLines;
-    }
-    if (_automataMode == AutomataMode.tm) {
-      return _tmSimulator.activeLines;
-    }
-    if (_isAtAcceptedFinalStep) {
-      return _simulator.usedLines.expand((s) => s).toSet();
-    }
-    return _simulator.activeLines;
   }
 
   void _refreshSimulation() {
@@ -350,40 +327,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     _rubberBandEnd = null;
   }
 
-  bool _hitStartArrowSimple(Offset point) {
-    if (_startArrow == null) return false;
-
-    final node = _nodes[_startArrow!.nodeId];
-    if (node == null) return false;
-
-    var dir = _startArrow!.direction();
-
-    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
-      dir = const Offset(-0.7071, -0.7071);
-    }
-
-    const double radius = 50;
-
-    final end = Offset(node.center.dx + dir.dx * radius, node.center.dy + dir.dy * radius);
-
-    final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
-
-    // Large tap target around the tail tip
-    if ((point - start).distance < 44) return true;
-
-    final line = end - start;
-    final lenSq = line.dx * line.dx + line.dy * line.dy;
-
-    if (lenSq == 0) return false;
-
-    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
-
-    t = t.clamp(0.0, 1.0);
-
-    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
-
-    return (point - projection).distance < 44;
-  }
+  bool _hitStartArrow(Offset point) => _graphState.hitStartArrow(point);
 
   bool _isLabelTaken(String label, String currentId) {
     final normalized = label.trim();
@@ -554,14 +498,14 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   void _showExportDialog() {
     showExportDialog(
-  context,
-  dsl: _exportToDsl(),
-  savedExportCount: _savedExports.length,
-  nodes: _nodes,
-  lines: _lines,
-  startArrow: _startArrow,
-  graphState: _graphState,
-  onSave: (name, dsl) {
+      context,
+      dsl: _exportToDsl(),
+      savedExportCount: _savedExports.length,
+      nodes: _nodes,
+      lines: _lines,
+      startArrow: _startArrow,
+      graphState: _graphState,
+      onSave: (name, dsl) {
         setState(() {
           _savedExports.insert(0, SavedExport(name: name, dsl: dsl));
         });
@@ -712,70 +656,9 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     }
   }
 
-  NodeData? _nodeAt(Offset point) {
-    for (final node in _nodes.values) {
-      if (node.containsPoint(point)) {
-        return node;
-      }
-    }
+  NodeData? _nodeAt(Offset point) => _graphState.nodeAt(point);
 
-    return null;
-  }
-
-  LineData? _lineAt(Offset point) {
-    for (final line in _lines.values) {
-      final nodeA = _nodes[line.nodeAId];
-      final nodeB = _nodes[line.nodeBId];
-
-      if (nodeA == null || nodeB == null) continue;
-
-      if (line.containsPoint(point, nodeA.center, nodeB.center)) {
-        return line;
-      }
-    }
-
-    return null;
-  }
-
-  bool _hitStartArrow(Offset point) {
-    if (_startArrow == null) return false;
-
-    final node = _nodes[_startArrow!.nodeId];
-
-    if (node == null) return false;
-
-    var dir = _startArrow!.direction();
-
-    // Default top-left
-    if (dir.distance == 0 || (dir.dx == -1 && dir.dy == 0)) {
-      dir = const Offset(-0.7071, -0.7071);
-    }
-
-    const double radius = 50;
-
-    final end = Offset(node.center.dx + dir.dx * radius, node.center.dy + dir.dy * radius);
-
-    final start = Offset(end.dx + dir.dx * _startArrow!.length, end.dy + dir.dy * _startArrow!.length);
-
-    // Large tap target around the tail tip
-    if ((point - start).distance < 44) return true;
-
-    final line = end - start;
-
-    final lenSq = line.dx * line.dx + line.dy * line.dy;
-
-    if (lenSq == 0) return false;
-
-    double t = ((point.dx - start.dx) * line.dx + (point.dy - start.dy) * line.dy) / lenSq;
-
-    t = t.clamp(0.0, 1.0);
-
-    final projection = Offset(start.dx + line.dx * t, start.dy + line.dy * t);
-
-    final distance = (point - projection).distance;
-
-    return distance < 44;
-  }
+  LineData? _lineAt(Offset point) => _graphState.lineAt(point);
 
   bool _isPointerOverSimulatorPanel(Offset globalPosition) {
     if (!_showSimulator) return false;
@@ -835,7 +718,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         return;
       }
 
-      if (_hitStartArrowSimple(pos)) {
+      if (_hitStartArrow(pos)) {
         setState(() {
           _startArrow = null;
         });
@@ -1219,7 +1102,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                       centerA: nodeA.center,
                       centerB: nodeB.center,
                       deleteMode: _deleteMode,
-                      highlighted: _simActiveLines.contains(line.id),
+                      highlighted: _simHighlight.lines.contains(line.id),
                       onLabelChanged: (text) {
                         setState(() {
                           line.label = text;
@@ -1237,7 +1120,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   data: node,
                   lineMode: _lineMode,
                   deleteMode: _deleteMode,
-                  highlighted: _simActiveNodes.contains(node.id),
+                  highlighted: _simHighlight.nodes.contains(node.id),
 
                   isLabelTaken: _isLabelTaken,
 
@@ -1292,6 +1175,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                     _simRebuild();
                     _simulator.step = -1;
                     _pdaSimulator.step = -1;          // ← NEW
+                    _tmSimulator.step = -1;           // ← reset TM tracking too
                   });
                   _schedulePersist();
                 },
