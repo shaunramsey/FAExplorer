@@ -7,23 +7,16 @@ import 'package:provider/provider.dart';
 import 'models.dart';
 import 'persistence.dart';
 import 'widgets/graph_widgets.dart';
-import 'dsl_code.dart';
+import 'import_export.dart';
 import 'simulator.dart';
 import 'dialogs/automata_dialogs.dart';
 import 'dialogs/batch_simulator_dialog.dart';
 import 'dialogs/equivalence_dialog.dart';
-import 'dialogs/fa_to_regex_dialog.dart';
 import 'widgets/automata_drawer.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/help_overlay.dart';
-import 'widgets/palette_fab.dart';
-import 'widgets/rubber_band_painter.dart';
-import 'widgets/string_simulator_panel.dart';
-import 'widgets/pda_stack_panel.dart';
-import 'widgets/tm_config_panel.dart';
 import 'widgets/black_box_input_dialog.dart';
-import 'widgets/regex_panel.dart';
-import 'regex_engine.dart';
+import 'widgets/sim_panels.dart';
 
 class AutomataScreen extends StatefulWidget {
   const AutomataScreen({

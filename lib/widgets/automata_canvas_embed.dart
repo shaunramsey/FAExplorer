@@ -4,11 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
-import '../dsl_code.dart';
+import '../import_export.dart';
 import 'graph_widgets.dart';
-import 'rubber_band_painter.dart';
 import 'app_theme.dart';
-import 'palette_fab.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  AutomataCanvasEmbed

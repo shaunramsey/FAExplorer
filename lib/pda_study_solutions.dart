@@ -6,7 +6,7 @@
 
 import 'package:flutter/material.dart';
 
-import 'dsl_code.dart';
+import 'import_export.dart';
 import 'models.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 

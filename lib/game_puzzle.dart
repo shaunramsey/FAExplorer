@@ -21,13 +21,22 @@ import 'game_level.dart';
 // LevelDifficulty and PuzzleVariant are declared in game_level.dart.
 import 'game_data.dart';
 import 'tutorial_screen.dart';
-import 'dsl_code.dart';
-import 'fa_equivalence.dart';
-import 'regex_engine.dart';
+import 'import_export.dart';
+import 'dialogs/equivalence_dialog.dart'
+    show
+        checkEquivalence,
+        checkPdaEquivalence,
+        checkTmEquivalence,
+        EquivalenceResult,
+        EquivalenceStatus,
+        AutomatonTypeChecker,
+        RequiredAutomatonType,
+        AutomatonTypeResult,
+        AutomatonViolation,
+        ViolationSeverity;
+import 'simulator.dart';
 import 'models.dart';
-import 'automaton_type_checker.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
-import 'widgets/palette_fab.dart';
 import 'widgets/graph_widgets.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -975,7 +984,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                       Positioned.fill(
                         child: IgnorePointer(
                           child: CustomPaint(
-                            painter: _RubberBandPainter(
+                            painter: RubberBandPainter(
                               start: _nodes[_lineSourceNodeId!]!.center,
                               end: _rubberBandEnd!,
                               color: theme.accent,
@@ -1698,70 +1707,4 @@ class _RegexInputPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Rubber-band painter — line + arrowhead, matches the sandbox canvas style
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _RubberBandPainter extends CustomPainter {
-  final Offset start;
-  final Offset end;
-  final Color color;
-
-  const _RubberBandPainter({
-    required this.start,
-    required this.end,
-    required this.color,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const strokeWidth = 2.5;
-    const arrowLen = 14.0;
-    const arrowWing = 8.0;
-
-    final dx = end.dx - start.dx;
-    final dy = end.dy - start.dy;
-    final dist = sqrt(dx * dx + dy * dy);
-    if (dist < 1) return;
-
-    final angle = atan2(dy, dx);
-    final shortenedEnd = Offset(
-      end.dx - cos(angle) * arrowLen,
-      end.dy - sin(angle) * arrowLen,
-    );
-
-    // Line
-    canvas.drawLine(
-      start,
-      shortenedEnd,
-      Paint()
-        ..color = color.withOpacity(0.7)
-        ..strokeWidth = strokeWidth
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round,
-    );
-
-    // Arrowhead
-    final cdx = cos(angle);
-    final cdy = sin(angle);
-    final path = Path()
-      ..moveTo(end.dx, end.dy)
-      ..lineTo(end.dx - arrowLen * cdx + arrowWing * cdy,
-               end.dy - arrowLen * cdy - arrowWing * cdx)
-      ..lineTo(end.dx - arrowLen * cdx - arrowWing * cdy,
-               end.dy - arrowLen * cdy + arrowWing * cdx)
-      ..close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color.withOpacity(0.7)
-        ..style = PaintingStyle.fill,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_RubberBandPainter old) =>
-      old.start != start || old.end != end || old.color != color;
 }

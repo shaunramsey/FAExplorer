@@ -27,14 +27,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import 'fa_equivalence.dart';
-import 'fa_to_regex.dart';
+import 'dialogs/equivalence_dialog.dart'
+    show checkEquivalence, EquivalenceResult, EquivalenceStatus;
+import 'import_export.dart';
 import 'game_level.dart';
 import 'models.dart';
-import 'regex_engine.dart';
+import 'simulator.dart';
 import 'study_mode_pda.dart';
 import 'widgets/app_theme.dart';
-import 'widgets/app_theme_settings.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
 

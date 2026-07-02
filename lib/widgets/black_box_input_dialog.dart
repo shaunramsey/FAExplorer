@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
-import '../dsl_code.dart';
+import '../import_export.dart';
 import '../widgets/automata_drawer.dart' show AutomataMode;
 import 'app_theme.dart';
 

@@ -466,6 +466,42 @@ class _ArrowPainter extends CustomPainter {
     return true;
   }
 }
+
+/// Temporary line-with-arrowhead drawn while the user is dragging out a new
+/// transition (link mode). Shares [_drawArrowhead] with [LinePainter] and
+/// [_ArrowPainter] so the rubber-band preview matches the committed edge style.
+class RubberBandPainter extends CustomPainter {
+  final Offset start;
+  final Offset end;
+  final Color color;
+
+  const RubberBandPainter({
+    required this.start,
+    required this.end,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final lineColor = color.withValues(alpha: 0.85);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..color = lineColor;
+
+    final angle = atan2(end.dy - start.dy, end.dx - start.dx);
+    final shortenedEnd = Offset(end.dx - cos(angle) * _arrowLen, end.dy - sin(angle) * _arrowLen);
+
+    canvas.drawLine(start, shortenedEnd, paint);
+
+    _drawArrowhead(canvas, end, angle, lineColor);
+  }
+
+  @override
+  bool shouldRepaint(RubberBandPainter oldDelegate) =>
+      oldDelegate.start != start || oldDelegate.end != end || oldDelegate.color != color;
+}
+
 class Node extends StatefulWidget {
   final NodeData data;
   final bool lineMode;

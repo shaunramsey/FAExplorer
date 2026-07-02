@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import 'app_gate.dart';
+import 'automata_screen.dart';
+import 'game_data.dart';
+import 'level_select_screen.dart';
+import 'login_screen.dart';
 import 'persistence.dart';
+import 'study_mode_screen.dart';
 import 'widgets/app_theme.dart';
 
 export 'automata_screen.dart';
@@ -78,5 +82,134 @@ class MyApp extends StatelessWidget {
         firebaseEnabled: firebaseEnabled,
       ),
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  AppGate — post-launch router. Handles auth-gating (waits for AuthService,
+//  falls back to LoginScreen), lazily opens the session/progress stores once
+//  signed in, then switches between Sandbox / Game / Study mode screens.
+//  Sole consumer is MyApp above, so it lives here rather than its own file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum _AppMode { none, sandbox, game, study }
+
+class AppGate extends StatefulWidget {
+  const AppGate({
+    super.key,
+    required this.authService,
+    required this.firebaseEnabled,
+  });
+
+  final AuthService authService;
+  final bool firebaseEnabled;
+
+  @override
+  State<AppGate> createState() => _AppGateState();
+}
+
+class _AppGateState extends State<AppGate> {
+  bool _authenticated = false;
+  _AppMode _mode = _AppMode.none;
+  AutomataSessionStore? _sessionStore;
+  GameProgressStore? _progressStore;
+  bool _loadingStores = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAuth();
+  }
+
+  Future<void> _initializeAuth() async {
+    await widget.authService.init();
+    if (!mounted) return;
+    setState(() {
+      _authenticated = widget.authService.isSignedIn || widget.authService.isGuest;
+    });
+    if (_authenticated) await _initStores();
+  }
+
+  Future<void> _initStores() async {
+    setState(() => _loadingStores = true);
+    final session = widget.authService.isGuest
+        ? await LocalSessionStore.open()
+        : FirebaseSessionStore();
+    final progress = await GameProgressStore.open();
+    if (!mounted) return;
+    setState(() {
+      _sessionStore = session;
+      _progressStore = progress;
+      _loadingStores = false;
+    });
+  }
+
+  Future<void> _handleAuthenticated() async {
+    setState(() => _authenticated = true);
+    await _initStores();
+  }
+
+  Future<void> _handleSignOut() async {
+    await widget.authService.signOut();
+    setState(() {
+      _authenticated = false;
+      _mode = _AppMode.none;
+      _sessionStore = null;
+      _progressStore = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_authenticated) {
+      return LoginScreen(
+        authService: widget.authService,
+        firebaseEnabled: widget.firebaseEnabled,
+        onAuthenticated: _handleAuthenticated,
+      );
+    }
+
+    if (_loadingStores || _sessionStore == null || _progressStore == null) {
+      return Scaffold(
+        backgroundColor: context.watch<AppThemeNotifier>().bg,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: context.watch<AppThemeNotifier>().accent,
+          ),
+        ),
+      );
+    }
+
+    switch (_mode) {
+      case _AppMode.none:
+        return ModeSelectScreen(
+          onSandbox: () => setState(() => _mode = _AppMode.sandbox),
+          onGame: () => setState(() => _mode = _AppMode.game),
+          onStudy: () => setState(() => _mode = _AppMode.study),
+          onSignOut: _handleSignOut,
+          isGuest: widget.authService.isGuest,
+          progressStore: _progressStore!,
+        );
+      case _AppMode.sandbox:
+        return AutomataScreen(
+          sessionStore: _sessionStore!,
+          isGuest: widget.authService.isGuest,
+          userEmail: widget.authService.user?.email,
+          onSignOut: _handleSignOut,
+          onGoToGame: () => setState(() => _mode = _AppMode.game),
+        );
+      case _AppMode.study:
+        return StudyModeScreen(
+          progressStore: _progressStore!,
+          onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
+          onGoToStudy: () => setState(() => _mode = _AppMode.study),
+        );
+      case _AppMode.game:
+        return LevelSelectScreen(
+          progressStore: _progressStore!,
+          onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
+          onGoToStudy: () => setState(() => _mode = _AppMode.study),
+        );
+    }
   }
 }

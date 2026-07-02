@@ -31,7 +31,6 @@ import 'game_data.dart';
 import 'game_puzzle.dart';
 import 'tutorial_screen.dart';
 import 'widgets/app_theme.dart';
-import 'widgets/app_theme_settings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants

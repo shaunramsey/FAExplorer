@@ -5,11 +5,9 @@ import 'package:provider/provider.dart';
 
 import '../widgets/app_theme.dart';
 import '../models.dart';
-import '../dsl_code.dart';
-import '../latex_export.dart';
+import '../import_export.dart';
 import '../persistence.dart';
 import '../simulator.dart';
-import '../svg_export.dart';
 import '../widgets/automata_drawer.dart' show AutomataMode;
 
 void showExportDialog(

@@ -14,11 +14,17 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'automaton_type_checker.dart';
+import 'dialogs/equivalence_dialog.dart'
+    show
+        AutomatonTypeChecker,
+        RequiredAutomatonType,
+        AutomatonTypeResult,
+        AutomatonViolation,
+        ViolationSeverity;
 import 'game_level.dart';
 import 'models.dart'; // NodeData, LineData
 
-export 'automaton_type_checker.dart'
+export 'dialogs/equivalence_dialog.dart'
     show
         RequiredAutomatonType,
         AutomatonTypeResult,

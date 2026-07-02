@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../markdown_file_screen.dart';
-import 'app_theme_settings.dart';
+import 'app_theme.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  AutomataMode  — the three simulation modes
@@ -395,6 +395,52 @@ class AutomataDrawer extends StatelessWidget {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MarkdownFileScreen — plain-text viewer for bundled .md docs (About,
+//  Changelog, Version). Only ever opened from the drawer above, so it lives
+//  here rather than as a standalone file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MarkdownFileScreen extends StatefulWidget {
+  final String title;
+  final String assetPath;
+
+  const MarkdownFileScreen({super.key, required this.title, required this.assetPath});
+
+  @override
+  State<MarkdownFileScreen> createState() => _MarkdownFileScreenState();
+}
+
+class _MarkdownFileScreenState extends State<MarkdownFileScreen> {
+  String _content = 'Loading...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFile();
+  }
+
+  Future<void> _loadFile() async {
+    try {
+      final text = await rootBundle.loadString(widget.assetPath);
+      setState(() => _content = text);
+    } catch (e) {
+      setState(() => _content = 'Failed to load ${widget.assetPath}');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: SelectableText(_content, style: GoogleFonts.courierPrime(fontSize: 16)),
       ),
     );
   }
