@@ -443,14 +443,14 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.touch_app_outlined,
-                        color: theme.textDim.withOpacity(0.22), size: 36),
+                        color: theme.textDim.withValues(alpha: 0.22), size: 36),
                     const SizedBox(height: 10),
                     Text(
                       'Double-tap to add a state\n'
                       'Drag node to move  ·  Use toolbar to draw transitions',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: theme.textDim.withOpacity(0.28),
+                        color: theme.textDim.withValues(alpha: 0.28),
                         fontSize: 11,
                         height: 1.7,
                       ),
@@ -652,12 +652,12 @@ class _MiniToolbar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: theme.surface.withOpacity(0.92),
+        color: theme.surface.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: theme.borderMid),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
+            color: Colors.black.withValues(alpha: 0.15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),

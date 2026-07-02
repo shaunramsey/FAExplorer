@@ -243,7 +243,7 @@ class _LineWidgetState extends State<LineWidget> {
                 hintStyle: TextStyle(
                   color: widget.deleteMode
                       ? theme.error
-                      : theme.lineColor.withOpacity(0.6),
+                      : theme.lineColor.withValues(alpha: 0.6),
                 ),
               ),
             ),
@@ -418,7 +418,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                     hintStyle: TextStyle(
                       color: widget.deleteMode
                           ? theme.error
-                          : theme.lineColor.withOpacity(0.6),
+                          : theme.lineColor.withValues(alpha: 0.6),
                     ),
                   ),
                 ),
@@ -814,7 +814,7 @@ class _NodeState extends State<Node> {
                         hintStyle: TextStyle(
                           color: widget.deleteMode
                               ? theme.nodeBorderDelete
-                              : theme.nodeBorder.withOpacity(0.6),
+                              : theme.nodeBorder.withValues(alpha: 0.6),
                         ),
                       ),
                     ),
@@ -848,17 +848,17 @@ class _NodeState extends State<Node> {
                               width: 22,
                               height: 22,
                               decoration: BoxDecoration(
-                                color: theme.bg.withOpacity(0.85),
+                                color: theme.bg.withValues(alpha: 0.85),
                                 borderRadius: BorderRadius.circular(5),
                                 border: Border.all(
-                                  color: borderColor.withOpacity(0.55),
+                                  color: borderColor.withValues(alpha: 0.55),
                                   width: 1,
                                 ),
                               ),
                               child: Icon(
                                 Icons.edit_note,
                                 size: 14,
-                                color: borderColor.withOpacity(0.85),
+                                color: borderColor.withValues(alpha: 0.85),
                               ),
                             ),
                           ),

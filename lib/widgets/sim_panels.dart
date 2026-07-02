@@ -542,7 +542,7 @@ class _TmConfigCard extends StatelessWidget {
             : theme.borderMid;
 
     final bgColor = isAccepted
-        ? theme.accentGreen.withOpacity(0.08)
+        ? theme.accentGreen.withValues(alpha: 0.08)
         : isRejected
             ? const Color(0xFF1A0005)
             : theme.bg;
@@ -696,7 +696,7 @@ class _TapeCell extends StatelessWidget {
               child: Center(
                 child: Text(
                   '▲',
-                  style: TextStyle(fontSize: 7, color: theme.accent.withOpacity(0.7)),
+                  style: TextStyle(fontSize: 7, color: theme.accent.withValues(alpha: 0.7)),
                 ),
               ),
             ),
@@ -916,7 +916,7 @@ class _RegexPanelState extends State<RegexPanel> {
                       border: Border.all(
                         color: _error != null
                             ? const Color(0xFFFF1744)
-                            : theme.accent.withOpacity(0.6),
+                            : theme.accent.withValues(alpha: 0.6),
                         width: 1.5,
                       ),
                       borderRadius: BorderRadius.circular(8),
@@ -1599,12 +1599,12 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
             border: Border.all(color: theme.borderMid, width: 1),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
               BoxShadow(
-                color: theme.accent.withOpacity(0.04),
+                color: theme.accent.withValues(alpha: 0.04),
                 blurRadius: 24,
                 spreadRadius: -4,
               ),
@@ -1771,13 +1771,13 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                             left: 8, right: 4, top: 2, bottom: 2),
                                         decoration: BoxDecoration(
                                           color: isActive
-                                              ? theme.accent.withOpacity(0.15)
+                                              ? theme.accent.withValues(alpha: 0.15)
                                               : Colors.transparent,
                                           borderRadius:
                                               BorderRadius.circular(5),
                                           border: Border.all(
                                             color: isActive
-                                                ? theme.accent.withOpacity(0.7)
+                                                ? theme.accent.withValues(alpha: 0.7)
                                                 : theme.borderMid,
                                             width: isActive ? 1.5 : 1,
                                           ),
@@ -2031,10 +2031,10 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                         curve: Curves.easeOut,
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         decoration: BoxDecoration(
-                          color: _resultColor(result).withOpacity(0.12),
+                          color: _resultColor(result).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: _resultColor(result).withOpacity(0.5),
+                            color: _resultColor(result).withValues(alpha: 0.5),
                           ),
                         ),
                         child: Center(
@@ -2093,14 +2093,14 @@ class _StringNavArrow extends StatelessWidget {
                 : theme.bg,
             borderRadius: BorderRadius.circular(5),
             border: Border.all(
-              color: enabled ? theme.borderMid : theme.borderMid.withOpacity(0.4),
+              color: enabled ? theme.borderMid : theme.borderMid.withValues(alpha: 0.4),
               width: 1,
             ),
           ),
           child: Icon(
             icon,
             size: 16,
-            color: enabled ? theme.textMid : theme.textDim.withOpacity(0.35),
+            color: enabled ? theme.textMid : theme.textDim.withValues(alpha: 0.35),
           ),
         ),
       ),
@@ -2161,7 +2161,7 @@ class _TokenChip extends StatelessWidget {
         child: _chip(
           bg: theme.panelHighlight,
           fg: theme.textLight,
-          border: theme.panelHighlight.withOpacity(0.75),
+          border: theme.panelHighlight.withValues(alpha: 0.75),
           bold: true,
         ),
       );
@@ -2240,7 +2240,7 @@ class _TapeCellChip extends StatelessWidget {
             color: theme.panelHighlight,
             borderRadius: BorderRadius.circular(5),
             border: Border.all(
-              color: theme.panelHighlight.withOpacity(0.75),
+              color: theme.panelHighlight.withValues(alpha: 0.75),
               width: 1.2,
             ),
           ),

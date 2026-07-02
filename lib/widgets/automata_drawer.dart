@@ -80,7 +80,7 @@ class _ModeRadioGroup extends StatelessWidget {
         children: [
           Text(
             'Simulation Mode',
-            style: GoogleFonts.courierPrime(fontSize: 12, color: theme.colorScheme.onSurface.withOpacity(0.6)),
+            style: GoogleFonts.courierPrime(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
           ),
           const SizedBox(height: 6),
           Row(
@@ -100,7 +100,7 @@ class _ModeRadioGroup extends StatelessWidget {
                         color: selected ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: selected ? theme.colorScheme.primary : theme.colorScheme.outline.withOpacity(0.4),
+                          color: selected ? theme.colorScheme.primary : theme.colorScheme.outline.withValues(alpha: 0.4),
                         ),
                       ),
                       child: Text(

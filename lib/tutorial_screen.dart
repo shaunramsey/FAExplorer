@@ -188,7 +188,7 @@ class _TutorialScreenState extends State<TutorialScreen>
                   decoration: BoxDecoration(
                     color: active
                         ? accentColor
-                        : theme.textDim.withOpacity(0.4),
+                        : theme.textDim.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 );
@@ -222,7 +222,7 @@ class _TutorialScreenState extends State<TutorialScreen>
                 color: theme.bg,
                 border: Border(
                   top: BorderSide(
-                    color: theme.borderMid.withOpacity(0.5),
+                    color: theme.borderMid.withValues(alpha: 0.5),
                   ),
                 ),
               ),
@@ -332,10 +332,10 @@ class _SlidePage extends StatelessWidget {
                   height: 200,
                   margin: const EdgeInsets.only(bottom: 28),
                   decoration: BoxDecoration(
-                    color: theme.border.withOpacity(0.5),
+                    color: theme.border.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: accentColor.withOpacity(0.3),
+                      color: accentColor.withValues(alpha: 0.3),
                       width: 1.5,
                     ),
                   ),
@@ -581,7 +581,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy),
       rippleRadius,
       Paint()
-        ..color = accentColor.withOpacity(tapOpacity * 0.3)
+        ..color = accentColor.withValues(alpha: tapOpacity * 0.3)
         ..style = PaintingStyle.fill,
     );
 
@@ -590,8 +590,8 @@ class _TutorialIllustrationPainter extends CustomPainter {
       canvas,
       Offset(cx, cy),
       26,
-      accentColor.withOpacity(nodeOpacity),
-      bgColor.withOpacity(nodeOpacity),
+      accentColor.withValues(alpha: nodeOpacity),
+      bgColor.withValues(alpha: nodeOpacity),
       'q₀',
     );
 
@@ -601,7 +601,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 55),
       'Double-tap on empty space to add a state',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -631,7 +631,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 55),
       'Hold Shift + drag between states to draw a transition',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -661,7 +661,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
         Offset(cx, cy - 10),
         r + 6,
         Paint()
-          ..color = accentColor.withOpacity(0.15 + 0.1 * sin(phase))
+          ..color = accentColor.withValues(alpha: 0.15 + 0.1 * sin(phase))
           ..style = PaintingStyle.fill,
       );
     }
@@ -673,7 +673,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
           ? 'Double ring = accepting state ✓'
           : 'Tap a state then toggle "Accept" to mark it',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -697,7 +697,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 52),
       'Drag the start arrow to set the initial state',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -723,10 +723,10 @@ class _TutorialIllustrationPainter extends CustomPainter {
     final arrowOpacity = (0.5 + 0.5 * sin(progress * 2 * pi)).clamp(0.0, 1.0);
 
     _drawNode(canvas, n0, 20, nfaColor, bgColor, 'A');
-    _drawNode(canvas, n1, 20, nfaColor.withOpacity(arrowOpacity), bgColor, 'B');
-    _drawNode(canvas, n2, 20, nfaColor.withOpacity(arrowOpacity), bgColor, 'C');
-    _drawArrow(canvas, n0, n1, nfaColor.withOpacity(arrowOpacity));
-    _drawArrow(canvas, n0, n2, nfaColor.withOpacity(arrowOpacity));
+    _drawNode(canvas, n1, 20, nfaColor.withValues(alpha: arrowOpacity), bgColor, 'B');
+    _drawNode(canvas, n2, 20, nfaColor.withValues(alpha: arrowOpacity), bgColor, 'C');
+    _drawArrow(canvas, n0, n1, nfaColor.withValues(alpha: arrowOpacity));
+    _drawArrow(canvas, n0, n2, nfaColor.withValues(alpha: arrowOpacity));
     _drawLabel(canvas, Offset(cx * 1.37, cy - 55), 'a', color: nfaColor);
     _drawLabel(canvas, Offset(cx * 1.37, cy - 3), 'a', color: nfaColor);
     _drawLabel(canvas, Offset(cx * 1.37, cy + 24), 'NFA', color: nfaColor);
@@ -735,7 +735,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     canvas.drawLine(
       Offset(cx, cy - 80),
       Offset(cx, cy + 60),
-      _linePaint(dimColor.withOpacity(0.25)),
+      _linePaint(dimColor.withValues(alpha: 0.25)),
     );
   }
 
@@ -768,7 +768,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 48),
       'No input consumed — machine can jump for free',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -799,12 +799,12 @@ class _TutorialIllustrationPainter extends CustomPainter {
     canvas.drawRect(
       Rect.fromLTWH(stackLeft, stackBottom - cellH * 4, cellW, cellH * 4),
       Paint()
-        ..color = dimColor.withOpacity(0.1)
+        ..color = dimColor.withValues(alpha: 0.1)
         ..style = PaintingStyle.fill,
     );
     canvas.drawRect(
       Rect.fromLTWH(stackLeft, stackBottom - cellH * 4, cellW, cellH * 4),
-      _linePaint(dimColor.withOpacity(0.4)),
+      _linePaint(dimColor.withValues(alpha: 0.4)),
     );
 
     // Number of items on stack oscillates
@@ -812,8 +812,8 @@ class _TutorialIllustrationPainter extends CustomPainter {
 
     final stackColors = [
       accentColor,
-      accentColor.withOpacity(0.7),
-      accentColor.withOpacity(0.5),
+      accentColor.withValues(alpha: 0.7),
+      accentColor.withValues(alpha: 0.5),
     ];
     final stackLabels = ['a', 'a', 'Z'];
 
@@ -822,7 +822,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       canvas.drawRect(
         Rect.fromLTWH(stackLeft + 2, top + 2, cellW - 4, cellH - 4),
         Paint()
-          ..color = stackColors[i].withOpacity(0.3)
+          ..color = stackColors[i].withValues(alpha: 0.3)
           ..style = PaintingStyle.fill,
       );
       _drawLabel(
@@ -839,7 +839,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
         color: dimColor, fontSize: 10);
     _drawLabel(canvas, Offset(cx, stackBottom + 20),
         'PDA adds a stack — push/pop symbols to count',
-        color: dimColor.withOpacity(0.85), fontSize: 10);
+        color: dimColor.withValues(alpha: 0.85), fontSize: 10);
   }
 
   // ── tmTape: animated read/write head scanning a tape ──────────────────────
@@ -862,14 +862,14 @@ class _TutorialIllustrationPainter extends CustomPainter {
         Rect.fromLTWH(x, tapeTop, cellW, cellH),
         Paint()
           ..color = isHead
-              ? accentColor.withOpacity(0.2)
-              : dimColor.withOpacity(0.08)
+              ? accentColor.withValues(alpha: 0.2)
+              : dimColor.withValues(alpha: 0.08)
           ..style = PaintingStyle.fill,
       );
       canvas.drawRect(
         Rect.fromLTWH(x, tapeTop, cellW, cellH),
         _linePaint(
-          isHead ? accentColor : dimColor.withOpacity(0.35),
+          isHead ? accentColor : dimColor.withValues(alpha: 0.35),
           w: isHead ? 2 : 1,
         ),
       );
@@ -899,7 +899,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
 
     _drawLabel(canvas, Offset(cx, tapeTop + cellH + 20),
         'TM reads and writes a tape, moving left or right',
-        color: dimColor.withOpacity(0.85), fontSize: 10);
+        color: dimColor.withValues(alpha: 0.85), fontSize: 10);
   }
 
   // ── deleteMode: state fades out with X ────────────────────────────────────
@@ -911,7 +911,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     const Color deleteColor = Color(0xFFEF5350);
 
     _drawNode(canvas, Offset(cx, cy - 10), 28,
-        deleteColor.withOpacity(opacity), bgColor.withOpacity(opacity), 'q₀');
+        deleteColor.withValues(alpha: opacity), bgColor.withValues(alpha: opacity), 'q₀');
 
     // X mark
     if (progress > 0.3) {
@@ -919,7 +919,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       final y = cy - 10;
       const r = 14.0;
       final xOpacity = ((progress - 0.3) / 0.2).clamp(0.0, 1.0);
-      final xPaint = _linePaint(deleteColor.withOpacity(xOpacity * opacity), w: 3);
+      final xPaint = _linePaint(deleteColor.withValues(alpha: xOpacity * opacity), w: 3);
       canvas.drawLine(
           Offset(x - r, y - r), Offset(x + r, y + r), xPaint);
       canvas.drawLine(
@@ -931,7 +931,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 46),
       'Use the trash-can toolbar button to enter delete mode',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -948,13 +948,13 @@ class _TutorialIllustrationPainter extends CustomPainter {
     canvas.drawRRect(
       rrect,
       Paint()
-        ..color = green.withOpacity(0.15 + pulse * 0.1)
+        ..color = green.withValues(alpha: 0.15 + pulse * 0.1)
         ..style = PaintingStyle.fill,
     );
     canvas.drawRRect(
       rrect,
       Paint()
-        ..color = green.withOpacity(0.6 + pulse * 0.3)
+        ..color = green.withValues(alpha: 0.6 + pulse * 0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -973,7 +973,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 42),
       'Tap "Check" to submit your automaton for grading',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 

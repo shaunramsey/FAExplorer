@@ -349,7 +349,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         backgroundColor: const Color(0xFF0A0F1A),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: color.withOpacity(0.5)),
+          side: BorderSide(color: color.withValues(alpha: 0.5)),
         ),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -770,10 +770,10 @@ class _TopBar extends StatelessWidget {
                       trackHeight: 2,
                       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                      activeTrackColor: theme.accent.withOpacity(0.7),
+                      activeTrackColor: theme.accent.withValues(alpha: 0.7),
                       inactiveTrackColor: theme.gridLine,
                       thumbColor: theme.accent,
-                      overlayColor: theme.accent.withOpacity(0.15),
+                      overlayColor: theme.accent.withValues(alpha: 0.15),
                     ),
                     child: Slider(
                       value: scrollFraction,
@@ -829,15 +829,15 @@ class _NodeCard extends StatelessWidget {
             : 0.0;
 
         final borderColor = completed
-            ? tagColor.withOpacity(0.85)
+            ? tagColor.withValues(alpha: 0.85)
             : unlocked
-            ? tagColor.withOpacity(0.55)
-            : theme.textMid.withOpacity(0.85);
+            ? tagColor.withValues(alpha: 0.55)
+            : theme.textMid.withValues(alpha: 0.85);
 
         final bgColor = completed
-            ? tagColor.withOpacity(0.10)
+            ? tagColor.withValues(alpha: 0.10)
             : unlocked
-            ? tagColor.withOpacity(0.05)
+            ? tagColor.withValues(alpha: 0.05)
             : theme.border;
 
         return Container(
@@ -848,7 +848,7 @@ class _NodeCard extends StatelessWidget {
             boxShadow: glowOpacity > 0
                 ? [
                     BoxShadow(
-                      color: tagColor.withOpacity(glowOpacity),
+                      color: tagColor.withValues(alpha: glowOpacity),
                       blurRadius: completed ? 22 : 10,
                       spreadRadius: completed ? 2 : 0,
                     ),
@@ -873,7 +873,7 @@ class _NodeCard extends StatelessWidget {
                     else if (unlocked)
                       Icon(
                         level.isTutorial ? Icons.school_outlined : Icons.radio_button_unchecked,
-                        color: tagColor.withOpacity(0.7),
+                        color: tagColor.withValues(alpha: 0.7),
                         size: 11,
                       )
                     else
@@ -882,13 +882,13 @@ class _NodeCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
-                        color: tagColor.withOpacity(unlocked ? 0.15 : 0.06),
+                        color: tagColor.withValues(alpha: unlocked ? 0.15 : 0.06),
                         borderRadius: BorderRadius.circular(3),
                       ),
                       child: Text(
                         (level.tag ?? 'misc').toUpperCase(),
                         style: GoogleFonts.orbitron(
-                          color: unlocked ? tagColor.withOpacity(0.9) : theme.textDim,
+                          color: unlocked ? tagColor.withValues(alpha: 0.9) : theme.textDim,
                           fontSize: 6.5,
                           letterSpacing: 1.2,
                           fontWeight: FontWeight.w700,
@@ -1095,7 +1095,7 @@ class _HardBadgePainter extends CustomPainter {
       r * 0.50,
       Paint()
         ..shader = RadialGradient(
-          colors: [_goldDeep.withOpacity(0.9), _goldDeep.withOpacity(0.65)],
+          colors: [_goldDeep.withValues(alpha: 0.9), _goldDeep.withValues(alpha: 0.65)],
         ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.50)),
     );
 
@@ -1119,7 +1119,7 @@ class _HardBadgePainter extends CustomPainter {
     canvas.drawPath(starPath, Paint()..color = _gold..style = PaintingStyle.fill);
 
     // Centre dot
-    canvas.drawCircle(Offset(cx, cy), r * 0.09, Paint()..color = Colors.white.withOpacity(0.9));
+    canvas.drawCircle(Offset(cx, cy), r * 0.09, Paint()..color = Colors.white.withValues(alpha: 0.9));
   }
 
   @override
@@ -1165,7 +1165,7 @@ class _UnlockHint extends StatelessWidget {
       return Text(
         'COMPLETE',
         style: GoogleFonts.sourceCodePro(
-          color: tagColor.withOpacity(0.8),
+          color: tagColor.withValues(alpha: 0.8),
           fontSize: 7.5,
           letterSpacing: 1.5,
           fontWeight: FontWeight.w600,
@@ -1176,11 +1176,11 @@ class _UnlockHint extends StatelessWidget {
     if (unlocked) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(color: tagColor.withOpacity(0.12), borderRadius: BorderRadius.circular(3)),
+        decoration: BoxDecoration(color: tagColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(3)),
         child: Text(
           level.isTutorial ? 'TAP TO READ' : 'TAP TO PLAY',
           style: GoogleFonts.sourceCodePro(
-            color: tagColor.withOpacity(0.9),
+            color: tagColor.withValues(alpha: 0.9),
             fontSize: 7,
             letterSpacing: 1.5,
             fontWeight: FontWeight.w600,
@@ -1194,7 +1194,7 @@ class _UnlockHint extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.borderMid,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: theme.textMid.withOpacity(0.25)),
+        border: Border.all(color: theme.textMid.withValues(alpha: 0.25)),
       ),
       child: Text(
         _shortHint(),
@@ -1256,7 +1256,7 @@ class _LockedSheet extends StatelessWidget {
         color: theme.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.borderMid, width: 1.5),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 24, offset: const Offset(0, -4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 24, offset: const Offset(0, -4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1289,9 +1289,9 @@ class _LockedSheet extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: tagColor.withOpacity(0.12),
+                  color: tagColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: tagColor.withOpacity(0.3)),
+                  border: Border.all(color: tagColor.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   (level.tag ?? 'misc').toUpperCase(),
@@ -1328,7 +1328,7 @@ class _LockedSheet extends StatelessWidget {
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: BoxDecoration(color: tagColor.withOpacity(0.6), shape: BoxShape.circle),
+                      decoration: BoxDecoration(color: tagColor.withValues(alpha: 0.6), shape: BoxShape.circle),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -1347,10 +1347,10 @@ class _LockedSheet extends StatelessWidget {
             child: TextButton(
               onPressed: () => Navigator.pop(context),
               style: TextButton.styleFrom(
-                backgroundColor: tagColor.withOpacity(0.08),
+                backgroundColor: tagColor.withValues(alpha: 0.08),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: tagColor.withOpacity(0.25)),
+                  side: BorderSide(color: tagColor.withValues(alpha: 0.25)),
                 ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
@@ -1401,8 +1401,8 @@ class _Legend extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              d.bg.withOpacity(0),
-              d.bg.withOpacity(0.92),
+              d.bg.withValues(alpha: 0),
+              d.bg.withValues(alpha: 0.92),
             ],
           ),
         ),
@@ -1443,7 +1443,7 @@ class _Legend extends StatelessWidget {
                       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
                     ),
                     label: label,
-                    color: color.withOpacity(0.85),
+                    color: color.withValues(alpha: 0.85),
                   ),
 
                 Container(width: 1, height: 14, color: theme.borderMid),
@@ -1697,12 +1697,12 @@ class _EdgePainter extends CustomPainter {
       bool blockingDash; // extra-visible dashes for the "missing prereq" state
 
       if (srcCompleted && destCompleted) {
-        edgeColor = theme.edgeBright.withOpacity(0.90);
+        edgeColor = theme.edgeBright.withValues(alpha: 0.90);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
       } else if (srcCompleted && destUnlocked) {
-        edgeColor = theme.edgeActive.withOpacity(0.95);
+        edgeColor = theme.edgeActive.withValues(alpha: 0.95);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
@@ -1712,12 +1712,12 @@ class _EdgePainter extends CustomPainter {
         drawGlow = true;
         blockingDash = false;
       } else if (!srcCompleted && isAlmostUnlocked) {
-        edgeColor = theme.edgeBlocking.withOpacity(0.55 + pulseValue * 0.45);
+        edgeColor = theme.edgeBlocking.withValues(alpha: 0.55 + pulseValue * 0.45);
         strokeW = 4.0;
         drawGlow = true;
         blockingDash = true;
       } else {
-        edgeColor = theme.edgeDim.withOpacity(0.95);
+        edgeColor = theme.edgeDim.withValues(alpha: 0.95);
         strokeW = 3.5;
         drawGlow = false;
         blockingDash = false;
@@ -1736,7 +1736,7 @@ class _EdgePainter extends CustomPainter {
         canvas.drawPath(
           pathData.path,
           Paint()
-            ..color = edgeColor.withOpacity(0.22)
+            ..color = edgeColor.withValues(alpha: 0.22)
             ..strokeWidth = strokeW + 18
             ..style = PaintingStyle.stroke
             ..strokeCap = StrokeCap.round
@@ -1782,7 +1782,7 @@ class _EdgePainter extends CustomPainter {
       if (pathData.isSimple && entryValue >= 1.0 && (srcCompleted && destUnlocked || srcCompleted && destCompleted)) {
         final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
         final pt = _cubicPoint(src, pathData.ctrl1!, pathData.ctrl2!, dst, t);
-        canvas.drawCircle(pt, destCompleted ? 3.5 : 3.0, Paint()..color = edgeColor.withOpacity(0.95));
+        canvas.drawCircle(pt, destCompleted ? 3.5 : 3.0, Paint()..color = edgeColor.withValues(alpha: 0.95));
       }
 
       // ── Arrowhead ───────────────────────────────────────────────────────

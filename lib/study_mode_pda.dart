@@ -323,7 +323,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
           color: theme.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-              color: const Color(0xFFFFB300).withOpacity(0.5), width: 1.5),
+              color: const Color(0xFFFFB300).withValues(alpha: 0.5), width: 1.5),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -343,7 +343,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
               child: Text(
                 'CORRECT PDA  (read-only)',
                 style: GoogleFonts.orbitron(
-                  color: const Color(0xFFFFB300).withOpacity(0.7),
+                  color: const Color(0xFFFFB300).withValues(alpha: 0.7),
                   fontSize: 8,
                   letterSpacing: 2,
                 ),
@@ -385,7 +385,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
                   child: Text(
                     'YOUR PDA',
                     style: GoogleFonts.orbitron(
-                      color: theme.textDim.withOpacity(0.4),
+                      color: theme.textDim.withValues(alpha: 0.4),
                       fontSize: 8,
                       letterSpacing: 2,
                     ),
@@ -419,9 +419,9 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 6),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.10),
+          color: color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withOpacity(0.35)),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
         child: Text(
           label,

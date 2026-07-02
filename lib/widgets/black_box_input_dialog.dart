@@ -299,9 +299,9 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: _validation.status == _DslStatus.invalid
-                        ? const Color(0xFFFF5252).withOpacity(0.6)
+                        ? const Color(0xFFFF5252).withValues(alpha: 0.6)
                         : _validation.status == _DslStatus.valid
-                            ? theme.accentGreen.withOpacity(0.4)
+                            ? theme.accentGreen.withValues(alpha: 0.4)
                             : theme.borderMid,
                   ),
                 ),
@@ -322,7 +322,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                         'from another graph, or write one directly.',
                     hintStyle: TextStyle(
                       fontSize: 12,
-                      color: theme.textDim.withOpacity(0.6),
+                      color: theme.textDim.withValues(alpha: 0.6),
                     ),
                     contentPadding: const EdgeInsets.all(10),
                   ),
@@ -340,9 +340,9 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: theme.accent.withOpacity(0.07),
+                  color: theme.accent.withValues(alpha: 0.07),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: theme.accent.withOpacity(0.25)),
+                  border: Border.all(color: theme.accent.withValues(alpha: 0.25)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -383,7 +383,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                     style: FilledButton.styleFrom(
                       backgroundColor: theme.accent,
                       disabledBackgroundColor:
-                          theme.accent.withOpacity(0.35),
+                          theme.accent.withValues(alpha: 0.35),
                     ),
                     child: const Text('Save'),
                   ),
@@ -403,7 +403,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
     return InputDecoration(
       isDense: true,
       hintText: hint,
-      hintStyle: TextStyle(color: theme.textDim.withOpacity(0.6)),
+      hintStyle: TextStyle(color: theme.textDim.withValues(alpha: 0.6)),
       filled: true,
       fillColor: theme.bg,
       border: OutlineInputBorder(
@@ -450,10 +450,10 @@ class _ValidationBadge extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1FD99A).withOpacity(0.14),
+                  color: const Color(0xFF1FD99A).withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(
-                      color: const Color(0xFF1FD99A).withOpacity(0.4)),
+                      color: const Color(0xFF1FD99A).withValues(alpha: 0.4)),
                 ),
                 child: Text(
                   validation.type!,

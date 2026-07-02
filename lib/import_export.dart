@@ -1525,9 +1525,9 @@ class _LatexExportDialogState extends State<_LatexExportDialog> {
             Container(
               constraints: const BoxConstraints(maxHeight: 340),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+                border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.4)),
               ),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(12),
@@ -1546,7 +1546,7 @@ class _LatexExportDialogState extends State<_LatexExportDialog> {
               'Compile with pdflatex / xelatex / lualatex.\n'
               'Requires: \\usetikzlibrary{automata,positioning,arrows.meta}',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
           ],
@@ -1651,7 +1651,7 @@ class _LatexImportDialogState extends State<_LatexImportDialog> {
                 hintStyle: TextStyle(
                   fontFamily: 'Courier New',
                   fontSize: 11,
-                  color: theme.colorScheme.onSurface.withOpacity(0.4),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
                 errorText: _error,
               ),
@@ -2632,7 +2632,7 @@ class _FaToRegexDialogState extends State<_FaToRegexDialog> {
                         color: theme.bg,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: theme.accent.withOpacity(0.5),
+                          color: theme.accent.withValues(alpha: 0.5),
                           width: 1.5,
                         ),
                       ),

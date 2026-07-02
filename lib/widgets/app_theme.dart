@@ -247,46 +247,46 @@ class AppThemeData {
   factory AppThemeData.defaults() => AppThemeData.cyberDark();
 
   Map<String, dynamic> toJson() => {
-    'bg': bg.value,
-    'gridLine': gridLine.value,
-    'accent': accent.value,
-    'accentGreen': accentGreen.value,
-    'textDim': textDim.value,
-    'textMid': textMid.value,
-    'textLight': textLight.value,
-    'surface': surface.value,
-    'border': border.value,
-    'borderMid': borderMid.value,
-    'nodeBorder': nodeBorder.value,
-    'nodeBorderSelected': nodeBorderSelected.value,
-    'nodeBorderHighlight': nodeBorderHighlight.value,
-    'nodeBorderDuplicate': nodeBorderDuplicate.value,
-    'nodeBorderDelete': nodeBorderDelete.value,
-    'lineColor': lineColor.value,
-    'lineHighlight': lineHighlight.value,
-    'acceptState': acceptState.value,
-    'rejectState': rejectState.value,
-    'edgeDim': edgeDim.value,
-    'edgeActive': edgeActive.value,
-    'edgeBright': edgeBright.value,
-    'edgeAlmost': edgeAlmost.value,
-    'edgeBlocking': edgeBlocking.value,
-    'tagIntro': tagIntro.value,
-    'tagDfa': tagDfa.value,
-    'tagNfa': tagNfa.value,
-    'tagPda': tagPda.value,
-    'tagTm': tagTm.value,
-    'tagBoss': tagBoss.value,
-    'tagDefault': tagDefault.value,
-    'error': error.value,
-    'warning': warning.value,
-    'panelHighlight': panelHighlight.value,
+    'bg': bg.toARGB32(),
+    'gridLine': gridLine.toARGB32(),
+    'accent': accent.toARGB32(),
+    'accentGreen': accentGreen.toARGB32(),
+    'textDim': textDim.toARGB32(),
+    'textMid': textMid.toARGB32(),
+    'textLight': textLight.toARGB32(),
+    'surface': surface.toARGB32(),
+    'border': border.toARGB32(),
+    'borderMid': borderMid.toARGB32(),
+    'nodeBorder': nodeBorder.toARGB32(),
+    'nodeBorderSelected': nodeBorderSelected.toARGB32(),
+    'nodeBorderHighlight': nodeBorderHighlight.toARGB32(),
+    'nodeBorderDuplicate': nodeBorderDuplicate.toARGB32(),
+    'nodeBorderDelete': nodeBorderDelete.toARGB32(),
+    'lineColor': lineColor.toARGB32(),
+    'lineHighlight': lineHighlight.toARGB32(),
+    'acceptState': acceptState.toARGB32(),
+    'rejectState': rejectState.toARGB32(),
+    'edgeDim': edgeDim.toARGB32(),
+    'edgeActive': edgeActive.toARGB32(),
+    'edgeBright': edgeBright.toARGB32(),
+    'edgeAlmost': edgeAlmost.toARGB32(),
+    'edgeBlocking': edgeBlocking.toARGB32(),
+    'tagIntro': tagIntro.toARGB32(),
+    'tagDfa': tagDfa.toARGB32(),
+    'tagNfa': tagNfa.toARGB32(),
+    'tagPda': tagPda.toARGB32(),
+    'tagTm': tagTm.toARGB32(),
+    'tagBoss': tagBoss.toARGB32(),
+    'tagDefault': tagDefault.toARGB32(),
+    'error': error.toARGB32(),
+    'warning': warning.toARGB32(),
+    'panelHighlight': panelHighlight.toARGB32(),
   };
 
   factory AppThemeData.fromJson(Map<String, dynamic> json) {
     final base = AppThemeData.defaults();
     Color c(String key, Color fallback) =>
-        Color((json[key] as int?) ?? fallback.value);
+        Color((json[key] as int?) ?? fallback.toARGB32());
     return base.copyWith(
       bg: c('bg', base.bg),
       gridLine: c('gridLine', base.gridLine),
@@ -837,7 +837,7 @@ ThemeData buildMaterialTheme(AppThemeData c) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: c.accent.withOpacity(0.12),
+        backgroundColor: c.accent.withValues(alpha: 0.12),
         foregroundColor: c.accent,
         side: BorderSide(color: c.accent, width: 1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -1244,7 +1244,8 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     value: _linkHighlights ||
                         (_live.nodeBorderHighlight == _live.accent &&
                             _live.lineHighlight == _live.accent),
-                    activeColor: accent,
+                    activeThumbColor: accent,
+                    activeTrackColor: accent.withValues(alpha: 0.35),
                     onChanged: (v) {
                       setState(() => _linkHighlights = v);
                       widget.notifier.setLinkHighlightsToAccent(v);
@@ -1280,7 +1281,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                             child: Text(
                               entry.key.toUpperCase(),
                               style: GoogleFonts.orbitron(
-                                color: accent.withOpacity(0.65),
+                                color: accent.withValues(alpha: 0.65),
                                 fontSize: 8,
                                 letterSpacing: 2,
                               ),
@@ -1322,7 +1323,7 @@ class _SectionTitle extends StatelessWidget {
     return Text(
       label.toUpperCase(),
       style: GoogleFonts.orbitron(
-        color: accent.withOpacity(0.85),
+        color: accent.withValues(alpha: 0.85),
         fontSize: 9,
         fontWeight: FontWeight.w700,
         letterSpacing: 2.5,
@@ -1477,7 +1478,7 @@ class _ColorRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hex =
-        '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+        '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
     return InkWell(
       onTap: () {
@@ -1564,10 +1565,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
   @override
   void initState() {
     super.initState();
-    _r = widget.initial.red.toDouble();
-    _g = widget.initial.green.toDouble();
-    _b = widget.initial.blue.toDouble();
-    _a = widget.initial.alpha.toDouble();
+    _r = (widget.initial.r * 255.0).round().clamp(0, 255).toDouble();
+    _g = (widget.initial.g * 255.0).round().clamp(0, 255).toDouble();
+    _b = (widget.initial.b * 255.0).round().clamp(0, 255).toDouble();
+    _a = (widget.initial.a * 255.0).round().clamp(0, 255).toDouble();
     _hexController = TextEditingController(text: _toHex());
   }
 
@@ -1577,11 +1578,15 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     super.dispose();
   }
 
-  Color get _current =>
-      Color.fromARGB(_a.round(), _r.round(), _g.round(), _b.round());
+  Color get _current => Color.fromARGB(
+        _a.round().clamp(0, 255),
+        _r.round().clamp(0, 255),
+        _g.round().clamp(0, 255),
+        _b.round().clamp(0, 255),
+      );
 
   String _toHex() =>
-      _current.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+      _current.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
 
   void _syncHexField() {
     final hex = _toHex();
@@ -1599,10 +1604,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       if (value != null) {
         final c = Color(value);
         setState(() {
-          _r = c.red.toDouble();
-          _g = c.green.toDouble();
-          _b = c.blue.toDouble();
-          _a = c.alpha.toDouble();
+          _r = (c.r * 255.0).round().clamp(0, 255).toDouble();
+          _g = (c.g * 255.0).round().clamp(0, 255).toDouble();
+          _b = (c.b * 255.0).round().clamp(0, 255).toDouble();
+          _a = (c.a * 255.0).round().clamp(0, 255).toDouble();
           _hexError = false;
         });
         return;
@@ -1757,10 +1762,10 @@ class PaletteFab extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
 
-    final bg   = active ? activeColor.withOpacity(0.14) : theme.surface;
+    final bg   = active ? activeColor.withValues(alpha: 0.14) : theme.surface;
     final fg   = active ? activeColor : theme.textDim;
     final borderColor = active
-        ? activeColor.withOpacity(0.7)
+        ? activeColor.withValues(alpha: 0.7)
         : theme.borderMid;
     final borderWidth = active ? 1.5 : 1.0;
 
@@ -1781,7 +1786,7 @@ class PaletteFab extends StatelessWidget {
           boxShadow: active
               ? [
                   BoxShadow(
-                    color: activeColor.withOpacity(0.3),
+                    color: activeColor.withValues(alpha: 0.3),
                     blurRadius: 12,
                   ),
                 ]

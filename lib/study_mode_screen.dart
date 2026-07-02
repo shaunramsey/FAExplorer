@@ -1164,12 +1164,12 @@ class _TopBar extends StatelessWidget {
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
                             color: allSelected
-                                ? theme.accentGreen.withOpacity(0.15)
+                                ? theme.accentGreen.withValues(alpha: 0.15)
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
                               color: allSelected
-                                  ? theme.accentGreen.withOpacity(0.8)
+                                  ? theme.accentGreen.withValues(alpha: 0.8)
                                   : theme.borderMid,
                             ),
                           ),
@@ -1230,12 +1230,12 @@ class _TopBar extends StatelessWidget {
                                 horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                               color: sel
-                                  ? chipColor.withOpacity(0.15)
+                                  ? chipColor.withValues(alpha: 0.15)
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
                                 color: sel
-                                    ? chipColor.withOpacity(0.8)
+                                    ? chipColor.withValues(alpha: 0.8)
                                     : theme.borderMid,
                               ),
                             ),
@@ -1486,7 +1486,7 @@ class _ProgressRow extends StatelessWidget {
               minHeight: 3,
               backgroundColor: theme.gridLine,
               valueColor:
-                  AlwaysStoppedAnimation(theme.accent.withOpacity(0.6)),
+                  AlwaysStoppedAnimation(theme.accent.withValues(alpha: 0.6)),
             ),
           ),
         ),
@@ -1547,10 +1547,10 @@ class _ChallengeCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accentColor.withOpacity(0.35), width: 1.5),
+        border: Border.all(color: accentColor.withValues(alpha: 0.35), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: accentColor.withOpacity(0.07),
+            color: accentColor.withValues(alpha: 0.07),
             blurRadius: 24,
             spreadRadius: 4,
           ),
@@ -1603,9 +1603,9 @@ class _ChallengeCard extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: theme.accent.withOpacity(0.06),
+                color: theme.accent.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: theme.accent.withOpacity(0.2)),
+                border: Border.all(color: theme.accent.withValues(alpha: 0.2)),
               ),
               child: SelectableText(
                 challenge.regex,
@@ -1632,10 +1632,10 @@ class _ChallengeCard extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFFB47FFF).withOpacity(0.06),
+                color: const Color(0xFFB47FFF).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: const Color(0xFFB47FFF).withOpacity(0.25)),
+                    color: const Color(0xFFB47FFF).withValues(alpha: 0.25)),
               ),
               child: Text(
                 challenge.description ?? '',
@@ -1660,10 +1660,10 @@ class _ChallengeCard extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFF26C6DA).withOpacity(0.06),
+                color: const Color(0xFF26C6DA).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: const Color(0xFF26C6DA).withOpacity(0.25)),
+                    color: const Color(0xFF26C6DA).withValues(alpha: 0.25)),
               ),
               child: Text(
                 challenge.description ?? '',
@@ -1700,10 +1700,10 @@ class _ChallengeCard extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: theme.accentGreen.withOpacity(0.06),
+                color: theme.accentGreen.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
                 border:
-                    Border.all(color: theme.accentGreen.withOpacity(0.20)),
+                    Border.all(color: theme.accentGreen.withValues(alpha: 0.20)),
               ),
               child: Text(
                 'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
@@ -1807,7 +1807,7 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
         decoration: BoxDecoration(
           color: theme.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFFFB300).withOpacity(0.5), width: 1.5),
+          border: Border.all(color: const Color(0xFFFFB300).withValues(alpha: 0.5), width: 1.5),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -1825,7 +1825,7 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
               child: Text(
                 'CORRECT DFA  (read-only)',
                 style: GoogleFonts.orbitron(
-                  color: const Color(0xFFFFB300).withOpacity(0.7),
+                  color: const Color(0xFFFFB300).withValues(alpha: 0.7),
                   fontSize: 8,
                   letterSpacing: 2,
                 ),
@@ -1865,7 +1865,7 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
             child: Text(
               'YOUR DFA',
               style: GoogleFonts.orbitron(
-                color: theme.textDim.withOpacity(0.4),
+                color: theme.textDim.withValues(alpha: 0.4),
                 fontSize: 8,
                 letterSpacing: 2,
               ),
@@ -1903,7 +1903,7 @@ class _RegexInputArea extends StatelessWidget {
   Widget build(BuildContext context) {
     final correct = gradeResult?.correct ?? false;
     final borderColor = !submitted
-        ? theme.accentGreen.withOpacity(0.35)
+        ? theme.accentGreen.withValues(alpha: 0.35)
         : correct
             ? const Color(0xFF4CAF50)
             : theme.error;
@@ -1936,7 +1936,7 @@ class _RegexInputArea extends StatelessWidget {
                   child: Text(
                     'TARGET DFA  (read-only)',
                     style: GoogleFonts.orbitron(
-                      color: theme.textDim.withOpacity(0.5),
+                      color: theme.textDim.withValues(alpha: 0.5),
                       fontSize: 8,
                       letterSpacing: 2,
                     ),
@@ -1991,7 +1991,7 @@ class _RegexInputArea extends StatelessWidget {
                     decoration: InputDecoration(
                       hintText: 'e.g.  a*(ba+b)*',
                       hintStyle: GoogleFonts.courierPrime(
-                        color: theme.textDim.withOpacity(0.5),
+                        color: theme.textDim.withValues(alpha: 0.5),
                         fontSize: 18,
                       ),
                       border: InputBorder.none,
@@ -2041,9 +2041,9 @@ class _OpHint extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
           decoration: BoxDecoration(
-            color: theme.accent.withOpacity(0.08),
+            color: theme.accent.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: theme.accent.withOpacity(0.2)),
+            border: Border.all(color: theme.accent.withValues(alpha: 0.2)),
           ),
           child: Text(
             op,
@@ -2265,9 +2265,9 @@ class _Banner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.4), width: 1.5),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2464,11 +2464,11 @@ class _BtnState extends State<_Btn> {
         ),
         decoration: BoxDecoration(
           color: _pressed
-              ? widget.color.withOpacity(0.22)
-              : widget.color.withOpacity(0.10),
+              ? widget.color.withValues(alpha: 0.22)
+              : widget.color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: widget.color.withOpacity(_pressed ? 0.9 : 0.5),
+            color: widget.color.withValues(alpha: _pressed ? 0.9 : 0.5),
             width: 1.5,
           ),
         ),
@@ -2509,9 +2509,9 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(
         label,

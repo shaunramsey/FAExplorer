@@ -1306,7 +1306,7 @@ class _GoalBanner extends StatelessWidget {
                     'Regex:  ',
                     style: GoogleFonts.sourceCodePro(
                       fontSize: 12,
-                      color: const Color(0xFF00E5FF).withOpacity(0.7),
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.7),
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -1333,7 +1333,7 @@ class _GoalBanner extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: isCorrect
-                  ? theme.accentGreen.withOpacity(0.12)
+                  ? theme.accentGreen.withValues(alpha: 0.12)
                   : const Color(0xFF1F0D0D),
               child: Text(
                 checkResult!,
@@ -1376,14 +1376,14 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        border: Border.all(color: color.withOpacity(0.35)),
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: color.withOpacity(0.85)),
+          Icon(icon, size: 13, color: color.withValues(alpha: 0.85)),
           const SizedBox(width: 5),
           Text(
             label,
@@ -1443,7 +1443,7 @@ class _SuccessDialogState extends State<_SuccessDialog>
       backgroundColor: theme.bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: tagColor.withOpacity(0.8), width: 2),
+        side: BorderSide(color: tagColor.withValues(alpha: 0.8), width: 2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1458,10 +1458,10 @@ class _SuccessDialogState extends State<_SuccessDialog>
                 height: 72,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: tagColor.withOpacity(0.15),
+                  color: tagColor.withValues(alpha: 0.15),
                   boxShadow: [
                     BoxShadow(
-                      color: tagColor.withOpacity(0.6),
+                      color: tagColor.withValues(alpha: 0.6),
                       blurRadius: 24,
                       spreadRadius: 4,
                     ),
@@ -1598,7 +1598,7 @@ class _ReadOnlyDfaCanvas extends StatelessWidget {
               'read-only',
               style: GoogleFonts.sourceCodePro(
                 fontSize: 10,
-                color: theme.textDim.withOpacity(0.4),
+                color: theme.textDim.withValues(alpha: 0.4),
                 letterSpacing: 1,
               ),
             ),
@@ -1662,7 +1662,7 @@ class _RegexInputPanel extends StatelessWidget {
               border: Border.all(
                 color: isCorrect
                     ? const Color(0xFF1FD99A)
-                    : accentRegex.withOpacity(0.5),
+                    : accentRegex.withValues(alpha: 0.5),
               ),
               borderRadius: BorderRadius.circular(6),
             ),
@@ -1682,7 +1682,7 @@ class _RegexInputPanel extends StatelessWidget {
                 hintText: 'e.g.  (a+b)*b',
                 hintStyle: GoogleFonts.courierPrime(
                   fontSize: 18,
-                  color: theme.textDim.withOpacity(0.5),
+                  color: theme.textDim.withValues(alpha: 0.5),
                 ),
                 isDense: true,
               ),
