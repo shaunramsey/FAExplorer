@@ -130,7 +130,7 @@ void showExportDialog(
         ),
       ],
     ),
-  );
+  ).then((_) => nameController.dispose());
 }
 
 void showImportDialog(

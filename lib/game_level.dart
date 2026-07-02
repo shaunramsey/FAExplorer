@@ -1,4 +1,3 @@
-import 'widgets/app_theme.dart';
 import 'dialogs/equivalence_dialog.dart' show RequiredAutomatonType;
 import 'tutorial_screen.dart' show TutorialSlide, TutorialIllustration;
 
@@ -32,7 +31,6 @@ import 'tutorial_screen.dart' show TutorialSlide, TutorialIllustration;
 //    0.84–0.97  TM   (Turing Machines)  — columns 20–25
 // ─────────────────────────────────────────────────────────────────────────────
 
-import 'package:flutter/material.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2216,6 +2214,11 @@ const List<GameLevel> kAllLevels = [
     x: 0.93,
     y: 0.75,
     tag: 'pda',
+    // Paired with level_2 in the same unlock layer (both require
+    // pda_an_b2n) — flagged as a boss too so the pair satisfies the
+    // "boss layer may only contain boss levels" rule (up to 2 allowed)
+    // instead of violating "boss can't mix with a regular level".
+    isBoss: true,
   ),
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3261,10 +3264,3 @@ abstract final class LayerConstraintValidator {
 /// Use in an assert at startup — empty list means all constraints pass.
 List<String> get kLayerConstraintErrors =>
     LayerConstraintValidator.validate(kAllLevels);
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Tag colour palette used by the neural-network level map
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Default tag colors when no [AppThemeNotifier] is available.
-Color levelTagColor(String? tag) => AppThemeData.defaults().tagColor(tag);

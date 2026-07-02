@@ -495,10 +495,10 @@ void _applyStudyModeLayout(
   const double minNodeGap     = nodeDiameter + 40.0; // minimum centre-to-centre distance
   const double clearance      = nodeRadius + 30.0;   // min dist: node centre ↔ chord
   const double textBuffer     = 14.0;                // extra padding around textbox rect
-  const double boxWidth       = 120.0;               // must match LineWidget
-  const double lineHeight     = 36.0;                // single-line height in LineWidget
-  const double selfLoopRadius = 35.0;                // loop circle radius (from models.dart)
-  const double selfLoopCenterDist = 65.0;            // centre offset for loop (from models.dart)
+  const double boxWidth       = kLabelBoxWidth;       // must match LineWidget — see models.dart
+  const double lineHeight     = kLabelLineHeight;      // single-line height in LineWidget — see models.dart
+  const double selfLoopRadius = kSelfLoopRadius;       // loop circle radius — see models.dart
+  const double selfLoopCenterDist = kSelfLoopCenterDistance; // centre offset for loop — see models.dart
   const int    iterations     = 30;                  // convergence passes
 
   // Helper: push node away from an axis-aligned rect.
@@ -598,7 +598,7 @@ void _applyStudyModeLayout(
             oc.dx + outward.dx * selfLoopCenterDist,
             oc.dy + outward.dy * selfLoopCenterDist,
           );
-          const textDistance = 65.0;
+          const textDistance = kSelfLoopTextDistance;
           final textCenter = Offset(
             loopCenter.dx + outward.dx * (selfLoopRadius + textDistance),
             loopCenter.dy + outward.dy * (selfLoopRadius + textDistance),

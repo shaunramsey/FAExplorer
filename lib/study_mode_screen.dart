@@ -2603,8 +2603,8 @@ void _applyStudyModeLayout(
   const double nodeRadius  = 50.0;              // visual radius of a state circle
   const double clearance   = nodeRadius + 30.0; // min distance: node centre ↔ chord
   const double textBuffer  = 12.0;              // extra padding around textbox rect
-  const double boxWidth    = 120.0;             // must match LineWidget / StartArrowWidget
-  const double lineHeight  = 36.0;              // single-line height used by those widgets
+  const double boxWidth    = kLabelBoxWidth;    // must match LineWidget / StartArrowWidget — see models.dart
+  const double lineHeight  = kLabelLineHeight;  // single-line height used by those widgets — see models.dart
   const int    iterations  = 20;                // enough passes to propagate cascades
 
   for (int iter = 0; iter < iterations; iter++) {

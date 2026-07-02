@@ -431,7 +431,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
           ),
         ],
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completedAny);
@@ -488,6 +488,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         ),
       );
     }
+    if (!mounted) return;
     _reload();
   }
 

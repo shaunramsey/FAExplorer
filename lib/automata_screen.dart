@@ -617,6 +617,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       context,
       node: node,
     );
+    if (!mounted) return;
     if (changed == true) {
       setState(() {
         _refreshSimulation();

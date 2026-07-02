@@ -110,6 +110,38 @@ class NodeData {
 // Compiled once at module level — avoids re-allocating on every simulation step.
 final _labelSplitter = RegExp(r'[,\n]');
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Self-loop geometry constants
+//
+//  Shared by LineData.computeGeometry / getTextBoxLocation below AND by
+//  study_mode_pda.dart's layout post-processor, which has to reproduce this
+//  geometry ahead of time to keep nodes clear of self-loops. Previously the
+//  layout post-processor re-typed these as separate hardcoded literals with
+//  a comment saying "from models.dart" — if these ever changed here, that
+//  copy would silently go stale. Import and reference these instead.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Radius of the circle drawn for a self-loop.
+const double kSelfLoopRadius = 35.0;
+
+/// Distance from the owning node's centre to the self-loop circle's centre.
+const double kSelfLoopCenterDistance = 65.0;
+
+/// Distance from the self-loop circle's edge to its label textbox centre.
+const double kSelfLoopTextDistance = 65.0;
+
+/// Width of a transition-label textbox, as rendered by LineWidget and
+/// StartArrowWidget in graph_widgets.dart. Also used by the study-mode
+/// layout post-processors (study_mode_pda.dart, study_mode_screen.dart) to
+/// predict label placement ahead of the actual render — previously each of
+/// those four call sites re-typed "120" by hand.
+const double kLabelBoxWidth = 120.0;
+
+/// Height of a single line of transition-label text — multiply by the
+/// number of lines in a label to get the full textbox height. Same
+/// four-way duplication concern as [kLabelBoxWidth].
+const double kLabelLineHeight = 36.0;
+
 class LineData {
   final String id;
 
@@ -158,7 +190,7 @@ class LineData {
       final radius = geometry.circleRadius!;
       final angle = selfLoopAngle;
       final outward = Offset(cos(angle), sin(angle));
-      const textDistance = 65.0;
+      const textDistance = kSelfLoopTextDistance;
       final textCenter = Offset(
         loopCenter.dx + outward.dx * (radius + textDistance),
         loopCenter.dy + outward.dy * (radius + textDistance),
@@ -224,8 +256,8 @@ class LineData {
     if ((centerA - centerB).distance < 1) {
       final angle = selfLoopAngle;
       final outward = Offset(cos(angle), sin(angle));
-      const loopRadius = 35.0;
-      const centerDistance = 65.0;
+      const loopRadius = kSelfLoopRadius;
+      const centerDistance = kSelfLoopCenterDistance;
       final circleCenter = Offset(
         centerA.dx + outward.dx * centerDistance,
         centerA.dy + outward.dy * centerDistance,

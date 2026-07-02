@@ -268,8 +268,91 @@ class DslCodec {
   }
 
   // ── DSL IMPORT ─────────────────────────────────────────────────────────────
+  //
+  //  GRAMMAR (informal EBNF)
+  //  ───────────────────────
+  //  This is the one place the whole format is written down — everything
+  //  below is implemented as a chain of line-by-line RegExp checks in
+  //  importFromDsl(), in this same order (first match wins). If you add a
+  //  new statement form, add a line here too.
+  //
+  //    program      ::= (statement | comment | blank-line)*
+  //    comment      ::= '#' any-text-to-end-of-line          -- stripped, not stored
+  //
+  //    statement    ::= mode-decl
+  //                    | start-arrow
+  //                    | line-curve
+  //                    | line-loop-angle
+  //                    | node-accept
+  //                    | edge
+  //                    | node-position
+  //                    | node-def
+  //                    | blackbox-desc
+  //                    | blackbox-dsl-inline
+  //                    | blackbox-dsl-block      -- multi-line; see below
+  //                    | blackbox-read-tape
+  //                    | blackbox-write-tape
+  //                    | bare-node               -- fallback: any other
+  //                                                 non-empty line becomes an
+  //                                                 isolated node with that
+  //                                                 label
+  //
+  //    mode-decl    ::= ('pda' | 'tm' | 'regex') 'mode' ('on' | 'off')?
+  //                      -- bare form (no on/off) means 'on'
+  //
+  //    start-arrow  ::= 'to' node (
+  //                        WS 'length' '=' number
+  //                      | WS 'angle' '=' number ',' number
+  //                      | '=' label
+  //                      )?
+  //
+  //    line-curve      ::= line-ref WS 'curve' '=' number
+  //    line-loop-angle ::= line-ref WS 'loop' WS 'angle' '=' number
+  //    node-accept     ::= node WS 'is' WS 'accepted'
+  //
+  //    edge         ::= node WS 'to' WS node ('=' label)?
+  //                      -- creates a transition nodeA → nodeB, optionally
+  //                         labelled. The literal ' to ' is the separator,
+  //                         so a node LABEL cannot itself contain ' to '.
+  //
+  //    node-position   ::= label '=' '(' number ',' number ')'
+  //    node-def        ::= nodeId '=' label
+  //    blackbox-desc   ::= nodeId WS 'blackbox' '=' text
+  //    blackbox-dsl-inline ::= nodeId WS 'blackbox' WS 'dsl' '=' escaped-text
+  //    blackbox-dsl-block  ::= nodeId WS 'blackbox' WS 'dsl' WS '{' ... '}'
+  //                      -- everything between the braces (which may itself
+  //                         be several lines of nested DSL) is extracted by
+  //                         _preprocessBlackboxBlocks() BEFORE the main
+  //                         line-by-line pass runs, and re-injected as its
+  //                         own `nodeId blackbox dsl = ...` entry afterwards.
+  //    blackbox-read-tape  ::= nodeId WS 'blackbox' WS 'read'  WS 'tape' '=' int
+  //    blackbox-write-tape ::= nodeId WS 'blackbox' WS 'write' WS 'tape' '=' int
+  //
+  //    node         ::= label | nodeId '(' label ')'
+  //                      -- the `id(label)` form disambiguates when the same
+  //                         label is used on more than one node; label alone
+  //                         is otherwise resolved to the unique node with
+  //                         that label
+  //    nodeId       ::= 'n' digit+                -- e.g. n0, n1, n17
+  //    line-ref     ::= label | '~' int '(' label ')'
+  //                      -- '~N(label)' picks the Nth (0-based) line among
+  //                         several sharing the same label, in file order
+  //
+  //    label        ::= ('<<' text '>>')          -- halt-ACCEPT state
+  //                    | ('>>' text '<<')          -- halt-REJECT state
+  //                    | text
+  //    text         ::= any characters, with '\\' and '\n' escaped as
+  //                      '\\\\' and '\\n' respectively (see _escapeDsl /
+  //                      _unescapeDsl) so labels can safely contain the
+  //                      characters this grammar otherwise treats as
+  //                      syntax ('=', 'to', etc).
+  //
+  //  Transition LABEL payloads (the text after `=` on an `edge` line) are
+  //  themselves a nested mini-syntax interpreted by the simulators, not by
+  //  this parser — see simulator.dart for FA/PDA/TM label formats
+  //  (`read,pop|push` for PDA, `tapeIndex:read,write,L/R/S` for TM, etc).
+  // ─────────────────────────────────────────────────────────────────────────
 
-  /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   static GraphState importFromDsl(String src) {
     // Preprocess: normalize multi-line blackbox dsl blocks into single lines

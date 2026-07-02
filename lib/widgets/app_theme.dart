@@ -764,9 +764,6 @@ class AppThemeNotifier extends ChangeNotifier {
       context.read<AppThemeNotifier>();
 }
 
-/// @deprecated Use [AppThemeNotifier.tagColor] or [AppThemeData.tagColor].
-Color levelTagColor(String? tag, AppThemeData theme) => theme.tagColor(tag);
-
 // ── Theme presets ───────────────────────────────────────────────────────────
 
 class ThemePreset {

@@ -170,8 +170,8 @@ class _LineWidgetState extends State<LineWidget> {
     final theme = context.watch<AppThemeNotifier>();
     final geometry = widget.data.computeGeometry(widget.centerA, widget.centerB);
 
-    const double boxWidth = 120;
-    const double lineHeight = 36.0;
+    const double boxWidth = kLabelBoxWidth;
+    const double lineHeight = kLabelLineHeight;
     final double boxHeight = lineHeight * _lineCount;
 
     final Offset mid = widget.data.getTextBoxLocation(
@@ -327,8 +327,8 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
     final arrowAngle = atan2(end.dy - start.dy, end.dx - start.dx);
     final perp = Offset(-dir.dy, dir.dx);
 
-    const double boxWidth = 120;
-    const double lineHeight = 36.0;
+    const double boxWidth = kLabelBoxWidth;
+    const double lineHeight = kLabelLineHeight;
     final double boxHeight = lineHeight * _lineCount;
 
     final labelOffset = Offset(start.dx + perp.dx * 30 - boxWidth / 2, start.dy + perp.dy * 30 - boxHeight / 2);

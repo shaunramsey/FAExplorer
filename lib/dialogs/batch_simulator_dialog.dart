@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -212,8 +214,9 @@ Future<void> showBatchSimulatorDialog(
                                 result.files.single.bytes == null) {
                               return;
                             }
-                            final text = String.fromCharCodes(
-                                result.files.single.bytes!);
+                            final text = utf8.decode(
+                                result.files.single.bytes!,
+                                allowMalformed: true);
                             setLocalState(() {
                               controller.text = text;
                               rebuildResults();

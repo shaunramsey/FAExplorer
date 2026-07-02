@@ -522,6 +522,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _isCorrect = true;
           _checkResult = '✓ Correct! Your regex describes exactly the same language as the DFA.';
           await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
+          if (!mounted) return;
           widget.onCompleted?.call();
           _successCtrl.forward(from: 0);
           _showSuccessDialog();
@@ -697,6 +698,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _checkResult = '✓ Correct! Your automaton is equivalent to the target.';
           await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
           await _saveNow(); // persist the winning solution immediately
+          if (!mounted) return;
           widget.onCompleted?.call();
           _successCtrl.forward(from: 0);
           _showSuccessDialog();
@@ -724,6 +726,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 'passed the full bounded test suite — level complete!';
             await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
             await _saveNow();
+            if (!mounted) return;
             widget.onCompleted?.call();
             _successCtrl.forward(from: 0);
             _showSuccessDialog();
