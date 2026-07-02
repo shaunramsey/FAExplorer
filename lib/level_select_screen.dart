@@ -44,7 +44,7 @@ const double _kTopPad = 96.0; // space for the top bar + scroll slider row
 const double _kBotPad = 80.0;
 const double _kLegendH = 58.0; // height reserved at bottom for legend
 const double _kSidePad = 120.0; // left/right canvas padding
-const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
+// minimum vertical padding above/below nodes
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
@@ -54,51 +54,8 @@ const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
 //  Position helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
 
-int _colIndex(double x) {
-  if (x < 0.15) return 0;
-  if (x < 0.28) return 1;
-  if (x < 0.42) return 2;
-  if (x < 0.56) return 3;
-  if (x < 0.68) return 4;
-  if (x < 0.78) return 5;
-  if (x < 0.88) return 6;
-  return 7;
-}
 
-Map<String, Offset> _buildPositions(List<GameLevel> levels, double canvasH) {
-  final Map<int, List<GameLevel>> cols = {};
-  for (final l in levels) {
-    final c = _colIndex(l.x);
-    cols.putIfAbsent(c, () => []).add(l);
-  }
-  final Map<String, Offset> result = {};
-  for (final entry in cols.entries) {
-    final colIdx = entry.key;
-    final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
-    final cx = _kSidePad + colIdx * _kColGap;
-    final count = members.length;
-    final minRequired = count * _kNodeH + (count - 1) * _kMinRowPad;
-    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    final totalSpan = minRequired > usableH ? minRequired : usableH;
-    final gap = count > 1 ? totalSpan / (count - 1) : 0.0;
-    final blockH = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = _kTopPad + (usableH - blockH) / 2.0;
-    for (int i = 0; i < count; i++) {
-      final cy = count == 1 ? _kTopPad + usableH / 2.0 : topOffset + i * gap;
-      result[members[i].id] = Offset(cx, cy);
-    }
-  }
-  return result;
-}
 
-double _canvasWidth(List<GameLevel> levels) {
-  int maxCol = 0;
-  for (final l in levels) {
-    final c = _colIndex(l.x);
-    if (c > maxCol) maxCol = c;
-  }
-  return _kSidePad * 2 + maxCol * _kColGap + _kNodeW;
-}
 
 double _canvasHeight(List<GameLevel> levels, double screenH) => screenH;
 
@@ -156,7 +113,7 @@ Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
 
 Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double canvasH) {
   final layerById = _computeLayersFromDeps(levels);
-  List<String> _extractLevelDependencies(GameLevel level) {
+  List<String> extractLevelDependencies(GameLevel level) {
   List<String> extract(UnlockRule rule) {
     if (rule is AlwaysUnlocked) return [];
     if (rule is RequireLevel) return [rule.levelId];
@@ -184,7 +141,7 @@ Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double can
 
 members.sort((a, b) {
   double barycenter(GameLevel level) {
-    final deps = _extractLevelDependencies(level);
+    final deps = extractLevelDependencies(level);
 
     if (deps.isEmpty) {
       return level.y;
@@ -864,7 +821,7 @@ class _NodeCard extends StatelessWidget {
 
     return AnimatedBuilder(
       animation: pulseAnim,
-      builder: (_, __) {
+      builder: (_, _) {
         final glowOpacity = completed
             ? 0.35 + pulseAnim.value * 0.25
             : unlocked
@@ -1152,7 +1109,11 @@ class _HardBadgePainter extends CustomPainter {
       final sr = i.isEven ? outerR : innerR;
       final x = cx + cos(angle) * sr;
       final y = cy + sin(angle) * sr;
-      if (i == 0) starPath.moveTo(x, y); else starPath.lineTo(x, y);
+      if (i == 0) {
+        starPath.moveTo(x, y);
+      } else {
+        starPath.lineTo(x, y);
+      }
     }
     starPath.close();
     canvas.drawPath(starPath, Paint()..color = _gold..style = PaintingStyle.fill);
@@ -1860,7 +1821,7 @@ class _EdgePainter extends CustomPainter {
 
     // ── Bezier sampler ──────────────────────────────────────────────────────
     // Approximate a cubic bezier with [steps] sample points.
-    List<Offset> _sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
+    List<Offset> sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
       final pts = <Offset>[];
       for (int i = 0; i <= steps; i++) {
         final t = i / steps;
@@ -1949,8 +1910,8 @@ for (final y in candidateYs) {
       final c3 = Offset(midX + 60, y);
       final c4 = arrowFrom;
 
-      final seg1 = _sampleCubic(src, c1, c2, Offset(midX, y));
-      final seg2 = _sampleCubic(Offset(midX, y), c3, c4, dst);
+      final seg1 = sampleCubic(src, c1, c2, Offset(midX, y));
+      final seg2 = sampleCubic(Offset(midX, y), c3, c4, dst);
 
       if (!samplesHitNodes([...seg1, ...seg2])) {
         return _PathData(

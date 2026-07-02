@@ -9,7 +9,6 @@ import 'models.dart';
 import 'simulator.dart';
 import 'pda_study_solutions.dart';
 import 'widgets/app_theme.dart';
-import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
 
 enum StudyPdaDifficulty { easy, medium, hard }
@@ -83,7 +82,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$b$a', false),
     ],
     acceptExamples: ['ε', '$a$b', '$a$a$b$b'],
-    rejectExamples: ['$a', '$b', '$a$a$b'],
+    rejectExamples: [a, b, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b),
   ));
 
@@ -101,7 +100,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$a$b', false),
     ],
     acceptExamples: ['$a$b', '$a$a$b$b'],
-    rejectExamples: ['ε', '$a', '$a$a$b'],
+    rejectExamples: ['ε', a, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b, acceptEmpty: false),
   ));
 
@@ -334,7 +333,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
                 initialNodes: graph.nodes,
                 initialLines: graph.lines,
                 initialStart: graph.startArrow,
-                onChanged: (_, __, ___) {},
+                onChanged: (_, _, _) {},
                 readOnly: true,
               ),
             ),
@@ -405,7 +404,7 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
   final StudyPdaChallenge challenge;
   final AppThemeNotifier theme;
 
-  const StudyPdaTestCaseStrip({
+  const StudyPdaTestCaseStrip({super.key, 
     required this.challenge,
     required this.theme,
   });
@@ -686,7 +685,7 @@ void _applyStudyModeLayout(
 
         // ── Check C: non-self-loop textbox clearance ────────────────────
         if (line.label.isNotEmpty) {
-          final nc = node.center; // re-read after chord push
+// re-read after chord push
           final lineCount = '\n'.allMatches(line.label).length + 1;
           final double boxHeight = lineHeight * lineCount;
 

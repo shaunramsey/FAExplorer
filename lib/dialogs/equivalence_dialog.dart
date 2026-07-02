@@ -1100,7 +1100,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.notEquivalent:
         final w = r.witness!;
-        final wDisplay = w.isEmpty ? '\0 (the empty string)' : '"$w"';
+        final wDisplay = w.isEmpty ? '\\0 (the empty string)' : '"$w"';
         final other = r.acceptedByMachine == 1 ? 'B' : 'A';
         final accepted = r.acceptedByMachine == 1 ? 'A' : 'B';
         return _Banner(

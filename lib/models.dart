@@ -294,10 +294,14 @@ class LineData {
 
     double sweepAngle;
     if (direction > 0) {
-      while (endAngle < startAngle) endAngle += 2 * pi;
+      while (endAngle < startAngle) {
+        endAngle += 2 * pi;
+      }
       sweepAngle = endAngle - startAngle;
     } else {
-      while (startAngle < endAngle) startAngle += 2 * pi;
+      while (startAngle < endAngle) {
+        startAngle += 2 * pi;
+      }
       sweepAngle = endAngle - startAngle;
     }
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 
 import '../widgets/app_theme.dart';
 import '../models.dart';
@@ -622,8 +621,12 @@ String _tmOutputString(TmSimulator sim) {
   final cells = tape.cells.map((c) => c == kBlank ? '' : c).toList();
   int start = 0;
   int end = cells.length;
-  while (start < end && cells[start].isEmpty) start++;
-  while (end > start && cells[end - 1].isEmpty) end--;
+  while (start < end && cells[start].isEmpty) {
+    start++;
+  }
+  while (end > start && cells[end - 1].isEmpty) {
+    end--;
+  }
   if (start >= end) return '';
   return cells.sublist(start, end).join();
 }

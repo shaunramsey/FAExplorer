@@ -326,7 +326,7 @@ class _SlidePage extends StatelessWidget {
           if (slide.illustrationType != TutorialIllustration.none)
             AnimatedBuilder(
               animation: animCtrl,
-              builder: (_, __) => Center(
+              builder: (_, _) => Center(
                 child: Container(
                   width: double.infinity,
                   height: 200,

@@ -192,7 +192,7 @@ class DslCodec {
         final dslLines = n.blackBoxDsl.split('\n');
         out.add('${n.id} blackbox dsl {');
         for (final dslLine in dslLines) {
-          out.add('  ${dslLine}');
+          out.add('  $dslLine');
         }
         out.add('}');
         if (n.blackBoxReadTape != 1) {
@@ -952,11 +952,6 @@ double _fromPt(double pt) => pt * 2;
 /// Convert a node id (e.g. "n3") to a safe tikz node name ("state_n3").
 String _tikzName(String id) => 'state_$id';
 
-/// Reverse a tikz node name back to an internal id.
-String? _idFromTikzName(String name) {
-  if (name.startsWith('state_n')) return name.substring('state_'.length);
-  return null;
-}
 
 /// Determine the loop direction for self-loop tikz style from [selfLoopAngle]
 /// (radians, measured from +x axis, same convention as the canvas).
@@ -1111,7 +1106,7 @@ class LatexExporter {
     //   accepting     – normal double-ring accept state
     //   accepting by double – same (alias sometimes preferred)
 
-    final startNodeId = g.startArrow != null ? g.startArrow!.nodeId : null;
+    final startNodeId = g.startArrow?.nodeId;
 
     for (final node in g.nodes.values) {
       final name = _tikzName(node.id);
@@ -1530,7 +1525,7 @@ class _LatexExportDialogState extends State<_LatexExportDialog> {
             Container(
               constraints: const BoxConstraints(maxHeight: 340),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
               ),
@@ -1774,7 +1769,9 @@ FaToRegexResult faToRegex({
   final Map<String, Map<String, _RE?>> gnfa = {};
 
   void ensureRow(String s) => gnfa.putIfAbsent(s, () => {});
-  for (final s in allStates) ensureRow(s);
+  for (final s in allStates) {
+    ensureRow(s);
+  }
   ensureRow(superStart);
   ensureRow(superAccept);
 
@@ -1817,7 +1814,7 @@ FaToRegexResult faToRegex({
   // Re-score and pick the best state to eliminate each round (greedy).
   // Score = sum of string lengths of the new edges that would be created,
   // minus the edges that would be removed.  Lower is better.
-  int _score(String q) {
+  int score(String q) {
     final preds = gnfa.keys
         .where((p) => p != q && (gnfa[p]?[q]) != null)
         .toList();
@@ -1847,9 +1844,9 @@ FaToRegexResult faToRegex({
   while (remaining.isNotEmpty) {
     // Pick the state with minimum elimination cost.
     String best = remaining.first;
-    int bestScore = _score(best);
+    int bestScore = score(best);
     for (final q in remaining) {
-      final s = _score(q);
+      final s = score(q);
       if (s < bestScore) {
         bestScore = s;
         best = q;
@@ -2064,7 +2061,7 @@ int _size(_RE? r) {
   if (r is _Empty || r is _Eps || r is _Lit) return 1;
   if (r is _Star)  return 1 + _size(r.child);
   if (r is _Cat)   return _size(r.left) + _size(r.right);
-  if (r is _Union) return _size((r as _Union).left) + _size(r.right);
+  if (r is _Union) return _size((r).left) + _size(r.right);
   return 1;
 }
 
@@ -2102,7 +2099,9 @@ String _printPrec(_RE r, int prec) {
     final arms = <_RE>[];
     void collect(_RE node) {
       if (node is _Union) { collect(node.left); collect(node.right); }
-      else arms.add(node);
+      else {
+        arms.add(node);
+      }
     }
     collect(r);
     final s = arms.map((a) => _printPrec(a, 0)).join('+');

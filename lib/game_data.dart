@@ -16,13 +16,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dialogs/equivalence_dialog.dart'
     show
-        AutomatonTypeChecker,
-        RequiredAutomatonType,
         AutomatonTypeResult,
-        AutomatonViolation,
         ViolationSeverity;
 import 'game_level.dart';
-import 'models.dart'; // NodeData, LineData
 
 export 'dialogs/equivalence_dialog.dart'
     show
@@ -158,60 +154,30 @@ class GameProgressStore {
 // ═════════════════════════════════════════════════════════════════════════════
 //  2. PUZZLE TYPE VALIDATION
 //
-//  Drop-in mixin / helpers that extend the puzzle layer with DFA-vs-NFA
-//  validation.
+//  Player-facing formatting for DFA-vs-NFA validation results.
 //
-//  Call validateAutomatonType() before accepting a solution, e.g. in the game
-//  gate / level-complete screen:
+//  The check itself is AutomatonTypeChecker.check(...) (see
+//  dialogs/equivalence_dialog.dart) — called directly from the puzzle
+//  screen's submission path. buildTypeErrorMessage() below turns that result
+//  into a structured, displayable message:
 //
-//    final typeResult = puzzle.validateAutomatonType(
-//      required: puzzle.requiredAutomatonType,
-//      alphabet: puzzle.alphabet,
+//    final typeResult = AutomatonTypeChecker.check(
 //      nodes: currentNodes,
 //      lines: currentLines,
 //      startArrow: currentStartArrow,
+//      alphabet: puzzle.alphabet,
+//      required: puzzle.requiredAutomatonType,
 //    );
 //
-//    if (!typeResult.isCorrectType) {
-//      // Show typeResult.primaryMessage as a banner / toast.
-//      // Optionally list typeResult.detailedViolations in an expanded panel.
+//    final msg = buildTypeErrorMessage(typeResult);
+//    if (msg != null) {
+//      // Show msg.headline as a banner / toast.
+//      // Optionally list msg.errors / msg.warnings in an expanded panel.
 //      return; // block progression
 //    }
 //
 //    // … proceed with the normal correctness check …
 // ═════════════════════════════════════════════════════════════════════════════
-
-/// Add `requiredAutomatonType` and `alphabet` fields to the GamePuzzle class,
-/// then call [validateAutomatonType] inside the submission path.
-///
-/// Because Dart extensions cannot add fields, those two values are stored on
-/// the class itself and this extension just supplies the method.
-extension GamePuzzleTypeValidation<T extends Object> on T {
-  // ignore: avoid_shadowing_type_parameters
-  /// Validates that the player's automaton is the type required by this puzzle.
-  ///
-  /// [required]    — the type this puzzle expects (set on the puzzle definition).
-  /// [alphabet]    — the symbol set the puzzle operates over; used to detect
-  ///                 missing transitions.  Pass an empty set to skip that check.
-  /// [startArrow]  — the screen's current StartArrowData (pass _startArrow from
-  ///                 your state).  Required so the checker can detect a missing
-  ///                 start state; passing null always produces a false violation.
-  AutomatonTypeResult validateAutomatonType({
-    required RequiredAutomatonType required,
-    required Set<String> alphabet,
-    required Map<String, NodeData> nodes,
-    required Map<String, LineData> lines,
-    required StartArrowData? startArrow,
-  }) {
-    return AutomatonTypeChecker.check(
-      nodes: nodes,
-      lines: lines,
-      startArrow: startArrow,
-      alphabet: alphabet,
-      required: required,
-    );
-  }
-}
 
 // ─── Convenience widget helper ────────────────────────────────────────────────
 

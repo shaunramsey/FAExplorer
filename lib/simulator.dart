@@ -981,7 +981,9 @@ class PdaSimulator {
             configs: [_toActive(config)],
             usedLineIds: const {},
           );
-          while (steps.length <= tokens.length) steps.add(snap);
+          while (steps.length <= tokens.length) {
+            steps.add(snap);
+          }
           return;
         }
 
@@ -1049,7 +1051,9 @@ class PdaSimulator {
         configs: [_toActive(haltAcceptConfig)],
         usedLineIds: const {},
       );
-      while (steps.length <= tokens.length) steps.add(snap);
+      while (steps.length <= tokens.length) {
+        steps.add(snap);
+      }
       return;
     }
     while (steps.length <= tokens.length) {
@@ -1416,7 +1420,7 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
 
     // Sanity-check: both sides must look like real tape operations
     // (≥3 chars or tape-prefixed) so we don't misparse `a,b1,R`.
-    final looksLikeOp = (String s) => s.contains(':') || s.length >= 3;
+    bool looksLikeOp(String s) => s.contains(':') || s.length >= 3;
     if (!looksLikeOp(primaryRaw) || !looksLikeOp(secondaryRaw)) continue;
 
     final behavior = marker == 'b2'
@@ -1812,7 +1816,9 @@ class TmTape {
       );
     }
 
-    while (pos >= newCells.length) newCells.add(kBlank);
+    while (pos >= newCells.length) {
+      newCells.add(kBlank);
+    }
     newCells[pos] = symbol.isEmpty ? kBlank : symbol;
     return TmTape(
       cells: newCells,
@@ -2278,7 +2284,7 @@ class TmSimulator {
 
     // Helper: trim a TmTape to its non-blank content and translate the
     // absolute head position to a 0-based index in that trimmed list.
-    ({List<String> tokens, int headRel}) _tapeToInput(int tapeIdx) {
+    ({List<String> tokens, int headRel}) tapeToInput(int tapeIdx) {
       final tape = outerConfig.tapes[tapeIdx];
       final absHead = outerConfig.headPositions[tapeIdx];
       final tokens = _trimTapeTokens(tape);
@@ -2298,7 +2304,7 @@ class TmSimulator {
       // ── NFA: single-tape, no rewrite ──────────────────────────────────────
       case AutomataMode.ndfa:
       case AutomataMode.regex: {
-        final t0 = _tapeToInput(0);
+        final t0 = tapeToInput(0);
         final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
         sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);
         if (sim.finalResult() != SimResult.accept) {
@@ -2308,7 +2314,7 @@ class TmSimulator {
         final outTapes = <List<String>>[];
         final outHeads = <int>[];
         for (int i = 0; i < outerTapeCount; i++) {
-          final t = _tapeToInput(i);
+          final t = tapeToInput(i);
           outTapes.add(t.tokens);
           outHeads.add(i == 0 ? t.tokens.length : t.headRel);
         }
@@ -2317,7 +2323,7 @@ class TmSimulator {
 
       // ── PDA: single-tape, no rewrite ──────────────────────────────────────
       case AutomataMode.pda: {
-        final t0 = _tapeToInput(0);
+        final t0 = tapeToInput(0);
         final sim = PdaSimulator(nodes: graph.nodes, lines: graph.lines);
         sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);
         if (sim.finalResult() != PdaSimResult.accept) {
@@ -2326,7 +2332,7 @@ class TmSimulator {
         final outTapes = <List<String>>[];
         final outHeads = <int>[];
         for (int i = 0; i < outerTapeCount; i++) {
-          final t = _tapeToInput(i);
+          final t = tapeToInput(i);
           outTapes.add(t.tokens);
           outHeads.add(i == 0 ? t.tokens.length : t.headRel);
         }
@@ -2353,7 +2359,7 @@ class TmSimulator {
         // Load tape 1 of the inner machine with the outer tape 1 content.
         // After rebuild(), the inner simulator builds the initial config with
         // tapeCount tapes, all starting empty except tape 1 (= the input).
-        final t0 = _tapeToInput(0);
+        final t0 = tapeToInput(0);
         sim.rebuild(t0.tokens.join(), startArrow: graph.startArrow);
 
         // Overwrite the initial config's extra tapes with the outer tapes 2..N.
@@ -2367,7 +2373,7 @@ class TmSimulator {
           TmConfig updated = initConfig;
           for (int i = 1; i < innerTapeCount; i++) {
             if (i >= outerTapeCount) break; // no corresponding outer tape — leave blank
-            final outerTk = _tapeToInput(i);
+            final outerTk = tapeToInput(i);
             final innerTape = TmTape.fromTokens(outerTk.tokens);
             // Position the inner head at the same relative position as the
             // outer head so the inner machine starts scanning the right cell.
@@ -2421,7 +2427,7 @@ class TmSimulator {
               outHeads.add(0);
               continue;
             }
-            final ot = _tapeToInput(i);
+            final ot = tapeToInput(i);
             outTapes.add(ot.tokens);
             outHeads.add(ot.headRel);
           } else {
@@ -2562,7 +2568,9 @@ class TmSimulator {
             } else {
               final s = compound.secondary!;
               if (s.tapeIndex < 1 ||
-                  s.tapeIndex > effectiveConfig.tapes.length) continue;
+                  s.tapeIndex > effectiveConfig.tapes.length) {
+                continue;
+              }
               if (!s.isWildcard) {
                 final sHead = effectiveConfig.headPositions[s.tapeIndex - 1];
                 final sSym  = effectiveConfig.tapes[s.tapeIndex - 1].read(sHead);
@@ -3121,41 +3129,6 @@ class TmSimulator {
     return normalized.sublist(start, end);
   }
 
-  /// Compute the head position in the trimmed output tokens based on the
-  /// halt config's tape and head position.
-  ///
-  /// The returned value may equal [trimmedLength] when the head has moved one
-  /// cell past the last non-blank symbol (i.e. it is sitting on a blank just
-  /// beyond the right edge of the content).  Callers must handle this
-  /// "one-past-end" case — TmTape.fromTokens wraps the token list with a
-  /// leading and a trailing blank, so absolutePos(trimmedLength) maps exactly
-  /// onto the trailing blank cell, which is the correct behaviour.
-  int _computeOutputHeadPos(TmConfig? haltConfig) {
-    if (haltConfig == null) return 0;
-    final tape = haltConfig.tape;
-    final rawHeadPos = haltConfig.headPos; // absolute index
-
-    // Locate the non-blank region of the tape.
-    final cells = tape.cells;
-    int start = 0;
-    int end = cells.length;
-    while (start < end && (cells[start].isEmpty || cells[start] == kBlank)) {
-      start++;
-    }
-    while (end > start &&
-        (cells[end - 1].isEmpty || cells[end - 1] == kBlank)) {
-      end--;
-    }
-
-    if (start >= end) return 0; // empty tape
-
-    // Translate the absolute head position to an index in the trimmed output.
-    // Allow one-past-end (== trimmedLength) so that a head that moved off the
-    // right edge of the content is not incorrectly snapped back onto the last
-    // symbol.  Clamp to [0, trimmedLength] (inclusive on both ends).
-    final trimmedLen = end - start;
-    return (rawHeadPos - start).clamp(0, trimmedLen);
-  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -3551,8 +3524,8 @@ RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder, 
   int effectiveStart  = startState;
   int effectiveAccept = acceptState;
 
-  final _startOut = trans[startState] ?? [];
-  if (_startOut.isNotEmpty && _startOut.every((e) => e.symbol == _kEpsilon)) {
+  final startOut = trans[startState] ?? [];
+  if (startOut.isNotEmpty && startOut.every((e) => e.symbol == _kEpsilon)) {
     // Compute ε-closure of the start state.
     final closure = <int>{startState};
     final wl = <int>[startState];
@@ -4105,7 +4078,7 @@ RegexConversionResult _dfaTableToGraph(_NfaTable nfa, String pattern) {
   final Map<String, List<String>> edgeSymbols = {};
   for (final entry in minDfa.transitions.entries) {
     final parts = entry.key.split('__');
-    final ek = '${parts[0]}__${parts[1]}'; // from__sym, but we want from__to
+// from__sym, but we want from__to
     // Rebuild as from__to
     final fromIdx = parts[0];
     final sym = parts[1];

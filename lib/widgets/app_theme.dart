@@ -1156,7 +1156,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: kThemePresets.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      separatorBuilder: (_, _) => const SizedBox(width: 10),
                       itemBuilder: (_, i) {
                         final p = kThemePresets[i];
                         final selected = widget.notifier.activePresetId == p.id ||

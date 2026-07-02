@@ -30,10 +30,7 @@ import 'dialogs/equivalence_dialog.dart'
         EquivalenceResult,
         EquivalenceStatus,
         AutomatonTypeChecker,
-        RequiredAutomatonType,
-        AutomatonTypeResult,
-        AutomatonViolation,
-        ViolationSeverity;
+        RequiredAutomatonType;
 import 'simulator.dart';
 import 'models.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
@@ -629,20 +626,18 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         );
 
         if (!typeResult.isCorrectType) {
-          // Build a player-facing message.  Hard errors first, then warnings.
-          final errors = typeResult.violations
-              .where((v) => v.severity == ViolationSeverity.error)
-              .map((v) => '  ✗ ${v.message}')
-              .join('\n');
-          final warnings = typeResult.violations
-              .where((v) => v.severity == ViolationSeverity.warning)
-              .map((v) => '  ⚠ ${v.message}')
-              .join('\n');
-          final detail = [errors, warnings].where((s) => s.isNotEmpty).join('\n');
+          // Build a player-facing message. Hard errors first, then warnings —
+          // shared with game_data.dart so the formatting stays consistent
+          // wherever a type-check result needs to be displayed.
+          final msg = buildTypeErrorMessage(typeResult)!;
+          final detail = [
+            ...msg.errors.map((e) => '  ✗ $e'),
+            ...msg.warnings.map((w) => '  ⚠ $w'),
+          ].join('\n');
 
           setState(() {
             _checking = false;
-            _checkResult = '${typeResult.primaryMessage}'
+            _checkResult = '${msg.headline}'
                 '${detail.isNotEmpty ? '\n\n$detail' : ''}';
           });
           return; // block progression — don't run equivalence check
@@ -651,8 +646,6 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
       // 3. Run the appropriate equivalence check based on the level's assigned
       // automata mode.
-      //    NFA/DFA: exact BFS-based check.
-      //    PDA / TM: bounded simulation (heuristic; detects many bugs).
       //    NFA/DFA: exact BFS-based check.
       //    PDA / TM: bounded simulation (heuristic; detects many bugs).
       final levelMode = widget.level.automataMode;
@@ -1589,7 +1582,7 @@ class _ReadOnlyDfaCanvas extends StatelessWidget {
               interactionLocked: true,
               deleteMode: false,
               highlighted: false,
-              isLabelTaken: (_, __) => false,
+              isLabelTaken: (_, _) => false,
               onLabelChanged: (_) {},
               onLineModeSelect: () {},
               onDoubleTap: () {},

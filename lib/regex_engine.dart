@@ -393,8 +393,8 @@ RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder, 
   int effectiveStart  = startState;
   int effectiveAccept = acceptState;
 
-  final _startOut = trans[startState] ?? [];
-  if (_startOut.isNotEmpty && _startOut.every((e) => e.symbol == _kEpsilon)) {
+  final startOut = trans[startState] ?? [];
+  if (startOut.isNotEmpty && startOut.every((e) => e.symbol == _kEpsilon)) {
     // Compute ε-closure of the start state.
     final closure = <int>{startState};
     final wl = <int>[startState];
@@ -947,7 +947,7 @@ RegexConversionResult _dfaTableToGraph(_NfaTable nfa, String pattern) {
   final Map<String, List<String>> edgeSymbols = {};
   for (final entry in minDfa.transitions.entries) {
     final parts = entry.key.split('__');
-    final ek = '${parts[0]}__${parts[1]}'; // from__sym, but we want from__to
+// from__sym, but we want from__to
     // Rebuild as from__to
     final fromIdx = parts[0];
     final sym = parts[1];

@@ -97,7 +97,7 @@ class _ModeRadioGroup extends StatelessWidget {
                       margin: const EdgeInsets.symmetric(horizontal: 2),
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
-                        color: selected ? theme.colorScheme.primary : theme.colorScheme.surfaceVariant,
+                        color: selected ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: selected ? theme.colorScheme.primary : theme.colorScheme.outline.withOpacity(0.4),

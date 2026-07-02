@@ -157,7 +157,9 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
   void _deleteNode(String id) {
     final node = _nodes[id];
     if (node == null) return;
-    for (final lid in node.connectedLineIds.toList()) _deleteLine(lid);
+    for (final lid in node.connectedLineIds.toList()) {
+      _deleteLine(lid);
+    }
     if (_startArrow?.nodeId == id) _startArrow = null;
     _nodes.remove(id);
     _notify();
@@ -358,12 +360,12 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
               lineSourceNodeId: null,
               rubberBandEnd: null,
               isLabelTaken: _isLabelTaken,
-              onNodeLabelChanged: (_, __) {},
+              onNodeLabelChanged: (_, _) {},
               onLineModeSelect: (_) {},
               onNodeDoubleTap: (_) {},
               onNodeDelete: (_) {},
               onLineDelete: (_) {},
-              onLineLabelChanged: (_, __) {},
+              onLineLabelChanged: (_, _) {},
               onStartArrowDelete: () {},
             ),
           )

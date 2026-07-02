@@ -3210,12 +3210,12 @@ abstract final class LayerConstraintValidator {
   // ── Internal: same topological-sort as level_select_screen.dart ─────────────
 
   static Map<String, int> _computeLayers(List<GameLevel> levels) {
-    List<String> _depsOf(UnlockRule rule) {
+    List<String> depsOf(UnlockRule rule) {
       if (rule is AlwaysUnlocked) return [];
       if (rule is RequireLevel) return [rule.levelId];
       if (rule is RequireAll) return rule.levelIds;
       if (rule is RequireAny) return rule.levelIds;
-      if (rule is RequireExpression) return rule.children.expand(_depsOf).toList();
+      if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
       return [];
     }
 
@@ -3223,7 +3223,7 @@ abstract final class LayerConstraintValidator {
     final Map<String, int> indeg = {for (final l in levels) l.id: 0};
 
     for (final l in levels) {
-      for (final d in _depsOf(l.unlockRule)) {
+      for (final d in depsOf(l.unlockRule)) {
         if (!adj.containsKey(d)) continue;
         adj[d] = [...adj[d]!, l.id];
         indeg[l.id] = indeg[l.id]! + 1;

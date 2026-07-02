@@ -28,9 +28,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'dialogs/equivalence_dialog.dart'
-    show checkEquivalence, EquivalenceResult, EquivalenceStatus;
-import 'import_export.dart';
-import 'game_level.dart';
+    show checkEquivalence, EquivalenceStatus;
 import 'models.dart';
 import 'simulator.dart';
 import 'study_mode_pda.dart';
@@ -782,11 +780,6 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     return pool[_rng.nextInt(pool.length)];
   }
 
-  /// Pick a mode at random from the selected set.
-  _PracticeMode _pickMode() {
-    final list = _selectedModes.toList();
-    return list[_rng.nextInt(list.length)];
-  }
 
   // For DFA → REGEX: player types a regex into this controller.
   final TextEditingController _regexInputCtrl = TextEditingController();
@@ -1055,7 +1048,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
                 curve: Curves.easeOut,
               ),
               child: _ChallengeBody(
-                key: ValueKey('${_mode.name}:${_queueIndex}'),
+                key: ValueKey('${_mode.name}:$_queueIndex'),
                 mode: _mode,
                 challenge: challenge,
                 queueIndex: _queueIndex,
@@ -1779,7 +1772,6 @@ class _DfaDrawingArea extends StatefulWidget {
   final AppThemeNotifier theme;
 
   const _DfaDrawingArea({
-    super.key,
     required this.challenge,
     required this.submitted,
     required this.gradeResult,
@@ -1795,18 +1787,12 @@ class _DfaDrawingArea extends StatefulWidget {
 class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
   // The player's in-progress FA lives here; the embedded AutomataDrawer
   // mutates these via its onChanged callback.
-  Map<String, NodeData> _nodes = {};
-  Map<String, LineData> _lines = {};
-  StartArrowData? _start;
 
   void _onFaChanged(
     Map<String, NodeData> nodes,
     Map<String, LineData> lines,
     StartArrowData? start,
   ) {
-    _nodes = nodes;
-    _lines = lines;
-    _start = start;
     widget.onFaChanged(nodes, lines, start);
   }
 
@@ -1904,7 +1890,6 @@ class _RegexInputArea extends StatelessWidget {
   final AppThemeNotifier theme;
 
   const _RegexInputArea({
-    super.key,
     required this.challenge,
     required this.controller,
     required this.focusNode,
@@ -2152,7 +2137,7 @@ class _ReadOnlyDfaPreviewState extends State<_ReadOnlyDfaPreview> {
       initialNodes: _nodes!,
       initialLines: _lines!,
       initialStart: _start,
-      onChanged: (_, __, ___) {}, // read-only; ignore
+      onChanged: (_, _, _) {}, // read-only; ignore
       readOnly: true,
     );
   }

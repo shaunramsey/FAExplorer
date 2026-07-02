@@ -109,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen>
           // Animated grid background
           AnimatedBuilder(
             animation: _bgCtrl,
-            builder: (_, __) => CustomPaint(
+            builder: (_, _) => CustomPaint(
               size: MediaQuery.of(context).size,
               painter: _GridPainter(
                 animValue: _bgCtrl.value,
@@ -768,7 +768,7 @@ class _ModeCardState extends State<_ModeCard> {
         onTap: widget.onTap,
         child: AnimatedBuilder(
           animation: widget.pulseAnim,
-          builder: (_, __) {
+          builder: (_, _) {
             final glow = widget.featured
                 ? (0.2 + widget.pulseAnim.value * 0.15)
                 : (_hovered ? 0.3 : 0.1);

@@ -209,7 +209,9 @@ Future<void> showBatchSimulatorDialog(
                               allowedExtensions: ['txt'],
                             );
                             if (result == null ||
-                                result.files.single.bytes == null) return;
+                                result.files.single.bytes == null) {
+                              return;
+                            }
                             final text = String.fromCharCodes(
                                 result.files.single.bytes!);
                             setLocalState(() {

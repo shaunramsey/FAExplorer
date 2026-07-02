@@ -1755,7 +1755,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                 child: ListView.separated(
                                   scrollDirection: Axis.horizontal,
                                   itemCount: widget.tapeNames.length,
-                                  separatorBuilder: (_, __) =>
+                                  separatorBuilder: (_, _) =>
                                       const SizedBox(width: 4),
                                   itemBuilder: (context, i) {
                                     final isActive = i == widget.activeTapeIndex;
@@ -1901,7 +1901,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           controller: _tapeScroll,
                           scrollDirection: Axis.horizontal,
                           itemCount: tapeView.cells.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 2),
+                          separatorBuilder: (_, _) => const SizedBox(width: 2),
                           itemBuilder: (context, i) {
                             final isHeadHere = i == tapeView.headIndex;
                             final cell = tapeView.cells[i];
@@ -1921,7 +1921,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           controller: _tapeScroll,
                           scrollDirection: Axis.horizontal,
                           itemCount: tokens.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 3),
+                          separatorBuilder: (_, _) => const SizedBox(width: 3),
                           itemBuilder: (context, i) {
                             final isCurrent  = i == currentChipIndex;
                             final isConsumed = currentChipIndex >= 0 ? i < currentChipIndex : i < step;
