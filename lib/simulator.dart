@@ -161,8 +161,12 @@ class AutomataSimulator {
   }
 
   Set<String> get activeLines {
-    // At step=-1 the simulation hasn't moved yet; no transition has fired.
-    if (step < 0) return {};
+    // idx mirrors activeNodes: step=-1 -> idx=0, which is the initial
+    // epsilon closure computed before any input is consumed. That closure
+    // can include free ~ jumps, and their lines belong in usedLines[0] just
+    // like their destination nodes belong in states[0] — so this must not
+    // special-case step < 0 to empty, or those free-jump lines never
+    // highlight until the player actually takes a step.
     if (usedLines.isEmpty) return {};
     final idx = step + 1;
     if (idx < 0 || idx >= usedLines.length) return {};
@@ -847,8 +851,10 @@ class PdaSimulator {
   }
 
   Set<String> get activeLines {
-    // At step=-1 the simulation hasn't moved yet; no transition has fired.
-    if (step < 0) return {};
+    // idx mirrors activeNodes: step=-1 -> idx=0, the initial epsilon
+    // closure computed before any input is consumed. Free ~ jumps taken in
+    // that closure belong here just as their destination nodes belong in
+    // steps[0].activeNodeIds — don't special-case step < 0 to empty.
     final idx = step + 1;
     if (idx < 0 || idx >= steps.length) return {};
     return steps[idx].usedLineIds;
@@ -2044,8 +2050,10 @@ class TmSimulator {
   }
 
   Set<String> get activeLines {
-    // At step=-1 the simulation hasn't moved yet; no transition has fired.
-    if (step < 0) return {};
+    // idx mirrors activeNodes: step=-1 -> idx=0, the initial epsilon
+    // closure computed before any input is consumed. Free ~ jumps taken in
+    // that closure belong here just as their destination nodes belong in
+    // snap.activeNodeIds — don't special-case step < 0 to empty.
     final snap = _snapshotAt(step);
     return snap?.usedLineIds ?? {};
   }
