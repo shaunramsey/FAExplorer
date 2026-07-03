@@ -946,8 +946,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         return Column(
           children: [
             goalBanner,
-            Expanded(flex: compact ? 2 : 3, child: dfaPreview),
-            Expanded(flex: 1, child: regexPanel),
+            // The regex panel only needs its natural (content) height — it's
+            // a label, a single text field, and a hint line. Forcing it into
+            // an Expanded flex slot (as before) claimed roughly a third of
+            // the screen on narrow/mobile layouts that it never actually
+            // used, starving the DFA diagram of the room it needs to be
+            // readable. Give it just what it needs and let the diagram have
+            // everything else.
+            Expanded(child: dfaPreview),
+            regexPanel,
           ],
         );
       },
@@ -1590,84 +1597,312 @@ class _SuccessDialogState extends State<_SuccessDialog>
 //  can read it while typing their regex answer.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ReadOnlyDfaCanvas extends StatelessWidget {
+class _ReadOnlyDfaCanvas extends StatefulWidget {
   final GraphState gs;
   final AppThemeNotifier theme;
 
   const _ReadOnlyDfaCanvas({required this.gs, required this.theme});
 
   @override
+  State<_ReadOnlyDfaCanvas> createState() => _ReadOnlyDfaCanvasState();
+}
+
+class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
+  static const double _contentPadding = 90;
+  static const double _minScale = 0.15;
+  static const double _maxScale = 3.0;
+
+  final TransformationController _transformCtrl = TransformationController();
+  bool _didAutoFit = false;
+  Size _lastViewportSize = Size.zero;
+
+  @override
+  void didUpdateWidget(covariant _ReadOnlyDfaCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A different puzzle's DFA was loaded (e.g. navigating between levels
+    // re-uses this widget) — re-fit to the new graph instead of keeping the
+    // old pan/zoom position, which would likely show the wrong region.
+    if (oldWidget.gs != widget.gs) {
+      _didAutoFit = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _transformCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Tight bounding box around every node's footprint, in the DFA's own
+  /// (DSL-authored) coordinate space. Node positions are top-left corners;
+  /// black-box nodes are wider (140px) than normal circular states (100px).
+  Rect _computeNodeBounds() {
+    final nodes = widget.gs.nodes.values;
+    if (nodes.isEmpty) return const Rect.fromLTWH(0, 0, 200, 200);
+
+    double left = double.infinity;
+    double top = double.infinity;
+    double right = double.negativeInfinity;
+    double bottom = double.negativeInfinity;
+
+    for (final node in nodes) {
+      final w = node.isBlackBox ? 140.0 : 100.0;
+      const h = 100.0;
+      left = min(left, node.position.dx);
+      top = min(top, node.position.dy);
+      right = max(right, node.position.dx + w);
+      bottom = max(bottom, node.position.dy + h);
+    }
+    // Node positions are authored non-negative (placed via onDoubleTapDown
+    // localPosition in the level editor), but guard against stray negatives
+    // so the content box below never has a negative origin.
+    left = min(left, 0);
+    top = min(top, 0);
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  /// Scales and centers the whole diagram inside [viewportSize] so it's
+  /// fully visible without any manual zooming — the actual fix for levels
+  /// where nodes were being authored well outside the small preview box.
+  void _fitToView(Size viewportSize) {
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) return;
+    final bounds = _computeNodeBounds();
+    final contentWidth = bounds.right + _contentPadding;
+    final contentHeight = bounds.bottom + _contentPadding;
+
+    final scale = min(
+      viewportSize.width / contentWidth,
+      viewportSize.height / contentHeight,
+    ).clamp(_minScale, 1.0);
+
+    final graphCenter = bounds.center;
+    final dx = viewportSize.width / 2 - graphCenter.dx * scale;
+    final dy = viewportSize.height / 2 - graphCenter.dy * scale;
+
+    setState(() {
+      _transformCtrl.value = Matrix4.identity()
+        ..translate(dx, dy)
+        ..scale(scale);
+    });
+  }
+
+  void _zoomBy(double factor) {
+    if (_lastViewportSize == Size.zero) return;
+    final currentScale = _transformCtrl.value.getMaxScaleOnAxis();
+    final targetScale = (currentScale * factor).clamp(_minScale, _maxScale);
+    final adjust = targetScale / currentScale;
+    if (adjust == 1.0) return;
+
+    // Zoom around the viewport's center point rather than the origin.
+    final center = Offset(
+      _lastViewportSize.width / 2,
+      _lastViewportSize.height / 2,
+    );
+    final focal = _transformCtrl.toScene(center);
+    setState(() {
+      _transformCtrl.value = _transformCtrl.value.clone()
+        ..translate(focal.dx, focal.dy)
+        ..scale(adjust)
+        ..translate(-focal.dx, -focal.dy);
+    });
+  }
+
+  void _resetView() {
+    if (_lastViewportSize != Size.zero) _fitToView(_lastViewportSize);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final gs = widget.gs;
+    final bounds = _computeNodeBounds();
+    final contentWidth = bounds.right + _contentPadding;
+    final contentHeight = bounds.bottom + _contentPadding;
+
     return Container(
       color: theme.bg,
-      child: Stack(
-        clipBehavior: Clip.none,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+          _lastViewportSize = viewportSize;
+
+          if (!_didAutoFit) {
+            _didAutoFit = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _fitToView(viewportSize);
+            });
+          }
+
+          return Stack(
+            children: [
+              GestureDetector(
+                onDoubleTap: _resetView,
+                child: InteractiveViewer(
+                  transformationController: _transformCtrl,
+                  constrained: false,
+                  boundaryMargin: const EdgeInsets.all(400),
+                  minScale: _minScale,
+                  maxScale: _maxScale,
+                  child: SizedBox(
+                    width: contentWidth,
+                    height: contentHeight,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        // Start arrow
+                        if (gs.startArrow != null &&
+                            gs.nodes.containsKey(gs.startArrow!.nodeId))
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: StartArrowWidget(
+                                data: gs.startArrow!,
+                                nodeCenter: gs.nodes[gs.startArrow!.nodeId]!.center,
+                                deleteMode: false,
+                                onDelete: () {},
+                              ),
+                            ),
+                          ),
+
+                        // Transition lines
+                        ...gs.lines.values.map((line) {
+                          final a = gs.nodes[line.nodeAId];
+                          final b = gs.nodes[line.nodeBId];
+                          if (a == null || b == null) return const SizedBox.shrink();
+                          return Positioned.fill(
+                            child: IgnorePointer(
+                              child: LineWidget(
+                                data: line,
+                                centerA: a.center,
+                                centerB: b.center,
+                                deleteMode: false,
+                                highlighted: false,
+                                onLabelChanged: (_) {}, // read-only, never fires
+                              ),
+                            ),
+                          );
+                        }),
+
+                        // State nodes — non-interactive (interactionLocked: true
+                        // handles this; do NOT wrap in IgnorePointer here — Node
+                        // positions itself with an internal Positioned widget and
+                        // must be a direct Stack child).
+                        ...gs.nodes.values.map(
+                          (node) => Node(
+                            key: ValueKey('ro_${node.id}'),
+                            data: node,
+                            lineMode: false,
+                            interactionLocked: true,
+                            deleteMode: false,
+                            highlighted: false,
+                            isLabelTaken: (_, _) => false,
+                            onLabelChanged: (_) {},
+                            onLineModeSelect: () {},
+                            onDoubleTap: () {},
+                            onDelete: () {},
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Watermark label — pinned to the viewport, not the pannable
+              // content, so it stays put regardless of pan/zoom.
+              Positioned(
+                bottom: 8,
+                right: 12,
+                child: IgnorePointer(
+                  child: Text(
+                    'read-only',
+                    style: GoogleFonts.sourceCodePro(
+                      fontSize: 10,
+                      color: theme.textDim.withValues(alpha: 0.4),
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Zoom / recenter controls.
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _CanvasZoomControls(
+                  theme: theme,
+                  onZoomIn: () => _zoomBy(1.25),
+                  onZoomOut: () => _zoomBy(0.8),
+                  onFit: _resetView,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Small floating zoom/fit control cluster for _ReadOnlyDfaCanvas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CanvasZoomControls extends StatelessWidget {
+  final AppThemeNotifier theme;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onFit;
+
+  const _CanvasZoomControls({
+    required this.theme,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onFit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.borderMid),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Start arrow
-          if (gs.startArrow != null && gs.nodes.containsKey(gs.startArrow!.nodeId))
-            Positioned.fill(
-              child: IgnorePointer(
-                child: StartArrowWidget(
-                  data: gs.startArrow!,
-                  nodeCenter: gs.nodes[gs.startArrow!.nodeId]!.center,
-                  deleteMode: false,
-                  onDelete: () {},
-                ),
-              ),
-            ),
-
-          // Transition lines
-          ...gs.lines.values.map((line) {
-            final a = gs.nodes[line.nodeAId];
-            final b = gs.nodes[line.nodeBId];
-            if (a == null || b == null) return const SizedBox.shrink();
-            return Positioned.fill(
-              child: IgnorePointer(
-                child: LineWidget(
-                  data: line,
-                  centerA: a.center,
-                  centerB: b.center,
-                  deleteMode: false,
-                  highlighted: false,
-                  onLabelChanged: (_) {}, // read-only, never fires
-                ),
-              ),
-            );
-          }),
-
-          // State nodes — non-interactive (interactionLocked: true handles this;
-          // do NOT wrap in IgnorePointer here — Node positions itself with an
-          // internal Positioned widget and must be a direct Stack child).
-          ...gs.nodes.values.map(
-            (node) => Node(
-              key: ValueKey('ro_${node.id}'),
-              data: node,
-              lineMode: false,
-              interactionLocked: true,
-              deleteMode: false,
-              highlighted: false,
-              isLabelTaken: (_, _) => false,
-              onLabelChanged: (_) {},
-              onLineModeSelect: () {},
-              onDoubleTap: () {},
-              onDelete: () {},
-            ),
-          ),
-
-          // Watermark label
-          Positioned(
-            bottom: 8,
-            right: 12,
-            child: Text(
-              'read-only',
-              style: GoogleFonts.sourceCodePro(
-                fontSize: 10,
-                color: theme.textDim.withValues(alpha: 0.4),
-                letterSpacing: 1,
-              ),
-            ),
-          ),
+          _CanvasZoomButton(icon: Icons.remove, tooltip: 'Zoom out', onTap: onZoomOut, theme: theme),
+          _CanvasZoomButton(icon: Icons.fit_screen, tooltip: 'Fit to view', onTap: onFit, theme: theme),
+          _CanvasZoomButton(icon: Icons.add, tooltip: 'Zoom in', onTap: onZoomIn, theme: theme),
         ],
+      ),
+    );
+  }
+}
+
+class _CanvasZoomButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final AppThemeNotifier theme;
+
+  const _CanvasZoomButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 18, color: theme.textMid),
+        ),
       ),
     );
   }

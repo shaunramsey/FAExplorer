@@ -9,7 +9,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:collection';
-import 'package:flutter/material.dart';
 
 import 'import_export.dart';
 import 'models.dart';
@@ -505,27 +504,20 @@ class AutomataSimulator {
     const int kMaxSteps = 512;
     int stepsBuilt = 0;
     while (current.isNotEmpty && stepsBuilt < kMaxSteps) {
-      // Global halt: any branch in halt-accept stops the entire machine.
-      if (current.any((c) => nodes[c.nodeId]?.isHaltAccept == true)) {
-        final halted = current
-            .where((c) => nodes[c.nodeId]?.isHaltAccept == true)
-            .toSet();
-        if (halted.length < current.length && _configsByStep.isNotEmpty) {
-          _configsByStep[_configsByStep.length - 1] =
-              List<_SimConfig>.from(halted);
-          states[states.length - 1] = {for (final c in halted) c.nodeId};
-        }
-        break;
-      }
-
       final stepLines = <String>{};
       final nextConfigs = <_SimConfig>{};
       bool consumedAny = false;
 
+      bool hasHaltAccept = false;
       for (final config in current) {
         final node = nodes[config.nodeId];
         if (node == null || node.isHaltReject) continue;
-        if (node.isHaltAccept) continue;
+        // haltAccept: the current set already contains this config in
+        // _configsByStep.  Just flag it so we stop after this iteration.
+        if (node.isHaltAccept) {
+          hasHaltAccept = true;
+          continue;
+        }
 
         var effective = config;
         if (node.isBlackBox) {
@@ -638,20 +630,9 @@ class AutomataSimulator {
       }
 
       if (!consumedAny || nextConfigs.isEmpty) break;
+      if (hasHaltAccept) break;
 
       final (closureConfigs, closureLines) = _epsilonClosure(nextConfigs);
-      // Entering halt-accept prunes all other parallel branches.
-      if (closureConfigs.any((c) => nodes[c.nodeId]?.isHaltAccept == true)) {
-        final halted = closureConfigs
-            .where((c) => nodes[c.nodeId]?.isHaltAccept == true)
-            .toSet();
-        current = halted;
-        states.add({for (final c in current) c.nodeId});
-        usedLines.add({...stepLines, ...closureLines});
-        _configsByStep.add(List<_SimConfig>.from(current));
-        break;
-      }
-
       current = closureConfigs;
       states.add({for (final c in current) c.nodeId});
       usedLines.add({...stepLines, ...closureLines});
@@ -974,22 +955,6 @@ class PdaSimulator {
     Set<PdaConfig> current = initConfigs;
 
     for (int ti = 0; ti < tokens.length; ti++) {
-      // Global halt before consuming the next input symbol.
-      final haltAcceptConfig = current.cast<PdaConfig?>().firstWhere(
-        (c) => nodes[c!.nodeId]?.isHaltAccept == true,
-        orElse: () => null,
-      );
-      if (haltAcceptConfig != null) {
-        final snap = PdaStepSnapshot(
-          configs: [_toActive(haltAcceptConfig)],
-          usedLineIds: const {},
-        );
-        while (steps.length <= tokens.length) {
-          steps.add(snap);
-        }
-        return;
-      }
-
       final token = _normalizeSym(tokens[ti]);
       final nextConfigs = <PdaConfig>{};
       final stepLines = <String>{};
@@ -998,7 +963,19 @@ class PdaSimulator {
         final node = nodes[config.nodeId];
         if (node == null) continue;
         if (node.isHaltReject) continue;
-        if (node.isHaltAccept) continue;
+
+        if (node.isHaltAccept) {
+          // A haltAccept state was reached mid-simulation.  Pad remaining
+          // steps with this accepting snapshot and stop — no more tokens.
+          final snap = PdaStepSnapshot(
+            configs: [_toActive(config)],
+            usedLineIds: const {},
+          );
+          while (steps.length <= tokens.length) {
+            steps.add(snap);
+          }
+          return;
+        }
 
         for (final line in lines.values) {
           if (line.nodeAId != config.nodeId) continue;
@@ -1042,22 +1019,6 @@ class PdaSimulator {
       final (closedConfigs, closedLines) = _epsilonClosure(nextConfigs);
       if (stackGrowthLoopDetected) {
         _finishWithStackLoopAbort();
-        return;
-      }
-      // Entering halt-accept prunes all other parallel branches.
-      final haltAfterClosure = closedConfigs.cast<PdaConfig?>().firstWhere(
-        (c) => nodes[c!.nodeId]?.isHaltAccept == true,
-        orElse: () => null,
-      );
-      if (haltAfterClosure != null) {
-        final snap = PdaStepSnapshot(
-          configs: [_toActive(haltAfterClosure)],
-          usedLineIds: {...stepLines, ...closedLines},
-        );
-        steps.add(snap);
-        while (steps.length <= tokens.length) {
-          steps.add(snap);
-        }
         return;
       }
       current = closedConfigs;
@@ -1602,12 +1563,21 @@ class BbDirectTransition {
 /// encodes more tapes (the extra ops are simply ignored at apply-time via the
 /// guard in [_applyBbDirectTransition]).
 ///
+/// The optional [activeTapes] argument mirrors [NodeData.blackBoxActiveTapes]:
+/// when non-empty, the label's triples are read positionally (triple *i* →
+/// `activeTapes[i]`) instead of mapping triple *i* → tape *i+1*. Every tape
+/// **not** listed in [activeTapes] is filled in with an implicit
+/// wildcard-read / no-write / stay op, exactly as if the label had spelled
+/// out `~~S` for that tape. The number of triples in the label must equal
+/// `activeTapes.length` exactly — a mismatch is treated as a malformed label
+/// (returns `null`), since there's no sensible partial mapping to fall back to.
+///
 /// Returns `null` when the string does not conform to the 3*N-rune format.
 ///
 /// This is the per-alternative parser.  To split a full line label (which
 /// may contain multiple comma- or newline-separated alternatives) use
 /// [splitBbDirectAlternatives] first.
-BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes]) {
+BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes, List<int>? activeTapes]) {
   final s = raw.trim();
   if (s.isEmpty) return null;
 
@@ -1615,19 +1585,19 @@ BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes]) {
   // Must be a multiple of 3.
   if (runes.length % 3 != 0) return null;
 
-  final inferredTapeCount = runes.length ~/ 3;
-  if (inferredTapeCount < 1) return null;
+  final tripleCount = runes.length ~/ 3;
+  if (tripleCount < 1) return null;
 
   // Validate every direction rune before committing.
-  for (int i = 0; i < inferredTapeCount; i++) {
+  for (int i = 0; i < tripleCount; i++) {
     final dChar = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
     if (dChar != 'R' && dChar != 'L' && dChar != 'S' && dChar != '~') {
       return null;
     }
   }
 
-  final ops = <BbTapeOp>[];
-  for (int i = 0; i < inferredTapeCount; i++) {
+  final parsedOps = <BbTapeOp>[];
+  for (int i = 0; i < tripleCount; i++) {
     final rChar = String.fromCharCode(runes[i * 3]);
     final wChar = String.fromCharCode(runes[i * 3 + 1]);
     final dChar = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
@@ -1641,13 +1611,44 @@ BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes]) {
     final writeSym = noWrite ? '' : _normSym(wChar);
     final dir = _parseDir(dChar);
 
-    ops.add(BbTapeOp(
+    parsedOps.add(BbTapeOp(
       read: readSym,
       write: writeSym,
       direction: dir,
       isWildcard: isWildcard,
       noWrite: noWrite,
     ));
+  }
+
+  // ── No active-tapes mapping: original positional behavior ───────────────
+  // Triple i → tape i+1, in order.
+  if (activeTapes == null || activeTapes.isEmpty) {
+    return BbDirectTransition(parsedOps);
+  }
+
+  // ── Active-tapes mapping ─────────────────────────────────────────────────
+  // Triple count must match activeTapes exactly; anything else is malformed
+  // for this node (either padded with extra triples or missing some).
+  if (tripleCount != activeTapes.length) return null;
+
+  final highestActive = activeTapes.fold<int>(0, (m, t) => t > m ? t : m);
+  final size = (maxTapes != null && maxTapes > highestActive) ? maxTapes : highestActive;
+
+  // Implicit op for every tape *not* listed in activeTapes: wildcard read,
+  // no write, stay — equivalent to an explicit `~~S` triple.
+  const untouched = BbTapeOp(
+    read: '',
+    write: '',
+    direction: TmDirection.stay,
+    isWildcard: true,
+    noWrite: true,
+  );
+
+  final ops = List<BbTapeOp>.filled(size, untouched);
+  for (int i = 0; i < tripleCount; i++) {
+    final tapeIndex = activeTapes[i]; // 1-based
+    if (tapeIndex < 1 || tapeIndex > size) continue; // out-of-range guard
+    ops[tapeIndex - 1] = parsedOps[i];
   }
 
   return BbDirectTransition(ops);
@@ -1732,6 +1733,17 @@ int detectRequiredTapeCount(Map<String, NodeData> nodes, Map<String, LineData> l
   }
 
   for (final line in lines.values) {
+    // A black box with blackBoxActiveTapes set addresses tapes by that list
+    // rather than by triple position, so the label's own triple count tells
+    // us nothing about which tape indices are involved — only the active-
+    // tapes list does. Use it directly instead of running the generic scan.
+    final sourceNode = nodes[line.nodeAId];
+    if (sourceNode != null && sourceNode.isBlackBox && sourceNode.blackBoxActiveTapes.isNotEmpty) {
+      final highestActive =
+          sourceNode.blackBoxActiveTapes.fold<int>(0, (m, t) => t > m ? t : m);
+      if (highestActive > maxTape) maxTape = highestActive;
+      continue;
+    }
     scanLabel(line.label);
   }
 
@@ -2543,7 +2555,7 @@ class TmSimulator {
           if (label.isEmpty) return true; // unconditional epsilon hop
           for (final alt in splitBbDirectAlternatives(label)) {
             if (alt.isEmpty || alt == '~') return true; // epsilon alt
-            final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length);
+            final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length, node.blackBoxActiveTapes);
             if (bb == null) continue; // malformed label — not a fireable transition
             // Check non-wildcard reads.
             bool allMatch = true;
@@ -2628,9 +2640,6 @@ class TmSimulator {
       return false;
     }
 
-    final anyHaltAccept = current.configs
-        .any((c) => nodes[c.nodeId]?.isHaltAccept == true);
-
     final nextConfigs = <TmConfig>[];
     final nextLines = <String>{};
     final seenKeys = <String>{};
@@ -2647,9 +2656,6 @@ class TmSimulator {
         if (seenKeys.add(k)) nextConfigs.add(carried);
         continue;
       }
-
-      // Once any branch reaches halt-accept, no other branch may advance.
-      if (anyHaltAccept) continue;
 
       final effectiveConfig = _applyBlackBox(node, config);
       if (effectiveConfig == null) {
@@ -2698,7 +2704,7 @@ class TmSimulator {
                 continue;
               }
 
-              final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length);
+              final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length, node.blackBoxActiveTapes);
               if (bb == null) {
                 // Unrecognised / malformed format — skip this alternative.
                 // Do NOT fire an unconditional hop; the label is meant to guard
@@ -2802,11 +2808,6 @@ class TmSimulator {
     if (nextConfigs.isEmpty) {
       noMovesTerminal = true;
       return false;
-    }
-
-    // Entering halt-accept prunes all other parallel branches.
-    if (nextConfigs.any((c) => nodes[c.nodeId]?.isHaltAccept == true)) {
-      nextConfigs.removeWhere((c) => nodes[c.nodeId]?.isHaltAccept != true);
     }
 
     steps.add(TmStepSnapshot(

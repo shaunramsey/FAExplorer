@@ -201,6 +201,9 @@ class DslCodec {
         if (n.blackBoxWriteTape != 1) {
           out.add('${n.id} blackbox write tape = ${n.blackBoxWriteTape}');
         }
+        if (n.blackBoxActiveTapes.isNotEmpty) {
+          out.add('${n.id} blackbox tapes = ${n.blackBoxActiveTapes.join(',')}');
+        }
       }
     }
     if (g.nodes.isNotEmpty) out.add('');
@@ -292,6 +295,7 @@ class DslCodec {
   //                    | blackbox-dsl-block      -- multi-line; see below
   //                    | blackbox-read-tape
   //                    | blackbox-write-tape
+  //                    | blackbox-tapes
   //                    | bare-node               -- fallback: any other
   //                                                 non-empty line becomes an
   //                                                 isolated node with that
@@ -327,6 +331,12 @@ class DslCodec {
   //                         own `nodeId blackbox dsl = ...` entry afterwards.
   //    blackbox-read-tape  ::= nodeId WS 'blackbox' WS 'read'  WS 'tape' '=' int
   //    blackbox-write-tape ::= nodeId WS 'blackbox' WS 'write' WS 'tape' '=' int
+  //    blackbox-tapes      ::= nodeId WS 'blackbox' WS 'tapes' '=' int (',' int)*
+  //                      -- sets NodeData.blackBoxActiveTapes: the 1-based
+  //                         tape indices this box's outgoing-line compact
+  //                         triples address, in order (e.g. `tapes = 2,3`).
+  //                         Omitted/empty preserves the default positional
+  //                         mapping (triple i → tape i+1).
   //
   //    node         ::= label | nodeId '(' label ')'
   //                      -- the `id(label)` form disambiguates when the same
@@ -648,6 +658,28 @@ class DslCodec {
         final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
         node.blackBoxWriteTape = tapeNum < 1 ? 1 : tapeNum;
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
+        continue;
+      }
+
+      // ── nN blackbox tapes = N[,N...] ─────────────────────────────────────
+      final bbActiveTapesMatch = RegExp(r'^(n\d+)\s+blackbox\s+tapes\s*=\s*([\d,\s]+)$', caseSensitive: false).firstMatch(line);
+      if (bbActiveTapesMatch != null) {
+        final id = bbActiveTapesMatch.group(1)!;
+        final tapes = bbActiveTapesMatch.group(2)!
+            .split(',')
+            .map((t) => int.tryParse(t.trim()))
+            .whereType<int>()
+            .where((t) => t >= 1)
+            .toList();
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
+        node.isBlackBox = true;
+        node.blackBoxActiveTapes = tapes;
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
         }

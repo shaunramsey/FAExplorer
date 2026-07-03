@@ -56,6 +56,22 @@ class NodeData {
   /// 1-based index of the tape this black-box writes to / edits.
   int blackBoxWriteTape;
 
+  /// 1-based tape indices that this black box's outgoing-line compact
+  /// triples ("RWD" per tape, e.g. `10R`) address, in the order given.
+  ///
+  /// Empty (the default) preserves the original behavior: a label of N
+  /// triples maps triple i → tape i+1 in order, so a box that only wants to
+  /// touch tape 3 of a 3-tape machine must pad with placeholders for the
+  /// tapes it doesn't care about — e.g. `~~S~~S10R`.
+  ///
+  /// When set — e.g. `[3]` — every outgoing line's label only needs to
+  /// spell out the tapes listed here, in this order. So with
+  /// `blackBoxActiveTapes = [3]`, the label `10R` alone means "tape 3: read
+  /// 1, write 0, move Right" — no padding needed. Every tape *not* listed
+  /// is left completely untouched when the transition fires, exactly as if
+  /// it had an explicit `~~S` triple.
+  List<int> blackBoxActiveTapes;
+
   final Set<String> connectedLineIds = {};
 
   NodeData({
@@ -70,7 +86,8 @@ class NodeData {
     this.blackBoxDsl = '',
     this.blackBoxReadTape = 1,
     this.blackBoxWriteTape = 1,
-  });
+    List<int>? blackBoxActiveTapes,
+  }) : blackBoxActiveTapes = blackBoxActiveTapes ?? <int>[];
 
   bool get isHaltState => isHaltAccept || isHaltReject;
 
