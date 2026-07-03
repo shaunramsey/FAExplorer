@@ -113,10 +113,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   // ────────────────────────────────────────────────────────────────────────
   final TextEditingController _simController = TextEditingController();
 
-  /// Whether we are at the final step and the result is accepted.
+  /// Whether we are at the final recorded step (the round where the
+  /// computation actually halted — see [AutomataSimulator.maxStep], which
+  /// can be reached before every input token is consumed when a halt-accept
+  /// state fires mid-string) and the result is accepted.
   bool get _isAtAcceptedFinalStep {
     if (_simulator.tokens.isEmpty) return false;
-    if (_simulator.step != _simulator.tokens.length) return false;
+    if (_simulator.step != _simulator.maxStep) return false;
     return _simulator.finalResult() == SimResult.accept;
   }
 
@@ -312,18 +315,22 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
   void _syncSimulatorSteps() {
     final savedStep = _simulator.step;
-    _pdaSimulator.step = savedStep.clamp(-1, _pdaSimulator.tokens.length);
+    // Clamp against each simulator's own maxStep (the round where its
+    // computation actually halted), not tokens.length — the PDA or FA/NFA
+    // computation can halt (halt-accept, or every branch dying) before every
+    // token is consumed, and steps/states stop growing at that point.
+    _pdaSimulator.step = savedStep.clamp(-1, _pdaSimulator.maxStep);
     _tmSimulator.step = savedStep.clamp(-1, _tmSimulator.maxStep);
   }
 
   void _simRebuild() {
     _simulator.rebuild(_simController.text, startArrow: _startArrow);
-    if (_simulator.step > _simulator.tokens.length) {
-      _simulator.step = _simulator.tokens.length;
+    if (_simulator.step > _simulator.maxStep) {
+      _simulator.step = _simulator.maxStep;
     }
     _pdaSimulator.rebuild(_simController.text, startArrow: _startArrow);
-    if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
-      _pdaSimulator.step = _pdaSimulator.tokens.length;
+    if (_pdaSimulator.step > _pdaSimulator.maxStep) {
+      _pdaSimulator.step = _pdaSimulator.maxStep;
     }
     // Auto-detect required tape count from the graph so the simulator always
     // has enough tapes even if the user hasn't manually added them via the UI.
@@ -958,7 +965,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             _activeTapeIndex = 0; // reset tape selection on mode switch
             _simRebuild();
             if (mode == AutomataMode.pda) {
-              _pdaSimulator.step = _simulator.step;
+              _pdaSimulator.step = _simulator.step.clamp(-1, _pdaSimulator.maxStep);
             } else if (mode == AutomataMode.tm) {
               _tmSimulator.step = _simulator.step.clamp(-1, _tmSimulator.maxStep);
             }

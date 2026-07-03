@@ -153,6 +153,15 @@ class AutomataSimulator {
 
   int step = -1;
 
+  /// Maximum valid value for [step] given the current [states] list.
+  ///
+  /// Mirrors [TmSimulator.maxStep]: step=-1 → states[0], step==maxStep →
+  /// states.last. Once the computation halts (all branches die, or a
+  /// halt-accept state is reached) `states` simply stops growing — there is
+  /// no padding past that point — so this is also the point past which the
+  /// UI must refuse to step forward.
+  int get maxStep => states.isEmpty ? -1 : states.length - 2;
+
   Set<String> get activeNodes {
     if (states.isEmpty) return {};
     final idx = step + 1;
@@ -177,16 +186,23 @@ class AutomataSimulator {
     tokens = _tokenize(input);
     _blackBoxResultCache.clear();
     _buildSimulation(startArrow: startArrow);
-    if (step > tokens.length) {
-      step = tokens.length;
+    // step uses a -1 offset (see activeNodes/activeLines): valid range is
+    // -1..maxStep. Clamping against tokens.length is wrong whenever the
+    // computation halts before consuming all input (halt-accept mid-string,
+    // or every branch dying) — states stops growing at that point, so
+    // clamping to tokens.length would leave step pointing past the end of
+    // the recorded history and activeNodes/activeLines would silently go
+    // empty.
+    if (step > maxStep) {
+      step = maxStep;
     }
   }
 
   void rebuildGraph({StartArrowData? startArrow}) {
     _blackBoxResultCache.clear(); // ← match rebuild()'s cache invalidation
     _buildSimulation(startArrow: startArrow);
-    if (step > tokens.length) {
-      step = tokens.length;
+    if (step > maxStep) {
+      step = maxStep;
     }
   }
 
@@ -644,6 +660,19 @@ class AutomataSimulator {
       stepsBuilt++;
       if (current.isEmpty) break;
     }
+
+    // No padding here. `states` / `usedLines` / `_configsByStep` simply stop
+    // growing at the round where the computation halted — whether that's a
+    // halt-accept state, every branch dying, or the kMaxSteps safety cap.
+    // [maxStep] reflects that real stopping point, and the UI (sim_panels.dart)
+    // refuses to step `step` past it. This is what actually makes "reached
+    // halt-accept" behave like a halt: no further computation is shown, the
+    // last recorded round (the one containing the halt-accept state, plus
+    // whatever other branches were still alive when it fired) stays on
+    // screen, and the ACCEPT badge appears as soon as step reaches it —
+    // instead of padding fake repeated/frozen rounds out to tokens.length,
+    // which is what previously made unrelated live branches vanish once the
+    // step cursor was clamped to tokens.length elsewhere in the UI.
   }
 }
 // ──────────────────────────────────────────────────────────────────────────────
@@ -841,6 +870,14 @@ class PdaSimulator {
 
   int step = -1;
 
+  /// Maximum valid value for [step] given the current [steps] list.
+  ///
+  /// Mirrors [TmSimulator.maxStep] / [AutomataSimulator.maxStep]: step=-1 →
+  /// steps[0], step==maxStep → steps.last. `steps` stops growing once the
+  /// computation halts (halt-accept reached, every branch dies, or a stack
+  /// growth loop is detected) — there is no padding past that point.
+  int get maxStep => steps.isEmpty ? -1 : steps.length - 2;
+
   /// Set when ε-transitions can grow the stack without bound (e.g. `~,~|A` in a cycle).
   bool stackGrowthLoopDetected = false;
 
@@ -888,16 +925,25 @@ class PdaSimulator {
   void rebuild(String input, {StartArrowData? startArrow}) {
     tokens = _tokenize(input);
     _build(startArrow: startArrow);
-    if (step > tokens.length) step = tokens.length;
+    // See AutomataSimulator.rebuild for why this must clamp against maxStep
+    // rather than tokens.length: `steps` stops growing as soon as the PDA
+    // halts, which can happen before every token is consumed.
+    if (step > maxStep) step = maxStep;
   }
 
   void rebuildGraph({StartArrowData? startArrow}) {
     _build(startArrow: startArrow);
-    if (step > tokens.length) step = tokens.length;
+    if (step > maxStep) step = maxStep;
   }
 
   PdaSimResult finalResult() {
     if (steps.isEmpty) return PdaSimResult.reject;
+    // An unbounded ε-closure stack growth is not a genuine accept, even if
+    // the last recorded round happens to contain an accept state — the
+    // machine never actually reached a settled halting configuration.
+    // (Previously this fell out as a side effect of padding the steps list
+    // with empty snapshots; now that there's no padding, check explicitly.)
+    if (stackGrowthLoopDetected) return PdaSimResult.reject;
 
     // A haltAccept anywhere in the simulation history means accept.
     for (final snap in steps) {
@@ -948,10 +994,7 @@ class PdaSimulator {
       stack: const [],
     );
     final (initConfigs, initLines) = _epsilonClosure({initial});
-    if (stackGrowthLoopDetected) {
-      _finishWithStackLoopAbort();
-      return;
-    }
+    if (stackGrowthLoopDetected) return;
 
     steps.add(PdaStepSnapshot(
       configs: initConfigs.map(_toActive).toList(),
@@ -964,6 +1007,7 @@ class PdaSimulator {
       final token = _normalizeSym(tokens[ti]);
       final nextConfigs = <PdaConfig>{};
       final stepLines = <String>{};
+      bool hasHaltAccept = false;
 
       for (final config in current) {
         final node = nodes[config.nodeId];
@@ -971,16 +1015,14 @@ class PdaSimulator {
         if (node.isHaltReject) continue;
 
         if (node.isHaltAccept) {
-          // A haltAccept state was reached mid-simulation.  Pad remaining
-          // steps with this accepting snapshot and stop — no more tokens.
-          final snap = PdaStepSnapshot(
-            configs: [_toActive(config)],
-            usedLineIds: const {},
-          );
-          while (steps.length <= tokens.length) {
-            steps.add(snap);
-          }
-          return;
+          // This branch already halted-and-accepted on an earlier round —
+          // it's frozen and cannot consume further tokens. Flag it so we
+          // stop growing `steps` after this round (the round containing this
+          // config is already the last entry in `steps`), but keep
+          // processing the other configs in `current` below so their
+          // transitions aren't silently discarded.
+          hasHaltAccept = true;
+          continue;
         }
 
         for (final line in lines.values) {
@@ -1022,11 +1064,16 @@ class PdaSimulator {
         }
       }
 
+      // A halt-accept branch was found in `current` this round. That round
+      // is already the last entry in `steps` (added at the bottom of the
+      // previous loop iteration, or as the initial snapshot) — stop here
+      // rather than computing/appending a further round. This is what makes
+      // "reached halt-accept" actually halt the visible computation instead
+      // of continuing to advance other still-alive branches past it.
+      if (hasHaltAccept) break;
+
       final (closedConfigs, closedLines) = _epsilonClosure(nextConfigs);
-      if (stackGrowthLoopDetected) {
-        _finishWithStackLoopAbort();
-        return;
-      }
+      if (stackGrowthLoopDetected) return;
       current = closedConfigs;
       steps.add(PdaStepSnapshot(
         configs: current.map(_toActive).toList(),
@@ -1035,32 +1082,10 @@ class PdaSimulator {
 
       if (current.isEmpty) break;
     }
-
-    // If the active set after all tokens contains a haltAccept state,
-    // pad remaining step slots with that accepting snapshot.
-    final haltAcceptConfig = current.cast<PdaConfig?>().firstWhere(
-      (c) => nodes[c!.nodeId]?.isHaltAccept == true,
-      orElse: () => null,
-    );
-    if (haltAcceptConfig != null) {
-      final snap = PdaStepSnapshot(
-        configs: [_toActive(haltAcceptConfig)],
-        usedLineIds: const {},
-      );
-      while (steps.length <= tokens.length) {
-        steps.add(snap);
-      }
-      return;
-    }
-    while (steps.length <= tokens.length) {
-      steps.add(const PdaStepSnapshot(configs: [], usedLineIds: {}));
-    }
-  }
-
-  void _finishWithStackLoopAbort() {
-    while (steps.length <= tokens.length) {
-      steps.add(const PdaStepSnapshot(configs: [], usedLineIds: {}));
-    }
+    // No padding: `steps` simply stops growing at whichever round the loop
+    // above broke out of (halt-accept reached, every branch died, a stack
+    // growth loop was detected, or all tokens were consumed). [maxStep]
+    // reflects that real stopping point and the UI refuses to step past it.
   }
 
   (Set<PdaConfig>, Set<String>) _epsilonClosure(Set<PdaConfig> start) {

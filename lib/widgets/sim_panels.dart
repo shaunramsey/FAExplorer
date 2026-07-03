@@ -44,7 +44,7 @@ class PdaStackPanel extends StatelessWidget {
     final theme = context.watch<AppThemeNotifier>();
     final configs = simulator.activeConfigs;
     final result = simulator.finalResult();
-    final atEnd = simulator.step == simulator.tokens.length;
+    final atEnd = simulator.step == simulator.maxStep;
 
     Color? headerColor;
     if (atEnd && simulator.tokens.isNotEmpty) {
@@ -1267,6 +1267,25 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   // ── playback ─────────────────────────────────────────────────────────────
 
+  /// The real stopping point for the shared step cursor (`widget.simulator.step`),
+  /// whichever mode is active.
+  ///
+  /// `widget.simulator` (the base [AutomataSimulator]) is used as the generic
+  /// token/step tracker in every mode, but the authoritative simulation — and
+  /// therefore the authoritative halting point — comes from whichever
+  /// mode-specific simulator is active: [TmSimulator] in TM mode,
+  /// [PdaSimulator] in PDA mode, or `widget.simulator` itself in FA/NFA mode.
+  /// Each of those exposes its own `maxStep` that reflects where its
+  /// computation actually stopped (halt-accept reached, every branch died,
+  /// etc.) — never padded out to `tokens.length`. See [AutomataSimulator.maxStep].
+  int get _effectiveMaxStep {
+    final tm = widget.tmSimulator as TmSimulator?;
+    if (tm != null) return tm.maxStep;
+    final pda = widget.pdaSimulator;
+    if (pda != null) return pda.maxStep;
+    return widget.simulator.maxStep;
+  }
+
   void _syncTmStep() {
     final tm = widget.tmSimulator as TmSimulator?;
     if (tm != null) {
@@ -1276,10 +1295,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   void _startPlayback() {
     if (_playing) return;
-    final tm = widget.tmSimulator as TmSimulator?;
-    final maxStep = tm != null
-        ? tm.maxStep
-        : widget.simulator.tokens.length;
+    final maxStep = _effectiveMaxStep;
     if (widget.simulator.step >= maxStep) {
       setState(() => widget.simulator.step = -1);
       _syncTmStep();
@@ -1317,7 +1333,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
       return;
     }
 
-    final maxStep = sim.tokens.length;
+    final maxStep = _effectiveMaxStep;
     if (sim.step >= maxStep) {
       setState(_stopPlayback);
       widget.onStepChanged();
@@ -1373,7 +1389,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
       return;
     }
 
-    final maxStep = widget.simulator.tokens.length;
+    final maxStep = _effectiveMaxStep;
     if (widget.simulator.step < maxStep) {
       setState(() => widget.simulator.step++);
       widget.onStepChanged();
@@ -1413,10 +1429,10 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
       return;
     }
 
-    final maxStep = widget.simulator.tokens.length;
+    final maxStep = _effectiveMaxStep;
     setState(() => widget.simulator.step = maxStep);
     widget.onStepChanged();
-    _scrollToChip(widget.simulator.tokens.length - 1);
+    _scrollToChip(maxStep - 1);
   }
 
   // ── scroll ───────────────────────────────────────────────────────────────
@@ -1540,9 +1556,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final tm = widget.tmSimulator as TmSimulator?;
     final isTmMode = tm != null;
 
-    final maxStep = isTmMode
-        ? tm.maxStep
-        : tokens.length;
+    final maxStep = _effectiveMaxStep;
 
     if (_chipKeys.length != tokens.length) {
       _chipKeys
