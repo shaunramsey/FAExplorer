@@ -710,12 +710,22 @@ class StudyModeScreen extends StatefulWidget {
 
   // Kept for API compat with old callers.
   final VoidCallback? onGoToStudy;
+
+  /// Called when the user taps "GAME" — navigate to the level-select screen.
+  final VoidCallback? onGoToGame;
+
+  /// Called when the user taps the main-menu (home) icon — navigate back to
+  /// [ModeSelectScreen]. Null when this screen isn't reachable from the menu.
+  final VoidCallback? onGoToMenu;
+
   final dynamic progressStore; // GameProgressStore? — not used here
 
   const StudyModeScreen({
     super.key,
     VoidCallback? onGoToSandbox,
     this.onGoToStudy,
+    this.onGoToGame,
+    this.onGoToMenu,
     this.progressStore,
   }) : onGoToSandbox = onGoToSandbox ?? _noop;
 
@@ -1045,6 +1055,8 @@ class _StudyModeScreenState extends State<StudyModeScreen>
             correct: _correct,
             total: _attempted,
             onGoToSandbox: widget.onGoToSandbox,
+            onGoToGame: widget.onGoToGame,
+            onGoToMenu: widget.onGoToMenu,
           ),
           Expanded(
             child: FadeTransition(
@@ -1102,6 +1114,8 @@ class _TopBar extends StatelessWidget {
   final int correct;
   final int total;
   final VoidCallback onGoToSandbox;
+  final VoidCallback? onGoToGame;
+  final VoidCallback? onGoToMenu;
 
   const _TopBar({
     required this.mode,
@@ -1111,6 +1125,8 @@ class _TopBar extends StatelessWidget {
     required this.correct,
     required this.total,
     required this.onGoToSandbox,
+    this.onGoToGame,
+    this.onGoToMenu,
   });
 
   @override
@@ -1288,6 +1304,26 @@ class _TopBar extends StatelessWidget {
                             color: theme.textMid, size: 20),
                         onPressed: () => showAppThemeSettings(context),
                       ),
+                      MainMenuButton(onPressed: onGoToMenu),
+                      if (onGoToGame != null)
+                        TextButton(
+                          onPressed: onGoToGame,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              side: BorderSide(color: theme.borderMid),
+                            ),
+                          ),
+                          child: Text(
+                            'GAME',
+                            style: GoogleFonts.orbitron(
+                                color: theme.textDim,
+                                fontSize: 8,
+                                letterSpacing: 2),
+                          ),
+                        ),
                       TextButton(
                         onPressed: onGoToSandbox,
                         style: TextButton.styleFrom(
@@ -1356,6 +1392,26 @@ class _TopBar extends StatelessWidget {
                         color: theme.textMid, size: 20),
                     onPressed: () => showAppThemeSettings(context),
                   ),
+                  MainMenuButton(onPressed: onGoToMenu),
+                  if (onGoToGame != null) ...[
+                    TextButton(
+                      onPressed: onGoToGame,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          side: BorderSide(color: theme.borderMid),
+                        ),
+                      ),
+                      child: Text(
+                        'GAME',
+                        style: GoogleFonts.orbitron(
+                            color: theme.textDim, fontSize: 8, letterSpacing: 2),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   TextButton(
                     onPressed: onGoToSandbox,
                     style: TextButton.styleFrom(

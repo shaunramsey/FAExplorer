@@ -207,18 +207,23 @@ class _AppGateState extends State<AppGate> {
           userEmail: widget.authService.user?.email,
           onSignOut: _handleSignOut,
           onGoToGame: () => setState(() => _mode = _AppMode.game),
+          onGoToStudy: () => setState(() => _mode = _AppMode.study),
+          onGoToMenu: () => setState(() => _mode = _AppMode.none),
         );
       case _AppMode.study:
         return StudyModeScreen(
           progressStore: _progressStore!,
           onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
           onGoToStudy: () => setState(() => _mode = _AppMode.study),
+          onGoToGame: () => setState(() => _mode = _AppMode.game),
+          onGoToMenu: () => setState(() => _mode = _AppMode.none),
         );
       case _AppMode.game:
         return LevelSelectScreen(
           progressStore: _progressStore!,
           onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
           onGoToStudy: () => setState(() => _mode = _AppMode.study),
+          onGoToMenu: () => setState(() => _mode = _AppMode.none),
         );
     }
   }

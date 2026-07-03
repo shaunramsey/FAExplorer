@@ -231,8 +231,15 @@ class LevelSelectScreen extends StatefulWidget {
   final GameProgressStore progressStore;
   final VoidCallback onGoToSandbox;
   final VoidCallback? onGoToStudy;
+  final VoidCallback? onGoToMenu;
 
-  const LevelSelectScreen({super.key, required this.progressStore, required this.onGoToSandbox, this.onGoToStudy});
+  const LevelSelectScreen({
+    super.key,
+    required this.progressStore,
+    required this.onGoToSandbox,
+    this.onGoToStudy,
+    this.onGoToMenu,
+  });
 
   @override
   State<LevelSelectScreen> createState() => _LevelSelectScreenState();
@@ -650,6 +657,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                 total: puzzleLevels.length,
                 onSandbox: widget.onGoToSandbox,
                 onStudy: widget.onGoToStudy,
+                onMenu: widget.onGoToMenu,
                 scrollFraction: _scrollFraction,
                 onScrollChanged: _scrollToFraction,
                 difficulty: _difficulty,
@@ -680,6 +688,7 @@ class _TopBar extends StatelessWidget {
   final int total;
   final VoidCallback onSandbox;
   final VoidCallback? onStudy;
+  final VoidCallback? onMenu;
   final double scrollFraction;
   final ValueChanged<double> onScrollChanged;
   final LevelDifficulty difficulty;
@@ -692,6 +701,7 @@ class _TopBar extends StatelessWidget {
     required this.total,
     required this.onSandbox,
     this.onStudy,
+    this.onMenu,
     required this.scrollFraction,
     required this.onScrollChanged,
     required this.difficulty,
@@ -779,6 +789,7 @@ class _TopBar extends StatelessWidget {
                   icon: Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
                   onPressed: () => showAppThemeSettings(context),
                 ),
+                MainMenuButton(onPressed: onMenu),
                 const SizedBox(width: 4),
                 if (onStudy != null) ...[
                   TextButton(

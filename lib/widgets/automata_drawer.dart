@@ -156,6 +156,7 @@ class AutomataDrawer extends StatelessWidget {
   final VoidCallback onExportHistory;
   final VoidCallback onReset;
   final VoidCallback? onGoToGame;
+  final VoidCallback? onGoToStudy;
   final Future<void> Function()? onSignOut;
 
   const AutomataDrawer({
@@ -176,6 +177,7 @@ class AutomataDrawer extends StatelessWidget {
     required this.onExportHistory,
     required this.onReset,
     this.onGoToGame,
+    this.onGoToStudy,
     this.onSignOut,
 
     // ── Legacy compat: old callers may still pass showPdaMode / onShowPdaModeChanged.
@@ -299,6 +301,16 @@ class AutomataDrawer extends StatelessWidget {
                 onTap: () {
                   Navigator.pop(context);
                   onGoToGame!();
+                },
+              ),
+            if (onGoToStudy != null)
+              _HoverTile(
+                leading: const Icon(Icons.school_outlined),
+                title: const Text('Study Mode'),
+                subtitle: 'Open guided lessons and worked examples.',
+                onTap: () {
+                  Navigator.pop(context);
+                  onGoToStudy!();
                 },
               ),
 

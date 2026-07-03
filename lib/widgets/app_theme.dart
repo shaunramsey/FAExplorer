@@ -1852,3 +1852,36 @@ class PaletteFab extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MainMenuButton — small icon button back to the mode-select ("main menu")
+//  screen. Every top-level screen (Sandbox, Game, Study) plants one of these
+//  in a corner so switching between modes never requires signing out or
+//  hunting through a drawer for a mode-specific link. Styled to match the
+//  existing "Appearance" palette IconButton these screens already show, so it
+//  drops in as a natural neighbor rather than a new visual element.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MainMenuButton extends StatelessWidget {
+  const MainMenuButton({
+    super.key,
+    required this.onPressed,
+    this.size = 20,
+  });
+
+  /// Navigates back to [ModeSelectScreen]. The button renders disabled
+  /// (rather than disappearing) when null, so layouts stay stable even if a
+  /// caller hasn't wired it up yet.
+  final VoidCallback? onPressed;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return IconButton(
+      tooltip: 'Main menu',
+      icon: Icon(Icons.home_rounded, color: theme.textMid, size: size),
+      onPressed: onPressed,
+    );
+  }
+}

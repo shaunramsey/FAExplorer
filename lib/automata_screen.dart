@@ -26,6 +26,8 @@ class AutomataScreen extends StatefulWidget {
     this.userEmail,
     this.onSignOut,
     this.onGoToGame,
+    this.onGoToStudy,
+    this.onGoToMenu,
   });
 
   final AutomataSessionStore sessionStore;
@@ -33,6 +35,8 @@ class AutomataScreen extends StatefulWidget {
   final String? userEmail;
   final Future<void> Function()? onSignOut;
   final VoidCallback? onGoToGame;
+  final VoidCallback? onGoToStudy;
+  final VoidCallback? onGoToMenu;
 
   @override
   State<AutomataScreen> createState() => _AutomataScreenState();
@@ -984,11 +988,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onReset: _reset,
         onSignOut: widget.onSignOut,
         onGoToGame: widget.onGoToGame,
+        onGoToStudy: widget.onGoToStudy,
       ),
 
       appBar: AppBar(
         title: const Text('Automata Designer'),
         actions: [
+          MainMenuButton(onPressed: widget.onGoToMenu),
           if (widget.isGuest)
             const Padding(
               padding: EdgeInsets.only(right: 8),
