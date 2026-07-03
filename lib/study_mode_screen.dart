@@ -819,12 +819,16 @@ class _StudyModeScreenState extends State<StudyModeScreen>
 
   void _buildQueue() {
     final all = <_AnyChallenge>[];
-    final hasRegexModes = _selectedModes.any((m) =>
-        m == _PracticeMode.regexToDfa ||
-        m == _PracticeMode.dfaToRegex ||
-        m == _PracticeMode.describeToFa);
-    if (hasRegexModes) {
+    // Plain regex-template challenges (description == null) back REGEX→DFA
+    // and DFA→REGEX only — they must not be queued for a describeToFa-only
+    // session, or _pickModeForChallenge has nothing to fall back to but
+    // regexToDfa and silently serves a regex prompt in a describe-only run.
+    final wantsRegexTemplates = _selectedModes.contains(_PracticeMode.regexToDfa) ||
+        _selectedModes.contains(_PracticeMode.dfaToRegex);
+    if (wantsRegexTemplates) {
       all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
+    }
+    if (_selectedModes.contains(_PracticeMode.describeToFa)) {
       all.addAll(
           _generateDescriptionChallenges(_rng).map(_AnyChallenge.regex));
     }
