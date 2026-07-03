@@ -1193,7 +1193,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
           ),
         ),
             ),
-            if (_showHelpOverlay) const HelpOverlay(),
+            if (_showHelpOverlay)
+              HelpOverlay(
+                automataMode: _automataMode,
+                onClose: () => _setShowHelpOverlay(false),
+              ),
             if (_showSimulator)
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
