@@ -792,6 +792,14 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     final compact = isCompactLayout(context);
     return Scaffold(
       backgroundColor: theme.bg,
+      // dfaToRegex levels keep a persistent text field docked under a
+      // pannable read-only canvas. Letting the Scaffold shrink for the
+      // keyboard (the default) resizes that canvas's viewport mid-read,
+      // which makes InteractiveViewer re-clamp the current pan position —
+      // felt as an unexpected "snap". Other puzzle variants don't have this
+      // canvas+persistent-field combo, so they keep the default behaviour.
+      resizeToAvoidBottomInset:
+          widget.level.puzzleVariant != PuzzleVariant.dfaToRegex,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -902,6 +910,11 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   Widget _buildDfaToRegexBody(AppThemeNotifier theme) {
     final gs = _dfaGs;
     final compact = isCompactLayout(context);
+    // The Scaffold no longer resizes for the keyboard on this puzzle variant
+    // (see resizeToAvoidBottomInset above), so the regex field has to lift
+    // itself above the keyboard manually — the DFA canvas above it is
+    // otherwise unaffected and keeps a stable viewport while typing.
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -938,7 +951,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 flex: 3,
                 child: dfaPreview,
               ),
-              regexPanel,
+              Padding(
+                padding: EdgeInsets.only(bottom: bottomInset),
+                child: regexPanel,
+              ),
             ],
           );
         }
@@ -954,7 +970,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             // readable. Give it just what it needs and let the diagram have
             // everything else.
             Expanded(child: dfaPreview),
-            regexPanel,
+            Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: regexPanel,
+            ),
           ],
         );
       },
@@ -1612,9 +1631,48 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
   static const double _minScale = 0.15;
   static const double _maxScale = 3.0;
 
+  // Desired pan headroom in *screen* pixels, kept roughly constant across
+  // zoom levels.
+  //
+  // boundaryMargin has to do more than just "add some space": if the
+  // (scaled) content is smaller than the viewport along an axis —
+  // routine, since _fitToView scales uniformly and most diagrams don't
+  // match the screen's aspect ratio — InteractiveViewer's boundary math
+  // degenerates for that axis and pins the content to one edge instead of
+  // centering/panning normally. That's what made horizontal panning feel
+  // "forced to the left" while vertical (the axis that actually filled the
+  // viewport after fitting) panned fine. _boundaryMargin below computes
+  // each axis independently and pads enough to cover that axis's slack,
+  // not just a flat guess.
+  static const double _screenMarginPx = 300;
+
   final TransformationController _transformCtrl = TransformationController();
   bool _didAutoFit = false;
   Size _lastViewportSize = Size.zero;
+
+  EdgeInsets get _boundaryMargin {
+    final scale = _transformCtrl.value.getMaxScaleOnAxis();
+    final safeScale = scale > 0 ? scale : _minScale;
+    final base = _screenMarginPx / safeScale;
+
+    final bounds = _computeNodeBounds();
+    final contentWidth = bounds.right + _contentPadding;
+    final contentHeight = bounds.bottom + _contentPadding;
+
+    double marginFor(double viewportExtent, double contentExtent) {
+      if (viewportExtent <= 0) return base;
+      // How much (screen-space) empty space is left after the scaled
+      // content is placed in the viewport along this axis.
+      final slack = viewportExtent - contentExtent * safeScale;
+      if (slack <= 0) return base; // content already fills/exceeds viewport
+      return base + slack / (2 * safeScale);
+    }
+
+    return EdgeInsets.symmetric(
+      horizontal: marginFor(_lastViewportSize.width, contentWidth),
+      vertical: marginFor(_lastViewportSize.height, contentHeight),
+    );
+  }
 
   @override
   void didUpdateWidget(covariant _ReadOnlyDfaCanvas oldWidget) {
@@ -1681,8 +1739,8 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
 
     setState(() {
       _transformCtrl.value = Matrix4.identity()
-        ..translate(dx, dy)
-        ..scale(scale);
+        ..translateByDouble(dx, dy, 0.0, 1.0)
+        ..scaleByDouble(scale, scale, 1.0, 1.0);
     });
   }
 
@@ -1701,9 +1759,9 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
     final focal = _transformCtrl.toScene(center);
     setState(() {
       _transformCtrl.value = _transformCtrl.value.clone()
-        ..translate(focal.dx, focal.dy)
-        ..scale(adjust)
-        ..translate(-focal.dx, -focal.dy);
+        ..translateByDouble(focal.dx, focal.dy, 0.0, 1.0)
+        ..scaleByDouble(adjust, adjust, 1.0, 1.0)
+        ..translateByDouble(-focal.dx, -focal.dy, 0.0, 1.0);
     });
   }
 
@@ -1740,9 +1798,13 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
                 child: InteractiveViewer(
                   transformationController: _transformCtrl,
                   constrained: false,
-                  boundaryMargin: const EdgeInsets.all(400),
+                  boundaryMargin: _boundaryMargin,
                   minScale: _minScale,
                   maxScale: _maxScale,
+                  // Rebuild after each gesture so _boundaryMargin picks up
+                  // the scale that gesture ended at, ready for the next
+                  // pan/zoom — without recalculating on every drag frame.
+                  onInteractionEnd: (_) => setState(() {}),
                   child: SizedBox(
                     width: contentWidth,
                     height: contentHeight,
