@@ -56,8 +56,10 @@ class _SimConfig {
   String get key => '$nodeId:$inputPos:${tokens.join('\u0001')}';
 }
 
-final _transitionLabelSplitter = RegExp(r'[,\\n]');
-final _epsilonLabelSplitter = RegExp(r'[,\n]');
+// Match comma, newline, or a literal "\n" escape — same rules as models.dart
+// and equivalence_dialog.dart.
+final _transitionLabelSplitter = RegExp(r'[,\n]|\\n');
+final _epsilonLabelSplitter = RegExp(r'[,\n]|\\n');
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SHARED TOKENIZER
@@ -94,6 +96,9 @@ List<String> _tokenize(String input, {String nullEscapeToken = '?'}) {
         i = close + 2;
         continue;
       }
+      // Malformed [[ without closing ]] — treat the remainder as one token.
+      result.add(input.substring(i));
+      break;
     }
     if (input[i] == '"') {
       final close = input.indexOf('"', i + 1);
@@ -102,6 +107,9 @@ List<String> _tokenize(String input, {String nullEscapeToken = '?'}) {
         i = close + 1;
         continue;
       }
+      // Unclosed quote — consume the rest as a single token.
+      result.add(input.substring(i + 1));
+      break;
     }
     // \0 in user input is treated as the null/empty token.
     if (i + 1 < input.length && input[i] == '\\' && input[i + 1] == '0') {
@@ -497,20 +505,27 @@ class AutomataSimulator {
     const int kMaxSteps = 512;
     int stepsBuilt = 0;
     while (current.isNotEmpty && stepsBuilt < kMaxSteps) {
+      // Global halt: any branch in halt-accept stops the entire machine.
+      if (current.any((c) => nodes[c.nodeId]?.isHaltAccept == true)) {
+        final halted = current
+            .where((c) => nodes[c.nodeId]?.isHaltAccept == true)
+            .toSet();
+        if (halted.length < current.length && _configsByStep.isNotEmpty) {
+          _configsByStep[_configsByStep.length - 1] =
+              List<_SimConfig>.from(halted);
+          states[states.length - 1] = {for (final c in halted) c.nodeId};
+        }
+        break;
+      }
+
       final stepLines = <String>{};
       final nextConfigs = <_SimConfig>{};
       bool consumedAny = false;
 
-      bool hasHaltAccept = false;
       for (final config in current) {
         final node = nodes[config.nodeId];
         if (node == null || node.isHaltReject) continue;
-        // haltAccept: the current set already contains this config in
-        // _configsByStep.  Just flag it so we stop after this iteration.
-        if (node.isHaltAccept) {
-          hasHaltAccept = true;
-          continue;
-        }
+        if (node.isHaltAccept) continue;
 
         var effective = config;
         if (node.isBlackBox) {
@@ -623,9 +638,20 @@ class AutomataSimulator {
       }
 
       if (!consumedAny || nextConfigs.isEmpty) break;
-      if (hasHaltAccept) break;
 
       final (closureConfigs, closureLines) = _epsilonClosure(nextConfigs);
+      // Entering halt-accept prunes all other parallel branches.
+      if (closureConfigs.any((c) => nodes[c.nodeId]?.isHaltAccept == true)) {
+        final halted = closureConfigs
+            .where((c) => nodes[c.nodeId]?.isHaltAccept == true)
+            .toSet();
+        current = halted;
+        states.add({for (final c in current) c.nodeId});
+        usedLines.add({...stepLines, ...closureLines});
+        _configsByStep.add(List<_SimConfig>.from(current));
+        break;
+      }
+
       current = closureConfigs;
       states.add({for (final c in current) c.nodeId});
       usedLines.add({...stepLines, ...closureLines});
@@ -948,6 +974,22 @@ class PdaSimulator {
     Set<PdaConfig> current = initConfigs;
 
     for (int ti = 0; ti < tokens.length; ti++) {
+      // Global halt before consuming the next input symbol.
+      final haltAcceptConfig = current.cast<PdaConfig?>().firstWhere(
+        (c) => nodes[c!.nodeId]?.isHaltAccept == true,
+        orElse: () => null,
+      );
+      if (haltAcceptConfig != null) {
+        final snap = PdaStepSnapshot(
+          configs: [_toActive(haltAcceptConfig)],
+          usedLineIds: const {},
+        );
+        while (steps.length <= tokens.length) {
+          steps.add(snap);
+        }
+        return;
+      }
+
       final token = _normalizeSym(tokens[ti]);
       final nextConfigs = <PdaConfig>{};
       final stepLines = <String>{};
@@ -956,19 +998,7 @@ class PdaSimulator {
         final node = nodes[config.nodeId];
         if (node == null) continue;
         if (node.isHaltReject) continue;
-
-        if (node.isHaltAccept) {
-          // A haltAccept state was reached mid-simulation.  Pad remaining
-          // steps with this accepting snapshot and stop — no more tokens.
-          final snap = PdaStepSnapshot(
-            configs: [_toActive(config)],
-            usedLineIds: const {},
-          );
-          while (steps.length <= tokens.length) {
-            steps.add(snap);
-          }
-          return;
-        }
+        if (node.isHaltAccept) continue;
 
         for (final line in lines.values) {
           if (line.nodeAId != config.nodeId) continue;
@@ -1012,6 +1042,22 @@ class PdaSimulator {
       final (closedConfigs, closedLines) = _epsilonClosure(nextConfigs);
       if (stackGrowthLoopDetected) {
         _finishWithStackLoopAbort();
+        return;
+      }
+      // Entering halt-accept prunes all other parallel branches.
+      final haltAfterClosure = closedConfigs.cast<PdaConfig?>().firstWhere(
+        (c) => nodes[c!.nodeId]?.isHaltAccept == true,
+        orElse: () => null,
+      );
+      if (haltAfterClosure != null) {
+        final snap = PdaStepSnapshot(
+          configs: [_toActive(haltAfterClosure)],
+          usedLineIds: {...stepLines, ...closedLines},
+        );
+        steps.add(snap);
+        while (steps.length <= tokens.length) {
+          steps.add(snap);
+        }
         return;
       }
       current = closedConfigs;
@@ -2211,7 +2257,6 @@ class TmSimulator {
   /// For non-black-box nodes this method is never called; the caller guards
   /// with [node.isBlackBox] before invoking.
   TmConfig? _applyBlackBox(NodeData node, TmConfig config) {
-    debugPrint('ENTERING BLACK BOX: ${node.label}');
     if (!node.isBlackBox) return config;
 
     final dsl = node.blackBoxDsl.trim();
@@ -2232,9 +2277,7 @@ class TmSimulator {
       _blackBoxResultCache[cacheKey] = result;
       if (!result.accepted) return null;
       return _rebuildConfigFromBlackBoxResult(result, config);
-    } catch (e, st) {
-      debugPrint('BLACK BOX ERROR: $e');
-      debugPrint('$st');
+    } catch (_) {
       _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTapes: const [],
@@ -2585,6 +2628,9 @@ class TmSimulator {
       return false;
     }
 
+    final anyHaltAccept = current.configs
+        .any((c) => nodes[c.nodeId]?.isHaltAccept == true);
+
     final nextConfigs = <TmConfig>[];
     final nextLines = <String>{};
     final seenKeys = <String>{};
@@ -2601,6 +2647,9 @@ class TmSimulator {
         if (seenKeys.add(k)) nextConfigs.add(carried);
         continue;
       }
+
+      // Once any branch reaches halt-accept, no other branch may advance.
+      if (anyHaltAccept) continue;
 
       final effectiveConfig = _applyBlackBox(node, config);
       if (effectiveConfig == null) {
@@ -2753,6 +2802,11 @@ class TmSimulator {
     if (nextConfigs.isEmpty) {
       noMovesTerminal = true;
       return false;
+    }
+
+    // Entering halt-accept prunes all other parallel branches.
+    if (nextConfigs.any((c) => nodes[c.nodeId]?.isHaltAccept == true)) {
+      nextConfigs.removeWhere((c) => nodes[c.nodeId]?.isHaltAccept != true);
     }
 
     steps.add(TmStepSnapshot(

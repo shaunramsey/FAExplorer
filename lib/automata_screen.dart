@@ -94,6 +94,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Future<void> _openBatchSimulatorDialog() => showBatchSimulatorDialog(
         context,
         simulator: _simulator,
+        pdaSimulator: _automataMode == AutomataMode.pda ? _pdaSimulator : null,
         tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
         startArrow: _startArrow,
       );
@@ -159,21 +160,37 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Future<void> _persistNow() async {
     if (!_persistenceReady) return;
 
-    await widget.sessionStore.save(
-      PersistedSnapshot(
-        graphDsl: _exportToDsl(),
-        savedExports: List<SavedExport>.from(_savedExports),
-        showSimulator: _showSimulator,
-        showHelpOverlay: _showHelpOverlay,
-        simInput: _simController.text,
-        simStep: _simulator.step,
-        additionalTapeInputs: _tapeControllers.map((c) => c.text).toList(),
-      ),
-    );
+    try {
+      await widget.sessionStore.save(
+        PersistedSnapshot(
+          graphDsl: _exportToDsl(),
+          savedExports: List<SavedExport>.from(_savedExports),
+          showSimulator: _showSimulator,
+          showHelpOverlay: _showHelpOverlay,
+          simInput: _simController.text,
+          simStep: _simulator.step,
+          additionalTapeInputs: _tapeControllers.map((c) => c.text).toList(),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save workspace: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _loadPreferences() async {
-    final snapshot = await widget.sessionStore.load();
+    PersistedSnapshot snapshot;
+    String? loadError;
+
+    try {
+      snapshot = await widget.sessionStore.load();
+    } catch (e) {
+      snapshot = const PersistedSnapshot();
+      loadError = 'Could not load saved workspace. ($e)';
+    }
 
     if (snapshot.graphDsl != null && snapshot.graphDsl!.trim().isNotEmpty) {
       try {
@@ -188,8 +205,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _nodeCounter = state.nodeCounter;
         _lineCounter = state.lineCounter;
         _automataMode = state.automataMode;
-      } catch (_) {
-        // Ignore corrupt saved graphs.
+      } catch (e) {
+        loadError = 'Could not restore saved graph. Starting with a blank canvas. ($e)';
       }
     }
 
@@ -212,12 +229,18 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     if (_simController.text.isNotEmpty || _startArrow != null) {
       _simRebuild();
+      _syncSimulatorSteps();
     }
 
     _persistenceReady = true;
 
     if (mounted) {
       setState(() => _loadingPrefs = false);
+      if (loadError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(loadError)),
+        );
+      }
     }
   }
 
@@ -287,6 +310,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     return maxTape;
   }
 
+  void _syncSimulatorSteps() {
+    final savedStep = _simulator.step;
+    _pdaSimulator.step = savedStep.clamp(-1, _pdaSimulator.tokens.length);
+    _tmSimulator.step = savedStep.clamp(-1, _tmSimulator.maxStep);
+  }
+
   void _simRebuild() {
     _simulator.rebuild(_simController.text, startArrow: _startArrow);
     if (_simulator.step > _simulator.tokens.length) {
@@ -320,6 +349,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       startArrow: _startArrow,
       additionalTapeInputs: additionalInputs,
     );
+    _syncSimulatorSteps();
   }
 
   void _cancelRubberBand() {
@@ -730,30 +760,32 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       return;
     }
 
+    if (_lineMode) {
+      final node = _nodeAt(pos);
+      if (node != null && _canStartLineFrom(node.id)) {
+        _lineSourceNodeId = node.id;
+      }
+      return;
+    }
+
+    // Lines take priority over nodes so transitions can be curved near states.
+    final line = _lineAt(pos);
+    if (line != null) {
+      _draggingLineId = line.id;
+      return;
+    }
+
+    if (_hitStartArrow(pos)) {
+      _draggingStartArrow = true;
+      return;
+    }
+
     final node = _nodeAt(pos);
-
     if (node != null) {
-      if (_lineMode) {
-        if (_canStartLineFrom(node.id)) {
-          _lineSourceNodeId = node.id;
-        }
-      } else {
-        _draggingNodeId = node.id;
-      }
+      _draggingNodeId = node.id;
     } else {
-      if (_hitStartArrow(pos)) {
-        _draggingStartArrow = true;
-        return;
-      }
-
-      final line = _lineAt(pos);
-
-      if (line != null) {
-        _draggingLineId = line.id;
-      } else if (!_lineMode) {
-        // Nothing hit — pan the canvas
-        _isPanningCanvas = true;
-      }
+      // Nothing hit — pan the canvas
+      _isPanningCanvas = true;
     }
   }
 
@@ -1181,7 +1213,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   _schedulePersist();
                 },
                 onStepChanged: () {
-                  _pdaSimulator.step = _simulator.step; // keep in sync
+                  _syncSimulatorSteps();
                   setState(() {});
                   _schedulePersist();
                 },

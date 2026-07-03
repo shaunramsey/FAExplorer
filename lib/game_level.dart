@@ -3124,16 +3124,12 @@ final Map<String, GameLevel> kLevelById = {
 //  Layer Constraint Validator
 //
 //  Enforces three layout rules for kAllLevels.  Call [validate] (or use the
-//  [kLayerConstraintErrors] shortcut) in an assert at app startup — e.g. in
-//  main():
+//  [kLayerConstraintErrors] shortcut) at app startup — e.g. in main():
 //
-//    assert(() {
-//      final errors = LayerConstraintValidator.validate(kAllLevels);
-//      if (errors.isNotEmpty) {
-//        throw StateError('Layer constraint violations:\n${errors.join('\n')}');
-//      }
-//      return true;
-//    }());
+//    final errors = kLayerConstraintErrors;
+//    if (errors.isNotEmpty) {
+//      throw StateError('Layer constraint violations:\n${errors.join('\n')}');
+//    }
 //
 //  RULES
 //  ─────

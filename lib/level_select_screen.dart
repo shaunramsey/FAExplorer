@@ -31,6 +31,7 @@ import 'game_data.dart';
 import 'game_puzzle.dart';
 import 'tutorial_screen.dart';
 import 'widgets/app_theme.dart';
+import 'widgets/responsive_layout.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants
@@ -59,9 +60,48 @@ const double _kSidePad = 120.0; // left/right canvas padding
 
 double _canvasHeight(List<GameLevel> levels, double screenH) => screenH;
 
-double _canvasWidthFromPositions(Map<String, Offset> positions) {
+double _canvasWidthFromPositions(
+  Map<String, Offset> positions, {
+  double nodeW = _kNodeW,
+  double sidePad = _kSidePad,
+}) {
   final maxX = positions.values.fold<double>(0.0, (cur, p) => max(cur, p.dx));
-  return maxX + _kNodeW / 2 + _kSidePad;
+  return maxX + nodeW / 2 + sidePad;
+}
+
+class _LevelMapLayout {
+  final double nodeW;
+  final double nodeH;
+  final double colGap;
+  final double rowGap;
+  final double topPad;
+  final double botPad;
+  final double legendH;
+  final double sidePad;
+
+  const _LevelMapLayout({
+    required this.nodeW,
+    required this.nodeH,
+    required this.colGap,
+    required this.rowGap,
+    required this.topPad,
+    required this.botPad,
+    required this.legendH,
+    required this.sidePad,
+  });
+
+  factory _LevelMapLayout.scaled(double scale) {
+    return _LevelMapLayout(
+      nodeW: _kNodeW * scale,
+      nodeH: _kNodeH * scale,
+      colGap: _kColGap * scale,
+      rowGap: _kRowGap * scale,
+      topPad: _kTopPad * scale,
+      botPad: _kBotPad * scale,
+      legendH: _kLegendH * scale,
+      sidePad: _kSidePad * scale,
+    );
+  }
 }
 
 Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
@@ -111,7 +151,11 @@ Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
   return layer;
 }
 
-Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double canvasH) {
+Map<String, Offset> _computePositionsFromDeps(
+  List<GameLevel> levels,
+  double canvasH,
+  _LevelMapLayout layout,
+) {
   final layerById = _computeLayersFromDeps(levels);
   List<String> extractLevelDependencies(GameLevel level) {
   List<String> extract(UnlockRule rule) {
@@ -163,12 +207,14 @@ members.sort((a, b) {
 
   return barycenter(a).compareTo(barycenter(b));
 });
-    final cx = _kSidePad + colIdx * _kColGap;
+    final cx = layout.sidePad + colIdx * layout.colGap;
     final count = members.length;
-    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    final gap = count > 1 ? min(_kRowGap, usableH / (count - 1)) : 0.0;
+    final usableH = canvasH - layout.topPad - layout.botPad - layout.legendH;
+    final gap = count > 1 ? min(layout.rowGap, usableH / (count - 1)) : 0.0;
     final totalSpan = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = count > 1 ? _kTopPad + (usableH - totalSpan) / 2.0 : _kTopPad + usableH / 2.0;
+    final topOffset = count > 1
+        ? layout.topPad + (usableH - totalSpan) / 2.0
+        : layout.topPad + usableH / 2.0;
     for (int i = 0; i < count; i++) {
       final cy = topOffset + (count == 1 ? 0.0 : i * gap);
       result[members[i].id] = Offset(cx, cy);
@@ -502,10 +548,16 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final screenH = MediaQuery.of(context).size.height;
+    final screenSize = MediaQuery.sizeOf(context);
+    final screenH = screenSize.height;
+    final layout = _LevelMapLayout.scaled(levelMapLayoutScale(context));
     final canvasH = _canvasHeight(kAllLevels, screenH);
-    final positions = _computePositionsFromDeps(kAllLevels, canvasH);
-    final canvasW = _canvasWidthFromPositions(positions);
+    final positions = _computePositionsFromDeps(kAllLevels, canvasH, layout);
+    final canvasW = _canvasWidthFromPositions(
+      positions,
+      nodeW: layout.nodeW,
+      sidePad: layout.sidePad,
+    );
     // For the progress bar, count puzzle levels and tutorial levels separately
     final puzzleLevels = kAllLevels.where((l) => !l.isTutorial).toList();
     final completedPuzzles = _completed.intersection(puzzleLevels.map((l) => l.id).toSet()).length;
@@ -561,10 +613,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                       // Node cards (rendered on top of edges)
                       for (final level in kAllLevels)
                         Positioned(
-                          left: positions[level.id]!.dx - _kNodeW / 2,
-                          top: positions[level.id]!.dy - _kNodeH / 2,
+                          left: positions[level.id]!.dx - layout.nodeW / 2,
+                          top: positions[level.id]!.dy - layout.nodeH / 2,
                           child: SizedBox(
-                            width: _kNodeW,
+                            width: layout.nodeW,
                             child: GestureDetector(
                               onTap: () => _onTap(level),
                               child: _NodeCard(

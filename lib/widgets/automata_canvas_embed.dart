@@ -208,13 +208,18 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
       return;
     }
 
-    final node = _nodeAt(pos);
-    if (node != null) {
-      if (_lineMode) {
-        if (_canStartLineFrom(node.id)) _lineSourceNodeId = node.id;
-      } else {
-        _draggingNodeId = node.id;
+    if (_lineMode) {
+      final node = _nodeAt(pos);
+      if (node != null && _canStartLineFrom(node.id)) {
+        _lineSourceNodeId = node.id;
       }
+      return;
+    }
+
+    // Lines take priority over nodes so transitions can be curved near states.
+    final line = _lineAt(pos);
+    if (line != null) {
+      _draggingLineId = line.id;
       return;
     }
 
@@ -223,10 +228,10 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
       return;
     }
 
-    final line = _lineAt(pos);
-    if (line != null) {
-      _draggingLineId = line.id;
-    } else if (!_lineMode) {
+    final node = _nodeAt(pos);
+    if (node != null) {
+      _draggingNodeId = node.id;
+    } else {
       _isPanningCanvas = true;
     }
   }

@@ -17,21 +17,13 @@ export 'automata_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Catches malformed kAllLevels entries (see game_level.dart —
-  // LayerConstraintValidator) as early as possible: tutorial levels sharing
-  // a layer with something else, bosses mixed with regular levels, boss
-  // layers with >2 bosses, or normal layers with >4 levels. This is an
-  // assert (debug-only, stripped from release builds) so it costs nothing
-  // in production, but it means a bad level definition fails loudly the
-  // first time a contributor runs the app in debug mode instead of quietly
-  // shipping a broken level-select layout.
-  assert(() {
-    final errors = kLayerConstraintErrors;
-    if (errors.isNotEmpty) {
-      throw StateError('Layer constraint violations:\n${errors.join('\n')}');
-    }
-    return true;
-  }());
+  // Enforced in all builds so malformed level definitions cannot ship with a
+  // broken level-select layout (previously this lived inside assert() and was
+  // stripped from release builds).
+  final layerErrors = kLayerConstraintErrors;
+  if (layerErrors.isNotEmpty) {
+    throw StateError('Layer constraint violations:\n${layerErrors.join('\n')}');
+  }
 
   final themeNotifier = await AppThemeNotifier.load();
 

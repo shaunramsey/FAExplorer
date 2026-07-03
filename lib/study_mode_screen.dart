@@ -35,6 +35,7 @@ import 'study_mode_pda.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
+import 'widgets/responsive_layout.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Challenge pool
@@ -1112,212 +1113,263 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
     final allSelected = selectedModes.length == _PracticeMode.values.length;
+    final compact = isCompactLayout(context);
+    final hPad = responsiveHorizontalPadding(context);
 
-    return SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Row(
-          children: [
-            // Title
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'PRACTICE',
-                  style: GoogleFonts.orbitron(
-                    color: theme.accent,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
+    final modeChips = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // "Select All" toggle chip
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: GestureDetector(
+              onTap: onSelectAllToggled,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: allSelected
+                      ? theme.accentGreen.withValues(alpha: 0.15)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: allSelected
+                        ? theme.accentGreen.withValues(alpha: 0.8)
+                        : theme.borderMid,
                   ),
                 ),
-                Text(
-                  'MODE',
-                  style: GoogleFonts.orbitron(
-                    color: theme.textDim,
-                    fontSize: 9,
-                    letterSpacing: 4,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(width: 16),
-
-            // Multi-select mode chips
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // "Select All" toggle chip
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: GestureDetector(
-                        onTap: onSelectAllToggled,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: allSelected
-                                ? theme.accentGreen.withValues(alpha: 0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: allSelected
-                                  ? theme.accentGreen.withValues(alpha: 0.8)
-                                  : theme.borderMid,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 160),
-                                child: Icon(
-                                  allSelected
-                                      ? Icons.check_box_rounded
-                                      : Icons.check_box_outline_blank_rounded,
-                                  key: ValueKey(allSelected),
-                                  size: 12,
-                                  color: allSelected
-                                      ? theme.accentGreen
-                                      : theme.textDim,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                'ALL',
-                                style: GoogleFonts.orbitron(
-                                  color: allSelected
-                                      ? theme.accentGreen
-                                      : theme.textDim,
-                                  fontSize: 8,
-                                  letterSpacing: 1.5,
-                                  fontWeight: allSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 160),
+                      child: Icon(
+                        allSelected
+                            ? Icons.check_box_rounded
+                            : Icons.check_box_outline_blank_rounded,
+                        key: ValueKey(allSelected),
+                        size: 12,
+                        color: allSelected ? theme.accentGreen : theme.textDim,
                       ),
                     ),
-
-                    // Individual mode chips
-                    ..._PracticeMode.values.map((m) {
-                      final sel = selectedModes.contains(m);
-                      // Use green for dfaToRegex, violet for describeToFa, accent for regexToDfa
-                      final chipColor = m == _PracticeMode.dfaToRegex
-                          ? theme.accentGreen
-                          : m == _PracticeMode.describeToFa
-                              ? const Color(0xFFB47FFF)
-                              : m == _PracticeMode.pdaToDraw
-                                  ? const Color(0xFF26C6DA)
-                                  : theme.accent;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: GestureDetector(
-                          onTap: () => onModeToggled(m),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: sel
-                                  ? chipColor.withValues(alpha: 0.15)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: sel
-                                    ? chipColor.withValues(alpha: 0.8)
-                                    : theme.borderMid,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 160),
-                                  child: Icon(
-                                    sel
-                                        ? Icons.check_box_rounded
-                                        : Icons.check_box_outline_blank_rounded,
-                                    key: ValueKey(sel),
-                                    size: 12,
-                                    color: sel ? chipColor : theme.textDim,
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  m.label,
-                                  style: GoogleFonts.orbitron(
-                                    color: sel ? chipColor : theme.textDim,
-                                    fontSize: 8,
-                                    letterSpacing: 1.5,
-                                    fontWeight: sel
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
+                    const SizedBox(width: 5),
+                    Text(
+                      'ALL',
+                      style: GoogleFonts.orbitron(
+                        color: allSelected ? theme.accentGreen : theme.textDim,
+                        fontSize: 8,
+                        letterSpacing: 1.5,
+                        fontWeight:
+                            allSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
+          ),
 
-            const SizedBox(width: 12),
-
-            // Score
-            if (total > 0)
-              Text(
-                '$correct / $total',
-                style: GoogleFonts.orbitron(
-                  color: theme.textMid,
-                  fontSize: 11,
-                  letterSpacing: 1,
+          // Individual mode chips
+          ..._PracticeMode.values.map((m) {
+            final sel = selectedModes.contains(m);
+            final chipColor = m == _PracticeMode.dfaToRegex
+                ? theme.accentGreen
+                : m == _PracticeMode.describeToFa
+                    ? const Color(0xFFB47FFF)
+                    : m == _PracticeMode.pdaToDraw
+                        ? const Color(0xFF26C6DA)
+                        : theme.accent;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GestureDetector(
+                onTap: () => onModeToggled(m),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: sel
+                        ? chipColor.withValues(alpha: 0.15)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: sel
+                          ? chipColor.withValues(alpha: 0.8)
+                          : theme.borderMid,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 160),
+                        child: Icon(
+                          sel
+                              ? Icons.check_box_rounded
+                              : Icons.check_box_outline_blank_rounded,
+                          key: ValueKey(sel),
+                          size: 12,
+                          color: sel ? chipColor : theme.textDim,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        m.label,
+                        style: GoogleFonts.orbitron(
+                          color: sel ? chipColor : theme.textDim,
+                          fontSize: 8,
+                          letterSpacing: 1.5,
+                          fontWeight:
+                              sel ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+            );
+          }),
+        ],
+      ),
+    );
 
-            const SizedBox(width: 8),
-
-            // Theme settings
-            IconButton(
-              tooltip: 'Appearance',
-              icon:
-                  Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
-              onPressed: () => showAppThemeSettings(context),
-            ),
-
-            // Sandbox shortcut
-            TextButton(
-              onPressed: onGoToSandbox,
-              style: TextButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  side: BorderSide(color: theme.borderMid),
-                ),
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: compact ? 6 : 10),
+        child: compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'PRACTICE',
+                            style: GoogleFonts.orbitron(
+                              color: theme.accent,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 3,
+                            ),
+                          ),
+                          Text(
+                            'MODE',
+                            style: GoogleFonts.orbitron(
+                              color: theme.textDim,
+                              fontSize: 8,
+                              letterSpacing: 3,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      if (total > 0)
+                        Text(
+                          '$correct / $total',
+                          style: GoogleFonts.orbitron(
+                            color: theme.textMid,
+                            fontSize: 11,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      IconButton(
+                        tooltip: 'Appearance',
+                        icon: Icon(Icons.palette_outlined,
+                            color: theme.textMid, size: 20),
+                        onPressed: () => showAppThemeSettings(context),
+                      ),
+                      TextButton(
+                        onPressed: onGoToSandbox,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            side: BorderSide(color: theme.borderMid),
+                          ),
+                        ),
+                        child: Text(
+                          'SANDBOX',
+                          style: GoogleFonts.orbitron(
+                              color: theme.textDim,
+                              fontSize: 8,
+                              letterSpacing: 2),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  modeChips,
+                ],
+              )
+            : Row(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'PRACTICE',
+                        style: GoogleFonts.orbitron(
+                          color: theme.accent,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                      Text(
+                        'MODE',
+                        style: GoogleFonts.orbitron(
+                          color: theme.textDim,
+                          fontSize: 9,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(child: modeChips),
+                  const SizedBox(width: 12),
+                  if (total > 0)
+                    Text(
+                      '$correct / $total',
+                      style: GoogleFonts.orbitron(
+                        color: theme.textMid,
+                        fontSize: 11,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Appearance',
+                    icon: Icon(Icons.palette_outlined,
+                        color: theme.textMid, size: 20),
+                    onPressed: () => showAppThemeSettings(context),
+                  ),
+                  TextButton(
+                    onPressed: onGoToSandbox,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        side: BorderSide(color: theme.borderMid),
+                      ),
+                    ),
+                    child: Text(
+                      'SANDBOX',
+                      style: GoogleFonts.orbitron(
+                          color: theme.textDim, fontSize: 8, letterSpacing: 2),
+                    ),
+                  ),
+                ],
               ),
-              child: Text(
-                'SANDBOX',
-                style: GoogleFonts.orbitron(
-                    color: theme.textDim, fontSize: 8, letterSpacing: 2),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1367,31 +1419,50 @@ class _ChallengeBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Progress bar
-          _ProgressRow(
-            index: queueIndex,
-            total: queueTotal,
-            theme: theme,
-          ),
+    final compact = isCompactLayout(context);
+    final hPad = responsiveHorizontalPadding(context);
+    final vGap = compact ? 10.0 : 16.0;
 
-          const SizedBox(height: 16),
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: compact ? 4 : 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ProgressRow(
+              index: queueIndex,
+              total: queueTotal,
+              theme: theme,
+            ),
 
-          // Challenge card
-          _ChallengeCard(
-            mode: mode,
-            challenge: challenge,
-            theme: theme,
-          ),
+            SizedBox(height: vGap),
 
-          const SizedBox(height: 16),
+            // Challenge card — scrollable on compact screens when content is tall.
+            if (compact)
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.28,
+                ),
+                child: SingleChildScrollView(
+                  child: _ChallengeCard(
+                    mode: mode,
+                    challenge: challenge,
+                    theme: theme,
+                  ),
+                ),
+              )
+            else
+              _ChallengeCard(
+                mode: mode,
+                challenge: challenge,
+                theme: theme,
+              ),
 
-          // Input area (drawing canvas for REGEX→DFA / DESCRIBE→FA, text field for DFA→REGEX)
-          Expanded(
+            SizedBox(height: vGap),
+
+            // Input area (drawing canvas for REGEX→DFA / DESCRIBE→FA, text field for DFA→REGEX)
+            Expanded(
             child: mode == _PracticeMode.dfaToRegex
                 ? _RegexInputArea(
                     challenge: challenge.regexChallenge!,
@@ -1434,7 +1505,7 @@ class _ChallengeBody extends StatelessWidget {
               theme: theme,
             ),
 
-          if (gradeResult != null) const SizedBox(height: 12),
+          if (gradeResult != null) SizedBox(height: compact ? 8 : 12),
 
           // Action row
           _ActionRow(
@@ -1448,10 +1519,11 @@ class _ChallengeBody extends StatelessWidget {
             theme: theme,
           ),
 
-          const SizedBox(height: 16),
+          SizedBox(height: compact ? 8 : 16),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -1907,13 +1979,16 @@ class _RegexInputArea extends StatelessWidget {
         : correct
             ? const Color(0xFF4CAF50)
             : theme.error;
+    final compact = isCompactLayout(context);
+    final previewFlex = compact ? 2 : 3;
+    final inputFlex = compact ? 1 : 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Read-only DFA preview (so player can actually see the machine)
         Expanded(
-          flex: 3,
+          flex: previewFlex,
           child: Container(
             decoration: BoxDecoration(
               color: theme.surface,
@@ -1951,7 +2026,7 @@ class _RegexInputArea extends StatelessWidget {
 
         // Regex text field
         Expanded(
-          flex: 1,
+          flex: inputFlex,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(

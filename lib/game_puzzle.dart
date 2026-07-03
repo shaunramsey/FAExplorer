@@ -16,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'widgets/app_theme.dart';
+import 'widgets/responsive_layout.dart';
 
 import 'game_level.dart';
 // LevelDifficulty and PuzzleVariant are declared in game_level.dart.
@@ -122,7 +123,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         widget.level.dsl.isNotEmpty) {
       try {
         _dfaGs = DslCodec.importFromDsl(widget.level.dsl);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to parse level DSL for dfaToRegex: $e');
+      }
     }
 
     _loadSavedDsl();
@@ -165,8 +168,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             _lineCounter = _lines.length;
           });
         }
-      } catch (_) {
-        // Corrupted save — fall through and try the scaffold seed instead.
+      } catch (e) {
+        debugPrint('Corrupted saved DSL for level ${widget.level.id}: $e');
+        // Fall through and try the scaffold seed instead.
         _tryApplyEasyScaffold();
       }
     } else if (widget.difficulty == LevelDifficulty.easy) {
@@ -233,8 +237,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _lineCounter = 0;
         });
       }
-    } catch (_) {
-      // DSL parse failed — leave canvas blank rather than crash.
+    } catch (e) {
+      debugPrint('Failed to seed easy scaffold from level DSL: $e');
     }
   }
 
@@ -258,8 +262,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         ),
       );
       await widget.progressStore.saveLevelDsl(widget.level.id, dsl, widget.difficulty);
-    } catch (_) {
-      // Non-fatal — best-effort save.
+    } catch (e) {
+      debugPrint('Failed to save level progress: $e');
     }
   }
 
@@ -342,24 +346,31 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       return;
     }
 
+    if (_lineMode) {
+      final node = _nodeAt(pos);
+      if (node != null && _canStartLineFrom(node.id)) {
+        _lineSourceNodeId = node.id;
+      }
+      return;
+    }
+
+    // Lines take priority over nodes so transitions can be curved near states.
+    final l = _lineAt(pos);
+    if (l != null) {
+      _draggingLineId = l.id;
+      return;
+    }
+
+    if (_hitStartArrow(pos)) {
+      _draggingStartArrow = true;
+      return;
+    }
+
     final node = _nodeAt(pos);
     if (node != null) {
-      if (_lineMode) {
-        if (_canStartLineFrom(node.id)) _lineSourceNodeId = node.id;
-      } else {
-        _draggingNodeId = node.id;
-      }
+      _draggingNodeId = node.id;
     } else {
-      if (_hitStartArrow(pos)) {
-        _draggingStartArrow = true;
-      } else {
-        final l = _lineAt(pos);
-        if (l != null) {
-          _draggingLineId = l.id;
-        } else if (!_lineMode) {
-          _isPanningCanvas = true;
-        }
-      }
+      _isPanningCanvas = true;
     }
   }
 
@@ -600,11 +611,11 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         }
         try {
           target = DslCodec.importFromSvg(svgText);
-        } catch (_) {
+        } catch (e) {
           setState(() {
             _checking = false;
             _checkResult =
-                '⚠ Could not parse target SVG.\nCheck the embedded automata-data script block.';
+                '⚠ Could not parse target SVG.\n$e';
           });
           return;
         }
@@ -778,6 +789,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       );
     }
     final theme = context.watch<AppThemeNotifier>();
+    final compact = isCompactLayout(context);
     return Scaffold(
       backgroundColor: theme.bg,
       appBar: AppBar(
@@ -786,17 +798,20 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(widget.level.title,
-                style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
-            Text(
-              widget.difficulty.displayName.toUpperCase(),
-              style: GoogleFonts.orbitron(
-                fontSize: 9,
-                letterSpacing: 3,
-                color: widget.difficulty.isHard
-                    ? const Color(0xFFFFB300)
-                    : const Color(0xFF4CAF50),
+                style: GoogleFonts.orbitron(
+                    fontWeight: FontWeight.w700,
+                    fontSize: compact ? 14 : null)),
+            if (!compact)
+              Text(
+                widget.difficulty.displayName.toUpperCase(),
+                style: GoogleFonts.orbitron(
+                  fontSize: 9,
+                  letterSpacing: 3,
+                  color: widget.difficulty.isHard
+                      ? const Color(0xFFFFB300)
+                      : const Color(0xFF4CAF50),
+                ),
               ),
-            ),
           ],
         ),
         leading: BackButton(
@@ -812,7 +827,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          else
+          else if (!compact)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: FilledButton.icon(
@@ -828,6 +843,13 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                   foregroundColor: theme.bg,
                 ),
               ),
+            )
+          else
+            IconButton(
+              tooltip: 'Check answer',
+              onPressed: _checkAnswer,
+              icon: Icon(Icons.check_circle_outline,
+                  color: _isCorrect ? theme.accentGreen : theme.accent),
             ),
         ],
       ),
@@ -839,6 +861,27 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       floatingActionButton: widget.level.puzzleVariant == PuzzleVariant.dfaToRegex
           ? null // no FAB needed — canvas is read-only
           : _buildFab(context, theme),
+      bottomNavigationBar: compact &&
+              widget.level.puzzleVariant != PuzzleVariant.dfaToRegex
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: FilledButton.icon(
+                  onPressed: _checking ? null : _checkAnswer,
+                  icon: const Icon(Icons.check_circle_outline, size: 18),
+                  label: Text('Check Answer',
+                      style: GoogleFonts.orbitron(
+                          fontWeight: FontWeight.w700, fontSize: 12)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        _isCorrect ? theme.accentGreen : theme.accent,
+                    foregroundColor: theme.bg,
+                    minimumSize: const Size.fromHeight(44),
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
   }
 
@@ -858,11 +901,13 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   Widget _buildDfaToRegexBody(AppThemeNotifier theme) {
     final gs = _dfaGs;
+    final compact = isCompactLayout(context);
 
-    return Column(
-      children: [
-        // Goal banner (no alphabet chip — irrelevant for regex input)
-        _GoalBanner(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = !compact && constraints.maxWidth > 500;
+
+        final goalBanner = _GoalBanner(
           description: widget.level.description,
           tagColor: theme.tagColor(widget.level.tag),
           automataMode: widget.level.automataMode,
@@ -871,25 +916,41 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           checkResult: _checkResult,
           isCorrect: _isCorrect,
           puzzleVariant: widget.level.puzzleVariant,
-        ),
+        );
 
-        // ── Read-only DFA canvas (upper half) ────────────────────────
-        Expanded(
-          flex: 3,
-          child: gs == null
-              ? Center(
-                  child: Text('Could not load DFA.',
-                      style: TextStyle(color: theme.textMid)))
-              : _ReadOnlyDfaCanvas(gs: gs, theme: theme),
-        ),
+        final dfaPreview = gs == null
+            ? Center(
+                child: Text('Could not load DFA.',
+                    style: TextStyle(color: theme.textMid)))
+            : _ReadOnlyDfaCanvas(gs: gs, theme: theme);
 
-        // ── Regex input panel (lower section) ────────────────────────
-        _RegexInputPanel(
+        final regexPanel = _RegexInputPanel(
           controller: _regexInputCtrl,
           theme: theme,
           isCorrect: _isCorrect,
-        ),
-      ],
+        );
+
+        if (wide) {
+          return Column(
+            children: [
+              goalBanner,
+              Expanded(
+                flex: 3,
+                child: dfaPreview,
+              ),
+              regexPanel,
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            goalBanner,
+            Expanded(flex: compact ? 2 : 3, child: dfaPreview),
+            Expanded(flex: 1, child: regexPanel),
+          ],
+        );
+      },
     );
   }
 

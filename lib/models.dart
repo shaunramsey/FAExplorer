@@ -302,18 +302,32 @@ class LineData {
       return a * e * i + b * f * g + c * d * h - a * f * h - b * d * i - c * e * g;
     }
 
-    List<double> circleFromThreePoints(double x1, double y1, double x2, double y2, double x3, double y3) {
+    LineGeometry straightFallback() {
+      final mid = Offset((centerA.dx + centerB.dx) / 2, (centerA.dy + centerB.dy) / 2);
+      final start = _closestOnCircle(centerA, mid);
+      final end = _closestOnCircle(centerB, mid);
+      return LineGeometry.straight(
+        startPoint: start,
+        endPoint: end,
+        midPoint: Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2),
+      );
+    }
+
+    List<double>? circleFromThreePoints(double x1, double y1, double x2, double y2, double x3, double y3) {
       final a = det(x1, y1, 1, x2, y2, 1, x3, y3, 1);
+      if (a.abs() < 1e-6) return null;
       final bx = -det(x1 * x1 + y1 * y1, y1, 1, x2 * x2 + y2 * y2, y2, 1, x3 * x3 + y3 * y3, y3, 1);
       final by = det(x1 * x1 + y1 * y1, x1, 1, x2 * x2 + y2 * y2, x2, 1, x3 * x3 + y3 * y3, x3, 1);
       final c = -det(x1 * x1 + y1 * y1, x1, y1, x2 * x2 + y2 * y2, x2, y2, x3 * x3 + y3 * y3, x3, y3);
       final x = (-bx) / (2 * a);
       final y = (-by) / (2 * a);
       final radius = sqrt(bx * bx + by * by - 4 * a * c) / (2 * a.abs());
+      if (!radius.isFinite || radius < 1e-6) return null;
       return [x, y, radius];
     }
 
     final circle = circleFromThreePoints(centerA.dx, centerA.dy, centerB.dx, centerB.dy, anchor.dx, anchor.dy);
+    if (circle == null) return straightFallback();
     final cx = circle[0];
     final cy = circle[1];
     final r = circle[2];

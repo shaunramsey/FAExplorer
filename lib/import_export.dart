@@ -2258,7 +2258,7 @@ class SvgExporter {
       if (nodeA == null || nodeB == null) continue;
 
       if (line.label.trim().isNotEmpty) {
-        const boxW = 120.0;
+        const boxW = kLabelBoxWidth;
         const lineH = 36.0;
         final lineCount = '\n'.allMatches(line.label).length + 1;
         final boxH = lineH * lineCount;
@@ -2287,7 +2287,7 @@ class SvgExporter {
         expandPoint(arrowEnd.dx, arrowEnd.dy);
 
         if (startArrow.label.trim().isNotEmpty) {
-          const boxW = 120.0;
+          const boxW = kLabelBoxWidth;
           const lineH = 36.0;
           final lineCount = '\n'.allMatches(startArrow.label).length + 1;
           final boxH = lineH * lineCount;
@@ -2418,7 +2418,7 @@ class SvgExporter {
       }
 
       if (line.label.trim().isNotEmpty) {
-        const boxW = 120.0;
+        const boxW = kLabelBoxWidth;
         const lineH = 36.0;
         final lineCount = '\n'.allMatches(line.label).length + 1;
         final boxH = lineH * lineCount;
@@ -2514,7 +2514,7 @@ class SvgExporter {
         buffer.writeln('  ${_arrowhead(tipPt, angle)}');
 
         if (startArrow.label.trim().isNotEmpty) {
-          const boxW = 120.0;
+          const boxW = kLabelBoxWidth;
           const lineH = 36.0;
           final lineCount = '\n'.allMatches(startArrow.label).length + 1;
           final boxH = lineH * lineCount;
