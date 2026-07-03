@@ -45,6 +45,7 @@ class _BatchHighlightController extends TextEditingController {
 Future<void> showBatchSimulatorDialog(
   BuildContext context, {
   required AutomataSimulator simulator,
+  PdaSimulator? pdaSimulator,
   TmSimulator? tmSimulator,
   required StartArrowData? startArrow,
 }) async {
@@ -79,6 +80,23 @@ Future<void> showBatchSimulatorDialog(
           ..clear()
           ..addAll(oldSteps);
         tmSimulator.step = oldStep;
+      } else if (pdaSimulator != null) {
+        final oldStep  = pdaSimulator.step;
+        final oldSteps = List<PdaStepSnapshot>.from(pdaSimulator.steps);
+
+        pdaSimulator.rebuild(str, startArrow: startArrow);
+        final result = pdaSimulator.finalResult();
+
+        if (result == PdaSimResult.accept) {
+          accepted.add(i);
+        } else {
+          rejected.add(i);
+        }
+
+        pdaSimulator.steps
+          ..clear()
+          ..addAll(oldSteps);
+        pdaSimulator.step = oldStep;
       } else {
         final oldTokens = List<String>.from(simulator.tokens);
         final oldStates = simulator.states.map(Set<String>.from).toList();
@@ -130,7 +148,7 @@ Future<void> showBatchSimulatorDialog(
               side: BorderSide(color: theme.borderMid),
             ),
             title: Text(
-              'Batch String Simulator${tmSimulator != null ? ' (TM)' : ''}',
+              'Batch String Simulator${tmSimulator != null ? ' (TM)' : pdaSimulator != null ? ' (PDA)' : ''}',
               style: GoogleFonts.courierPrime(
                 color: theme.textLight,
                 fontWeight: FontWeight.bold,
