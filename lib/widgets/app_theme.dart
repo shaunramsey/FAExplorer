@@ -540,18 +540,26 @@ List<({String key, String label, String group})> get kAllColorSlots => [
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppThemeNotifier extends ChangeNotifier {
-  AppThemeNotifier._(this._data, this._prefs, this._presetId);
+  AppThemeNotifier._(this._data, this._prefs, this._presetId, this._flashHighlights);
 
   AppThemeData _data;
   final SharedPreferences _prefs;
   String? _presetId;
+  bool _flashHighlights;
 
   static const _prefsKeyV2 = 'app_theme_v2';
   static const _prefsKeyPreset = 'app_theme_preset_id';
 
+  /// Accessibility: pulse (fade in/out) highlighted colors instead of relying
+  /// on a static color swap, so highlight/duplicate/error states stay
+  /// noticeable for colorblind players or anyone who might just miss a
+  /// static color change. On by default.
+  static const _prefsKeyFlashHighlights = 'app_theme_flash_highlights';
+
   static Future<AppThemeNotifier> load() async {
     final prefs = await SharedPreferences.getInstance();
     final presetId = prefs.getString(_prefsKeyPreset);
+    final flashHighlights = prefs.getBool(_prefsKeyFlashHighlights) ?? true;
     AppThemeData data;
 
     final rawV2 = prefs.getString(_prefsKeyV2);
@@ -574,11 +582,22 @@ class AppThemeNotifier extends ChangeNotifier {
       }
     }
 
-    return AppThemeNotifier._(data, prefs, presetId);
+    return AppThemeNotifier._(data, prefs, presetId, flashHighlights);
   }
 
   AppThemeData get data => _data;
   String? get activePresetId => _presetId;
+
+  /// Whether highlighted/duplicate/error states on the canvas should pulse
+  /// their opacity rather than stay a static color. Persisted independently
+  /// of the color theme itself since it's a behavior toggle, not a color.
+  bool get flashHighlights => _flashHighlights;
+
+  Future<void> setFlashHighlights(bool enabled) async {
+    _flashHighlights = enabled;
+    notifyListeners();
+    await _prefs.setBool(_prefsKeyFlashHighlights, enabled);
+  }
 
   // Core getters (backward compatible)
   Color get bg => _data.bg;
@@ -1298,6 +1317,21 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                       setState(() => _linkHighlights = v);
                       widget.notifier.setLinkHighlightsToAccent(v);
                     },
+                  ),
+
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Flash highlights',
+                        style: GoogleFonts.sourceCodePro(color: textLight, fontSize: 13)),
+                    subtitle: Text(
+                      'Pulse highlighted, duplicate, and error states instead of a '
+                      'static color — helps with color blindness or easy-to-miss cues',
+                      style: GoogleFonts.sourceCodePro(color: textDim, fontSize: 11),
+                    ),
+                    value: widget.notifier.flashHighlights,
+                    activeThumbColor: accent,
+                    activeTrackColor: accent.withValues(alpha: 0.35),
+                    onChanged: (v) => widget.notifier.setFlashHighlights(v),
                   ),
 
                   const SizedBox(height: 8),

@@ -27,21 +27,42 @@ class LinePainter extends CustomPainter {
   final LineGeometry geometry;
   final bool deleteMode;
   final bool highlighted;
+  final bool isError;
   final Color defaultColor;
   final Color highlightColor;
   final Color deleteColor;
+  final Color errorColor;
+
+  /// Accessibility "flash": 1.0 = fully opaque, down to a dimmer floor and
+  /// back, looping. Only actually applied when [highlighted] or [isError]
+  /// is true (see [_lineColor]) — passing 1.0 here is equivalent to no pulse.
+  final double pulseOpacity;
 
   const LinePainter({
     required this.geometry,
     required this.deleteMode,
     required this.highlighted,
+    this.isError = false,
     required this.defaultColor,
     required this.highlightColor,
     required this.deleteColor,
+    this.errorColor = const Color(0xFFFF1744),
+    this.pulseOpacity = 1.0,
   });
 
-  Color get _lineColor =>
-      deleteMode ? deleteColor : highlighted ? highlightColor : defaultColor;
+  Color get _lineColor {
+    final base = deleteMode
+        ? deleteColor
+        : isError
+            ? errorColor
+            : highlighted
+                ? highlightColor
+                : defaultColor;
+
+    // Delete-mode is a transient hover cue, not a state worth flashing.
+    final pulsing = !deleteMode && (highlighted || isError);
+    return pulsing ? base.withValues(alpha: pulseOpacity) : base;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -87,10 +108,13 @@ class LinePainter extends CustomPainter {
   bool shouldRepaint(LinePainter oldDelegate) =>
       oldDelegate.geometry != geometry ||
       oldDelegate.highlighted != highlighted ||
+      oldDelegate.isError != isError ||
       oldDelegate.deleteMode != deleteMode ||
       oldDelegate.defaultColor != defaultColor ||
       oldDelegate.highlightColor != highlightColor ||
-      oldDelegate.deleteColor != deleteColor;
+      oldDelegate.deleteColor != deleteColor ||
+      oldDelegate.errorColor != errorColor ||
+      oldDelegate.pulseOpacity != pulseOpacity;
 }
 
 class LineWidget extends StatefulWidget {
@@ -99,6 +123,14 @@ class LineWidget extends StatefulWidget {
   final Offset centerB;
   final bool deleteMode;
   final bool highlighted;
+
+  /// True when this transition is flagged as part of a puzzle-mode
+  /// violation (e.g. nondeterminism, missing transition). Paints with the
+  /// theme's error color and pulses alongside [highlighted], so puzzle
+  /// feedback gets the same accessibility treatment as simulation
+  /// highlighting.
+  final bool isError;
+
   final ValueChanged<String> onLabelChanged;
 
   const LineWidget({
@@ -108,6 +140,7 @@ class LineWidget extends StatefulWidget {
     required this.centerB,
     required this.deleteMode,
     this.highlighted = false,
+    this.isError = false,
     required this.onLabelChanged,
   });
 
@@ -115,12 +148,19 @@ class LineWidget extends StatefulWidget {
   State<LineWidget> createState() => _LineWidgetState();
 }
 
-class _LineWidgetState extends State<LineWidget> {
+class _LineWidgetState extends State<LineWidget> with SingleTickerProviderStateMixin {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
 
   bool _editing = false;
   int _lineCount = 1;
+
+  // ── Accessibility "flash" pulse ──────────────────────────────────────────
+  // Loops continuously whenever this line is highlighted/errored and the
+  // flashHighlights setting is on; _syncPulse starts/stops it idempotently
+  // from build() so it doesn't restart mid-fade on every rebuild.
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseOpacity;
 
   @override
   void initState() {
@@ -129,6 +169,14 @@ class _LineWidgetState extends State<LineWidget> {
     _controller = TextEditingController(text: widget.data.label);
     _lineCount = '\n'.allMatches(widget.data.label).length + 1;
     _focusNode = FocusNode()..addListener(_onFocusChange);
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _pulseOpacity = Tween<double>(begin: 1.0, end: 0.3).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
   }
 
   void _onFocusChange() {
@@ -154,15 +202,30 @@ class _LineWidgetState extends State<LineWidget> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _pulseController.dispose();
     super.dispose();
+  }
+
+  void _syncPulse(bool shouldPulse) {
+    if (shouldPulse) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+    } else if (_pulseController.isAnimating || _pulseController.value != 0) {
+      _pulseController
+        ..stop()
+        ..value = 0;
+    }
   }
 
   Color _labelColor(AppThemeNotifier theme) {
     return widget.deleteMode
         ? theme.error
-        : widget.highlighted
-            ? theme.lineHighlight
-            : theme.lineColor;
+        : widget.isError
+            ? theme.error
+            : widget.highlighted
+                ? theme.lineHighlight
+                : theme.lineColor;
   }
 
   @override
@@ -184,19 +247,33 @@ class _LineWidgetState extends State<LineWidget> {
 
     final labelColor = _labelColor(theme);
 
+    // Delete-mode is a transient hover cue, not worth flashing.
+    final shouldPulse = theme.flashHighlights &&
+        !widget.deleteMode &&
+        (widget.highlighted || widget.isError);
+    _syncPulse(shouldPulse);
+
     return Stack(
       children: [
         Positioned.fill(
           child: IgnorePointer(
-            child: CustomPaint(
-              painter: LinePainter(
-                geometry: geometry,
-                deleteMode: widget.deleteMode,
-                highlighted: widget.highlighted,
-                defaultColor: theme.lineColor,
-                highlightColor: theme.lineHighlight,
-                deleteColor: theme.error,
-              ),
+            child: AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, _) {
+                return CustomPaint(
+                  painter: LinePainter(
+                    geometry: geometry,
+                    deleteMode: widget.deleteMode,
+                    highlighted: widget.highlighted,
+                    isError: widget.isError,
+                    defaultColor: theme.lineColor,
+                    highlightColor: theme.lineHighlight,
+                    deleteColor: theme.error,
+                    errorColor: theme.error,
+                    pulseOpacity: shouldPulse ? _pulseOpacity.value : 1.0,
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -519,6 +596,13 @@ class Node extends StatefulWidget {
 
   final bool highlighted;
 
+  /// True when this state is flagged as part of a puzzle-mode violation
+  /// (e.g. it's an extra/incorrect state, or involved in a nondeterminism
+  /// error). Paints with the theme's error color and pulses alongside
+  /// [highlighted], so puzzle feedback gets the same accessibility
+  /// treatment as simulation highlighting.
+  final bool isError;
+
   /// Called when the user taps the tape-routing button on a black-box node.
   final VoidCallback? onBlackBoxTapeEdit;
 
@@ -544,6 +628,7 @@ class Node extends StatefulWidget {
     required this.deleteMode,
     this.onDelete,
     this.highlighted = false,
+    this.isError = false,
     this.onBlackBoxTapeEdit,
     this.onBlackBoxEdit,
     this.tapeCount = 1,
@@ -592,11 +677,18 @@ class _OctagonPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _NodeState extends State<Node> {
+class _NodeState extends State<Node> with SingleTickerProviderStateMixin {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
 
   bool _selected = false;
+
+  // ── Accessibility "flash" pulse ──────────────────────────────────────────
+  // Loops continuously whenever this node is highlighted/duplicate/errored
+  // and the flashHighlights setting is on; _syncPulse starts/stops it
+  // idempotently from build() so it doesn't restart mid-fade on rebuild.
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseOpacity;
 
   @override
   void initState() {
@@ -604,6 +696,14 @@ class _NodeState extends State<Node> {
 
     _controller = TextEditingController(text: widget.data.label);
     _focusNode = FocusNode()..addListener(_onFocusChange);
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _pulseOpacity = Tween<double>(begin: 1.0, end: 0.3).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -619,6 +719,7 @@ class _NodeState extends State<Node> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -645,13 +746,25 @@ class _NodeState extends State<Node> {
     }
   }
 
-  Color _borderColor(AppThemeNotifier theme) {
-    final isDuplicate = widget.isLabelTaken(_controller.text, widget.data.id);
+  void _syncPulse(bool shouldPulse) {
+    if (shouldPulse) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+    } else if (_pulseController.isAnimating || _pulseController.value != 0) {
+      _pulseController
+        ..stop()
+        ..value = 0;
+    }
+  }
 
+  Color _borderColor(AppThemeNotifier theme, {required bool isDuplicate}) {
     return widget.deleteMode
         ? theme.nodeBorderDelete
         : widget.highlighted
         ? theme.nodeBorderHighlight
+        : widget.isError
+        ? theme.error
         : isDuplicate
         ? theme.nodeBorderDuplicate
         : _selected
@@ -666,7 +779,15 @@ class _NodeState extends State<Node> {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final borderColor = _borderColor(theme);
+    final isDuplicate = widget.isLabelTaken(_controller.text, widget.data.id);
+    final borderColor = _borderColor(theme, isDuplicate: isDuplicate);
+
+    // Delete-mode and plain "selected" are not flash-worthy states — delete
+    // is a transient hover cue, and selection is just an editing cursor.
+    final shouldPulse = theme.flashHighlights &&
+        !widget.deleteMode &&
+        (widget.highlighted || widget.isError || isDuplicate);
+    _syncPulse(shouldPulse);
 
     // When locked (e.g. placing the start arrow), do not allow selection/editing.
     final bool textFieldActive = _selected && !widget.lineMode && !widget.interactionLocked;
@@ -696,14 +817,20 @@ class _NodeState extends State<Node> {
         child: SizedBox(
           width: nodeWidth,
           height: nodeHeight,
-          child: Stack(
+          child: AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, _) {
+              final pulseColor = shouldPulse
+                  ? borderColor.withValues(alpha: _pulseOpacity.value)
+                  : borderColor;
+              return Stack(
             children: [
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
                     shape: isBlackBox ? BoxShape.rectangle : BoxShape.circle,
                     borderRadius: isBlackBox ? BorderRadius.circular(10) : null,
-                    border: Border.all(color: borderColor, width: 4),
+                    border: Border.all(color: pulseColor, width: 4),
                   ),
                 ),
               ),
@@ -717,7 +844,7 @@ class _NodeState extends State<Node> {
                             height: 78,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: borderColor, width: 3),
+                              border: Border.all(color: pulseColor, width: 3),
                             ),
                           )
                         : Container(
@@ -725,7 +852,7 @@ class _NodeState extends State<Node> {
                             height: 80,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(color: borderColor, width: 4),
+                              border: Border.all(color: pulseColor, width: 4),
                             ),
                           ),
                   ),
@@ -739,7 +866,7 @@ class _NodeState extends State<Node> {
                       height: 56,
                       decoration: BoxDecoration(
                         color: theme.acceptState,
-                        border: Border.all(color: borderColor, width: 4),
+                        border: Border.all(color: pulseColor, width: 4),
                       ),
                     ),
                   ),
@@ -750,7 +877,7 @@ class _NodeState extends State<Node> {
                   child: IgnorePointer(
                     child: CustomPaint(
                       size: const Size(60, 60),
-                      painter: _OctagonPainter(color: theme.rejectState, borderColor: borderColor),
+                      painter: _OctagonPainter(color: theme.rejectState, borderColor: pulseColor),
                     ),
                   ),
                 ),
@@ -867,6 +994,8 @@ class _NodeState extends State<Node> {
                   ),
                 ),
             ],
+              );
+            },
           ),
         ),
       ),
