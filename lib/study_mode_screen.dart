@@ -32,6 +32,7 @@ import 'dialogs/equivalence_dialog.dart'
 import 'models.dart';
 import 'simulator.dart';
 import 'study_mode_pda.dart';
+import 'study_mode_symbols.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
@@ -68,23 +69,13 @@ enum _Difficulty { easy, medium, hard }
 //  different concrete expressions.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// All alphabets the generator may pick from.
-const _kAlphabets = [
-  {'a', 'b'},
-  {'0', '1'},
-  {'x', 'y'},
-  {'p', 'q'},
-];
-
 /// Generates a fresh list of [count] randomised challenges.
 List<_Challenge> _generateChallenges(Random rng, {int count = 30}) {
   final results = <_Challenge>[];
 
-  // Each entry is a factory that takes (rng, alphabet) and returns a regex.
-  // Factories that don't need both symbols only use the first/second element.
-  final alphabets = List.of(_kAlphabets)..shuffle(rng);
-
-  // We'll cycle through alphabets and difficulty buckets.
+  // We'll cycle through difficulty buckets; the alphabet for each challenge
+  // is drawn fresh below via randomStudyAlphabet() so puzzles don't cluster
+  // around the same couple of symbols.
   final easyTemplates   = _kEasyTemplates;
   final mediumTemplates = _kMediumTemplates;
   final hardTemplates   = _kHardTemplates;
@@ -109,7 +100,7 @@ List<_Challenge> _generateChallenges(Random rng, {int count = 30}) {
     };
     for (int i = 0; i < n; i++) {
       final template = pool[i % pool.length];
-      final alphabet = alphabets[rng.nextInt(alphabets.length)];
+      final alphabet = randomStudyAlphabet(rng);
       final symbols  = alphabet.toList()..sort();
       final a = symbols[0];
       final b = symbols.length > 1 ? symbols[1] : symbols[0];
@@ -144,12 +135,8 @@ const List<_RegexTemplate> _kEasyTemplates = [
   _tABStar,
   // Star of first then second
   _tStarAB,
-  // Optional single symbol
-  _tOptional,
   // Exact three-symbol string
   _tExactThree,
-  // Two-symbol string or empty
-  _tTwoOrEps,
 ];
 
 String _tSingle(String a, String b, Random rng)      => rng.nextBool() ? a : b;
@@ -165,7 +152,6 @@ String _tExactThree(String a, String b, Random rng)  {
   if (rng.nextBool()) s[1] = a;
   return s.join();
 }
-String _tTwoOrEps(String a, String b, Random rng)    => '($a$b)?';
 
 // ── Medium templates ──────────────────────────────────────────────────────────
 const List<_RegexTemplate> _kMediumTemplates = [
@@ -217,7 +203,7 @@ String _tThirdFromEnd(String a, String b, Random rng)  =>
 String _tEvenBothCounts(String a, String b, Random rng) =>
     '($a$a+$b$b+($a$b+$b$a)($a$a+$b$b)*($a$b+$b$a))*';
 String _tComplexSuffix(String a, String b, Random rng)  =>
-    '$a*($b$a+)*$b?';
+    '$a*($b$a+)*';
 String _tRepeatTriple(String a, String b, Random rng)   => '($a$b$a)*';
 String _tOddLength(String a, String b, Random rng)      =>
     '($a+$b)(($a+$b)($a+$b))*';
@@ -255,8 +241,6 @@ const List<_DescTemplate> _kDescTemplates = [
   _dAnySingleSymbol,
   // Accepts all strings (including empty)
   _dAllStrings,
-  // Accepts only the empty string OR a single symbol
-  _dEmptyOrSingle,
   // Accepts strings consisting entirely of one repeated symbol
   _dRepeatOneSymbol,
   // Accepts strings of length exactly 2
@@ -295,8 +279,6 @@ const List<_DescTemplate> _kDescTemplates = [
 
   // Accepts strings where every occurrence of 'a' is immediately followed by 'b'
   _dAAlwaysFollowedByB,
-  // Accepts strings where 'a' and 'b' alternate (starting with either)
-  _dAlternating,
   // Accepts strings that contain the substring consisting of two identical symbols in a row
   _dContainsDouble,
   // Accepts strings where the number of 'a's and 'b's are both even
@@ -307,8 +289,6 @@ const List<_DescTemplate> _kDescTemplates = [
   _dSameEnds,
   // Accepts strings that contain at least two occurrences of a specific symbol consecutively
   _dAtLeastTwoConsecutive,
-  // Accepts strings where no two consecutive symbols are the same
-  _dNoTwoConsecutiveSame,
   // Accepts strings where the third-to-last symbol (if reachable) is a specific symbol
   _dThirdFromEnd,
   // Accepts strings over {a,b} where the count of 'a' mod 3 equals 0
@@ -351,17 +331,6 @@ const List<_DescTemplate> _kDescTemplates = [
           regex: '($a+$b)*',
           difficulty: _Difficulty.easy,
         );
-
-({String description, String regex, _Difficulty difficulty})
-    _dEmptyOrSingle(String a, String b, Random rng) {
-  final sym = rng.nextBool() ? a : b;
-  return (
-    description: 'Build an FA that accepts only the empty string (ε) '
-        'and the one-character string "$sym" — nothing longer.',
-    regex: '$sym?',
-    difficulty: _Difficulty.easy,
-  );
-}
 
 ({String description, String regex, _Difficulty difficulty})
     _dRepeatOneSymbol(String a, String b, Random rng) {
@@ -529,15 +498,6 @@ const List<_DescTemplate> _kDescTemplates = [
         );
 
 ({String description, String regex, _Difficulty difficulty})
-    _dAlternating(String a, String b, Random rng) => (
-          description: 'Build an FA that accepts strings over {$a, $b} where '
-              'no two consecutive characters are the same '
-              '(i.e. "$a" and "$b" must strictly alternate, possibly starting with either).',
-          regex: '($a($b$a)*($b)?+$b($a$b)*($a)?)?',
-          difficulty: _Difficulty.hard,
-        );
-
-({String description, String regex, _Difficulty difficulty})
     _dContainsDouble(String a, String b, Random rng) {
   final sym = rng.nextBool() ? a : b;
   return (
@@ -586,15 +546,6 @@ const List<_DescTemplate> _kDescTemplates = [
 }
 
 ({String description, String regex, _Difficulty difficulty})
-    _dNoTwoConsecutiveSame(String a, String b, Random rng) => (
-          description: 'Build an FA that accepts strings over {$a, $b} where '
-              'no symbol appears twice in a row anywhere in the string '
-              '(so "$a$b$a" is accepted but "$a$a" is not).',
-          regex: '($a($b$a)*($b)?+$b($a$b)*($a)?)?',
-          difficulty: _Difficulty.hard,
-        );
-
-({String description, String regex, _Difficulty difficulty})
     _dThirdFromEnd(String a, String b, Random rng) {
   final sym = rng.nextBool() ? a : b;
   return (
@@ -617,12 +568,11 @@ const List<_DescTemplate> _kDescTemplates = [
 List<_Challenge> _generateDescriptionChallenges(Random rng,
     {int count = 15}) {
   final results = <_Challenge>[];
-  final alphabets = List.of(_kAlphabets)..shuffle(rng);
   final templates = List.of(_kDescTemplates)..shuffle(rng);
 
   for (int i = 0; i < count; i++) {
     final tmpl = templates[i % templates.length];
-    final alphabet = alphabets[rng.nextInt(alphabets.length)];
+    final alphabet = randomStudyAlphabet(rng);
     final symbols = alphabet.toList()..sort();
     final a = symbols[0];
     final b = symbols.length > 1 ? symbols[1] : symbols[0];

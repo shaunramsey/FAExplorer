@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'models.dart';
 import 'simulator.dart';
 import 'pda_study_solutions.dart';
+import 'study_mode_symbols.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/automata_canvas_embed.dart';
 
@@ -58,11 +59,20 @@ List<StudyPdaChallenge> generateStudyPdaChallenges(Random rng, {int count = 20})
   return [for (int i = 0; i < count; i++) all[i % all.length]];
 }
 
+/// Draws a fresh, randomly-ordered 2-symbol alphabet.
+(String, String) _freshPair(Random rng) {
+  final syms = randomStudyAlphabet(rng).toList()..shuffle(rng);
+  return (syms[0], syms[1]);
+}
+
 List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
   final challenges = <StudyPdaChallenge>[];
-  final pairs = [('a', 'b'), ('0', '1'), ('x', 'y'), ('p', 'q')];
-  final pair = pairs[rng.nextInt(pairs.length)];
-  final (a, b) = pair;
+
+  // Every challenge below draws its own alphabet via _freshPair() /
+  // randomStudyAlphabet() rather than sharing one pair across the whole
+  // batch — otherwise a single build could lock onto e.g. "x"/"y" for all
+  // fifteen-odd PDA problems in a session.
+  var (a, b) = _freshPair(rng);
 
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 0 }\n\n'
@@ -86,6 +96,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     solutionSpec: PdaSolutionSpec.anbn(a, b),
   ));
 
+  (a, b) = _freshPair(rng);
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 1 }\n\n'
         'Accept non-empty strings with equal "$a" and "$b" counts.',
@@ -109,14 +120,17 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     (1, 2, StudyPdaDifficulty.medium),
     (2, 3, StudyPdaDifficulty.hard),
   ]) {
-    challenges.add(_ratioChallenge(a, b, k, j, diff));
+    final (ra, rb) = _freshPair(rng);
+    challenges.add(_ratioChallenge(ra, rb, k, j, diff));
   }
 
   for (final rel in _CompRelation.values) {
-    challenges.add(_comparisonChallenge(a, b, rel));
+    final (ca, cb) = _freshPair(rng);
+    challenges.add(_comparisonChallenge(ca, cb, rel));
   }
 
-  const s1 = 'a', s2 = 'b', s3 = 'c', s4 = 'd';
+  final quad = randomStudyAlphabet(rng, size: 4).toList()..shuffle(rng);
+  final s1 = quad[0], s2 = quad[1], s3 = quad[2], s4 = quad[3];
   challenges.add(StudyPdaChallenge(
     description: 'L = { $s1^n $s2^m $s3^n $s4^m | n, m ≥ 0 }',
     hint: 'Use separate stack markers for the two pairs of symbols.',
@@ -134,9 +148,8 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     solutionSpec: PdaSolutionSpec.interleaved4(s1, s2, s3, s4),
   ));
 
-  const mid = 'b';
-  const outer = 'a';
-  const frame = 'c';
+  final triple = randomStudyAlphabet(rng, size: 3).toList()..shuffle(rng);
+  final outer = triple[0], mid = triple[1], frame = triple[2];
   challenges.add(StudyPdaChallenge(
     description: 'L = { $outer^n $mid^m $frame^n | n, m ≥ 0 }',
     hint: 'Push for each "$outer", ignore "$mid"s, pop for each "$frame".',
@@ -155,6 +168,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     solutionSpec: PdaSolutionSpec.outerFrame(outer, mid, frame),
   ));
 
+  (a, b) = _freshPair(rng);
   challenges.add(StudyPdaChallenge(
     description: 'L = palindromes over {$a, $b}',
     hint: 'Nondeterministically guess the midpoint, push then pop.',
@@ -171,6 +185,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     solutionSpec: PdaSolutionSpec.palindrome(a, b),
   ));
 
+  (a, b) = _freshPair(rng);
   challenges.add(StudyPdaChallenge(
     description: 'L = { w $b w^R | w ∈ {$a}* }',
     hint: 'Push "$a"s, read "$b", pop "$a"s on the way back.',
