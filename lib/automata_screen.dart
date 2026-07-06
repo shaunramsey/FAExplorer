@@ -987,8 +987,6 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onExportHistory: _showExportHistory,
         onReset: _reset,
         onSignOut: widget.onSignOut,
-        onGoToGame: widget.onGoToGame,
-        onGoToStudy: widget.onGoToStudy,
       ),
 
       appBar: AppBar(
