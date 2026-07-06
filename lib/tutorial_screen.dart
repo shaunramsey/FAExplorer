@@ -73,6 +73,8 @@ enum TutorialIllustration {
   tmTape,
   deleteMode,
   checkAnswer,
+  addSuperStates,
+  stateElimination,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -556,6 +558,12 @@ class _TutorialIllustrationPainter extends CustomPainter {
       case TutorialIllustration.checkAnswer:
         _paintCheckAnswer(canvas, size, cx, cy);
         break;
+      case TutorialIllustration.addSuperStates:
+        _paintAddSuperStates(canvas, size, cx, cy);
+        break;
+      case TutorialIllustration.stateElimination:
+        _paintStateElimination(canvas, size, cx, cy);
+        break;
       case TutorialIllustration.none:
         break;
     }
@@ -972,6 +980,255 @@ class _TutorialIllustrationPainter extends CustomPainter {
       canvas,
       Offset(cx, cy + 42),
       'Tap "Check" to submit your automaton for grading',
+      fontSize: 10,
+      color: dimColor.withValues(alpha: 0.85),
+    );
+  }
+
+  // ── addSuperStates: super-start & super-accept fade in around a DFA ───────
+  //
+  //  Illustrates step 1 of DFA→regex state elimination: before removing any
+  //  state you first wrap the automaton with a fresh super-start S (ε into
+  //  the old start) and a fresh super-accept F (ε out of the old accept
+  //  state). Only S and F keep their start/accept status from then on, which
+  //  frees every other state — including the old accept state — to be
+  //  eliminated in step 2.
+  void _paintAddSuperStates(Canvas canvas, Size size, double cx, double cy) {
+    final q0 = Offset(cx - 35, cy - 5);
+    final q1 = Offset(cx + 35, cy - 5);
+    final superStart = Offset(cx - 95, cy - 5);
+    final superAccept = Offset(cx + 95, cy - 5);
+
+    // Original DFA edge.
+    _drawArrow(canvas, q0, q1, dimColor);
+    _drawLabel(canvas, Offset(cx, cy - 28), 'a', color: dimColor);
+
+    final startT = ((progress - 0.15) / 0.35).clamp(0.0, 1.0);
+    final acceptT = ((progress - 0.55) / 0.35).clamp(0.0, 1.0);
+
+    // q1 hands its acceptance off to the super-accept once F appears.
+    final q1Accepting = acceptT < 0.5;
+
+    _drawNode(canvas, q0, 20, accentColor, bgColor, 'q0');
+    _drawNode(canvas, q1, 20, q1Accepting ? accentColor : dimColor, bgColor,
+        'q1', doubleRing: q1Accepting);
+
+    if (startT > 0.0) {
+      _drawNode(
+        canvas,
+        superStart,
+        16,
+        accentColor.withValues(alpha: startT),
+        bgColor.withValues(alpha: startT),
+        'S',
+      );
+
+      // Start arrow into S — S is now the start state, so it needs the same
+      // "arrow from nowhere" marker every start state gets.
+      final tickColor = accentColor.withValues(alpha: startT);
+      final tickTip = Offset(superStart.dx - 16, superStart.dy);
+      final tickTail = Offset(superStart.dx - 34, superStart.dy);
+      canvas.drawLine(tickTail, tickTip, _linePaint(tickColor, w: 2.2));
+      const tickLen = 8.0;
+      const tickWing = 5.0;
+      canvas.drawPath(
+        Path()
+          ..moveTo(tickTip.dx, tickTip.dy)
+          ..lineTo(tickTip.dx - tickLen, tickTip.dy - tickWing)
+          ..lineTo(tickTip.dx - tickLen, tickTip.dy + tickWing)
+          ..close(),
+        Paint()
+          ..color = tickColor
+          ..style = PaintingStyle.fill,
+      );
+
+      _drawDashedPath(
+        canvas,
+        Path()
+          ..moveTo(superStart.dx + 16, superStart.dy)
+          ..lineTo(q0.dx - 20, q0.dy),
+        Paint()
+          ..color = accentColor.withValues(alpha: startT * 0.9)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke,
+        dashLen: 6,
+        gapLen: 4,
+        offset: progress * 24,
+      );
+      if (startT > 0.4) {
+        _drawLabel(
+          canvas,
+          Offset((superStart.dx + q0.dx) / 2, superStart.dy - 16),
+          'ε',
+          color: accentColor.withValues(alpha: startT),
+        );
+      }
+    }
+
+    if (acceptT > 0.0) {
+      _drawNode(
+        canvas,
+        superAccept,
+        16,
+        accentColor.withValues(alpha: acceptT),
+        bgColor.withValues(alpha: acceptT),
+        'F',
+        doubleRing: acceptT > 0.5,
+      );
+      _drawDashedPath(
+        canvas,
+        Path()
+          ..moveTo(q1.dx + 20, q1.dy)
+          ..lineTo(superAccept.dx - 16, superAccept.dy),
+        Paint()
+          ..color = accentColor.withValues(alpha: acceptT * 0.9)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke,
+        dashLen: 6,
+        gapLen: 4,
+        offset: progress * 24,
+      );
+      if (acceptT > 0.4) {
+        _drawLabel(
+          canvas,
+          Offset((q1.dx + superAccept.dx) / 2, superAccept.dy - 16),
+          'ε',
+          color: accentColor.withValues(alpha: acceptT),
+        );
+      }
+    }
+
+    _drawLabel(
+      canvas,
+      Offset(cx, cy + 55),
+      'Add a super-start S and super-accept F, linked by ε-edges',
+      fontSize: 10,
+      color: dimColor.withValues(alpha: 0.85),
+    );
+  }
+
+  // ── stateElimination: remove an inner state, merge into one regex edge ────
+  //
+  //  Illustrates step 2: to eliminate B, fold its incoming edge (A→B),
+  //  self-loop (B→B), and outgoing edge (B→C) into a single new A→C edge
+  //  labelled with the combined regex. Repeating this for every remaining
+  //  inner state leaves just the super-start/super-accept edge — that
+  //  label is the answer.
+  void _paintStateElimination(Canvas canvas, Size size, double cx, double cy) {
+    final a = Offset(cx - 90, cy - 10);
+    final b = Offset(cx, cy - 10);
+    final c = Offset(cx + 90, cy - 10);
+
+    // Phase timing: B and its edges fade out, then a merged A→C edge fades in.
+    final removeT = ((progress - 0.35) / 0.25).clamp(0.0, 1.0);
+    final mergeT = ((progress - 0.55) / 0.35).clamp(0.0, 1.0);
+    final bOpacity = 1.0 - removeT;
+
+    _drawNode(canvas, a, 22, accentColor, bgColor, 'A');
+    _drawNode(canvas, c, 22, accentColor, bgColor, 'C', doubleRing: true);
+
+    if (bOpacity > 0.01) {
+      _drawNode(canvas, b, 20, dimColor.withValues(alpha: bOpacity),
+          bgColor.withValues(alpha: bOpacity), 'B');
+
+      _drawArrow(canvas, a, b, dimColor.withValues(alpha: bOpacity));
+      _drawLabel(canvas, Offset((a.dx + b.dx) / 2, cy - 34), 'a',
+          color: dimColor.withValues(alpha: bOpacity));
+
+      _drawArrow(canvas, b, c, dimColor.withValues(alpha: bOpacity));
+      _drawLabel(canvas, Offset((b.dx + c.dx) / 2, cy - 34), 'c',
+          color: dimColor.withValues(alpha: bOpacity));
+
+      // Self-loop on B: a true circle tangent to the node's top edge, with
+      // a small gap facing straight down into B and an arrowhead at that
+      // gap — so it reads as "leaves B, loops around, re-enters B" instead
+      // of a disconnected floating oval.
+      const loopRadius = 16.0;
+      final loopCenter = Offset(b.dx, b.dy - 20 - loopRadius);
+      const gapAngle = 0.55;
+      final loopStart = pi / 2 + gapAngle;
+      final loopSweep = 2 * pi - gapAngle * 2;
+      canvas.drawArc(
+        Rect.fromCircle(center: loopCenter, radius: loopRadius),
+        loopStart,
+        loopSweep,
+        false,
+        _linePaint(dimColor.withValues(alpha: bOpacity)),
+      );
+
+      // Arrowhead pointing straight down into B, centred in the gap.
+      final loopTip = Offset(loopCenter.dx, loopCenter.dy + loopRadius);
+      const tipLen = 8.0;
+      const tipWing = 5.0;
+      canvas.drawPath(
+        Path()
+          ..moveTo(loopTip.dx, loopTip.dy)
+          ..lineTo(loopTip.dx - tipWing, loopTip.dy - tipLen)
+          ..lineTo(loopTip.dx + tipWing, loopTip.dy - tipLen)
+          ..close(),
+        Paint()
+          ..color = dimColor.withValues(alpha: bOpacity)
+          ..style = PaintingStyle.fill,
+      );
+
+      _drawLabel(
+        canvas,
+        Offset(loopCenter.dx, loopCenter.dy - loopRadius - 12),
+        'b',
+        color: dimColor.withValues(alpha: bOpacity),
+        fontSize: 10,
+      );
+
+      // X mark once removal begins.
+      if (removeT > 0.15) {
+        final xOpacity = ((removeT - 0.15) / 0.3).clamp(0.0, 1.0) * bOpacity;
+        final xPaint = _linePaint(
+            const Color(0xFFEF5350).withValues(alpha: xOpacity), w: 3);
+        const r = 13.0;
+        canvas.drawLine(
+            Offset(b.dx - r, b.dy - r), Offset(b.dx + r, b.dy + r), xPaint);
+        canvas.drawLine(
+            Offset(b.dx + r, b.dy - r), Offset(b.dx - r, b.dy + r), xPaint);
+      }
+    }
+
+    // New direct A → C edge with the merged regex label, curving underneath.
+    if (mergeT > 0.0) {
+      final p0 = Offset(a.dx + 14, a.dy + 16);
+      final p2 = Offset(c.dx - 14, c.dy + 16);
+      final control = Offset(cx, cy + 50);
+
+      final path = Path()
+        ..moveTo(p0.dx, p0.dy)
+        ..quadraticBezierTo(control.dx, control.dy, p2.dx, p2.dy);
+      canvas.drawPath(
+          path, _linePaint(accentColor.withValues(alpha: mergeT), w: 2.2));
+
+      // Arrowhead, aligned to the curve's tangent at its end point.
+      final angle = atan2(p2.dy - control.dy, p2.dx - control.dx);
+      const len = 10.0;
+      const wing = 6.0;
+      canvas.drawPath(
+        Path()
+          ..moveTo(p2.dx, p2.dy)
+          ..lineTo(p2.dx - len * cos(angle) + wing * sin(angle),
+              p2.dy - len * sin(angle) - wing * cos(angle))
+          ..lineTo(p2.dx - len * cos(angle) - wing * sin(angle),
+              p2.dy - len * sin(angle) + wing * cos(angle))
+          ..close(),
+        Paint()
+          ..color = accentColor.withValues(alpha: mergeT)
+          ..style = PaintingStyle.fill,
+      );
+
+      _drawLabel(canvas, Offset(cx, cy + 66), 'ab*c',
+          color: accentColor.withValues(alpha: mergeT), fontSize: 13);
+    }
+
+    _drawLabel(
+      canvas,
+      Offset(cx, cy + 85),
+      'Eliminate B — merge its in/out/self-loop edges into one label',
       fontSize: 10,
       color: dimColor.withValues(alpha: 0.85),
     );

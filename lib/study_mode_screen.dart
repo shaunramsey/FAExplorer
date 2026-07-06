@@ -29,10 +29,13 @@ import 'package:provider/provider.dart';
 
 import 'dialogs/equivalence_dialog.dart'
     show checkEquivalence, EquivalenceStatus;
+import 'game_data.dart' show GameProgressStore;
+import 'game_level.dart' show GameLevel, kAllLevels;
 import 'models.dart';
 import 'simulator.dart';
 import 'study_mode_pda.dart';
 import 'study_mode_symbols.dart';
+import 'tutorial_screen.dart' show TutorialScreen;
 import 'widgets/app_theme.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
@@ -668,7 +671,10 @@ class StudyModeScreen extends StatefulWidget {
   /// [ModeSelectScreen]. Null when this screen isn't reachable from the menu.
   final VoidCallback? onGoToMenu;
 
-  final dynamic progressStore; // GameProgressStore? — not used here
+  /// Used to open the tutorial library (so users can watch/re-watch the
+  /// game-mode tutorial slideshows without leaving Study Mode) and to mark
+  /// them completed once finished.
+  final GameProgressStore? progressStore;
 
   const StudyModeScreen({
     super.key,
@@ -958,6 +964,36 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     return _GradeResult.wrong(studyPdaFailureMessage(grade.failedCase!));
   }
 
+  // ── Tutorial library ─────────────────────────────────────────────────────
+
+  /// Opens a sheet listing every game-mode tutorial slideshow, so someone
+  /// studying can watch (or re-watch) any of them without having to unlock
+  /// or step through the corresponding game levels.
+  void _openTutorials() {
+    final store = widget.progressStore;
+    if (store == null) return;
+
+    final tutorials = kAllLevels.where((l) => l.isTutorial).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _TutorialLibrarySheet(
+        tutorials: tutorials,
+        onSelect: (level) {
+          Navigator.of(sheetContext).pop();
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => TutorialScreen(
+              level: level,
+              progressStore: store,
+            ),
+          ));
+        },
+      ),
+    );
+  }
+
   void _submit() {
     final _GradeResult result;
     if (_mode == _PracticeMode.pdaToDraw) {
@@ -1007,6 +1043,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
             onGoToSandbox: widget.onGoToSandbox,
             onGoToGame: widget.onGoToGame,
             onGoToMenu: widget.onGoToMenu,
+            onOpenTutorials: widget.progressStore != null ? _openTutorials : null,
           ),
           Expanded(
             child: FadeTransition(
@@ -1066,6 +1103,7 @@ class _TopBar extends StatelessWidget {
   final VoidCallback onGoToSandbox;
   final VoidCallback? onGoToGame;
   final VoidCallback? onGoToMenu;
+  final VoidCallback? onOpenTutorials;
 
   const _TopBar({
     required this.mode,
@@ -1077,6 +1115,7 @@ class _TopBar extends StatelessWidget {
     required this.onGoToSandbox,
     this.onGoToGame,
     this.onGoToMenu,
+    this.onOpenTutorials,
   });
 
   @override
@@ -1254,6 +1293,13 @@ class _TopBar extends StatelessWidget {
                             color: theme.textMid, size: 20),
                         onPressed: () => showAppThemeSettings(context),
                       ),
+                      if (onOpenTutorials != null)
+                        IconButton(
+                          tooltip: 'Tutorials',
+                          icon: Icon(Icons.school_outlined,
+                              color: theme.textMid, size: 20),
+                          onPressed: onOpenTutorials,
+                        ),
                       MainMenuButton(onPressed: onGoToMenu),
                       if (onGoToGame != null)
                         TextButton(
@@ -1342,6 +1388,13 @@ class _TopBar extends StatelessWidget {
                         color: theme.textMid, size: 20),
                     onPressed: () => showAppThemeSettings(context),
                   ),
+                  if (onOpenTutorials != null)
+                    IconButton(
+                      tooltip: 'Tutorials',
+                      icon: Icon(Icons.school_outlined,
+                          color: theme.textMid, size: 20),
+                      onPressed: onOpenTutorials,
+                    ),
                   MainMenuButton(onPressed: onGoToMenu),
                   if (onGoToGame != null) ...[
                     TextButton(
@@ -1380,6 +1433,177 @@ class _TopBar extends StatelessWidget {
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Tutorial library sheet
+//
+//  Lets someone in Study Mode watch any game-mode tutorial slideshow on
+//  demand, without unlocking or stepping through the corresponding game
+//  levels first. Opened from the school-cap icon in the top bar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TutorialLibrarySheet extends StatelessWidget {
+  final List<GameLevel> tutorials;
+  final ValueChanged<GameLevel> onSelect;
+
+  const _TutorialLibrarySheet({
+    required this.tutorials,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final accentColor = theme.tagColor('tutorial');
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.only(top: 60),
+        decoration: BoxDecoration(
+          color: theme.bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border.all(color: theme.borderMid),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            // Grabber handle.
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: theme.textDim.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.school_outlined, color: accentColor, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'TUTORIALS',
+                          style: GoogleFonts.orbitron(
+                            color: theme.textLight,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        Text(
+                          'Watch any lesson without unlocking it in Game mode',
+                          style: GoogleFonts.sourceCodePro(
+                            color: theme.textDim,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: theme.borderMid.withValues(alpha: 0.6)),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: tutorials.length,
+                separatorBuilder: (_, _) => Divider(
+                  height: 1,
+                  color: theme.borderMid.withValues(alpha: 0.3),
+                  indent: 20,
+                  endIndent: 20,
+                ),
+                itemBuilder: (_, i) => _TutorialLibraryTile(
+                  level: tutorials[i],
+                  accentColor: accentColor,
+                  theme: theme,
+                  onTap: () => onSelect(tutorials[i]),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TutorialLibraryTile extends StatelessWidget {
+  final GameLevel level;
+  final Color accentColor;
+  final AppThemeNotifier theme;
+  final VoidCallback onTap;
+
+  const _TutorialLibraryTile({
+    required this.level,
+    required this.accentColor,
+    required this.theme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+              ),
+              child: Icon(Icons.play_arrow_rounded,
+                  color: accentColor, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    level.title,
+                    style: GoogleFonts.orbitron(
+                      color: theme.textLight,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    level.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.sourceCodePro(
+                      color: theme.textDim,
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: theme.textDim, size: 20),
+          ],
+        ),
       ),
     );
   }

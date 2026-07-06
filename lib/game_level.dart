@@ -2646,16 +2646,37 @@ const List<GameLevel> kAllLevels = [
         illustrationType: TutorialIllustration.none,
       ),
       TutorialSlide(
-        headline: 'Tips: DFA → Regex',
-        body: 'To derive a regex from a DFA, try **state elimination**:\n\n'
-            '1. Add a super-start → original start and all accept states → super-accept '
-            'with ε-transitions.\n'
-            '2. Remove inner states one by one, merging their transitions into '
-            'regex labels on the remaining edges.\n'
-            '3. The final label on the super-start → super-accept edge is your regex.\n\n'
-            'In practice, pattern recognition is often faster: '
-            'spot self-loops (→ *), linear paths (→ concat), branches (→ +).',
-        illustrationType: TutorialIllustration.none,
+        headline: 'DFA → Regex: Add Super States',
+        body: 'To turn a DFA into a regex, first convert it into a **GNFA** '
+            '(generalised NFA) by adding two new states:\n\n'
+            '• A **super-start** S, with a single ε-edge into the original '
+            'start state.\n'
+            '• A **super-accept** F, with an ε-edge in from every original '
+            'accept state (if there\'s more than one, they all point to the '
+            'same F).\n\n'
+            'From this point on, only S and F count as start/accept — that '
+            'frees every other state, including the old accept state(s), to '
+            'be eliminated in the next step.',
+        illustrationType: TutorialIllustration.addSuperStates,
+      ),
+      TutorialSlide(
+        headline: 'DFA → Regex: Eliminate States',
+        body: 'Now eliminate the remaining states one at a time until only '
+            'S and F are left. To remove a state B sitting between '
+            'neighbours A and C:\n\n'
+            '1. **Star** its self-loop, if it has one — label b becomes b*.\n'
+            '2. **Sandwich** that between the edge going in and the edge '
+            'going out: a · b* · c.\n'
+            '3. **Union** (+) that with whatever edge, if any, already ran '
+            'directly from A to C.\n\n'
+            'Example: A -a→ B (self-loop b) -c→ C collapses to one edge '
+            'A → C labelled **ab*c**.\n\n'
+            'Repeat for every remaining state. Whatever label ends up on '
+            'the final S → F edge is your answer.\n\n'
+            'Shortcut: pattern recognition is often faster than working it '
+            'out by hand — spot self-loops (→ *), linear paths (→ concat), '
+            'branches (→ +).',
+        illustrationType: TutorialIllustration.stateElimination,
       ),
     ],
   ),
