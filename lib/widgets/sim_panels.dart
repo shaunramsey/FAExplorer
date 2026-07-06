@@ -374,10 +374,26 @@ class TmConfigPanel extends StatelessWidget {
   final TmSimulator simulator;
   final Map<String, NodeData> nodes;
 
+  /// Index of the tape (0-based) whose contents should be shown in each
+  /// branch's config card. Meaningless (and hidden) when the machine has
+  /// only one tape.
+  ///
+  /// This is deliberately the *same* index the caller feeds into
+  /// [StringSimulatorPanel.activeTapeIndex] — sharing one piece of state
+  /// means picking a tape tab in either panel keeps both in sync, rather
+  /// than the config panel silently being stuck on tape 1.
+  final int activeTapeIndex;
+
+  /// Called when the user taps a tape tab in this panel to switch which
+  /// tape is displayed.
+  final ValueChanged<int>? onTapeSelected;
+
   const TmConfigPanel({
     super.key,
     required this.simulator,
     required this.nodes,
+    this.activeTapeIndex = 0,
+    this.onTapeSelected,
   });
 
   String _stateLabel(String nodeId) => displayNodeLabel(nodeId, nodes);
@@ -388,6 +404,14 @@ class TmConfigPanel extends StatelessWidget {
     final configs = simulator.activeConfigs;
     final result  = simulator.result;
     final isDone  = result != TmResult.running;
+
+    // Tape count read off the live configs when available (defensive:
+    // stays correct even a frame before simulator.tapeCount and the
+    // configs agree), falling back to the simulator's own count.
+    final tapeCount = configs.isNotEmpty
+        ? configs.first.tapes.length
+        : (simulator.tapeCount < 1 ? 1 : simulator.tapeCount);
+    final selectedTape = activeTapeIndex.clamp(0, tapeCount - 1);
 
     Color? headerColor;
     if (isDone) {
@@ -455,6 +479,58 @@ class TmConfigPanel extends StatelessWidget {
                     '/ ${simulator.steps.isEmpty ? 0 : simulator.steps.length - 1}',
                     style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim),
                   ),
+
+                  // ── Tape tab strip (only when there's more than one
+                  //    tape to choose from) ───────────────────────────
+                  if (tapeCount > 1) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 22,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: tapeCount,
+                        separatorBuilder: (_, _) => const SizedBox(width: 4),
+                        itemBuilder: (context, i) {
+                          final isActive = i == selectedTape;
+                          return GestureDetector(
+                            onTap: () => onTapeSelected?.call(i),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 140),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? theme.accent.withValues(alpha: 0.15)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(
+                                  color: isActive
+                                      ? theme.accent.withValues(alpha: 0.7)
+                                      : theme.borderMid,
+                                  width: isActive ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'Tape ${i + 1}',
+                                  style: GoogleFonts.courierPrime(
+                                    fontSize: 10,
+                                    fontWeight: isActive
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                    color: isActive
+                                        ? theme.accent
+                                        : theme.textDim,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+
                   Divider(height: 16, color: theme.borderMid),
 
                   // ── Configs list ─────────────────────────────────────
@@ -485,8 +561,9 @@ class TmConfigPanel extends StatelessWidget {
                                 ),
                               _TmConfigCard(
                                 stateLabel: _stateLabel(configs[i].nodeId),
-                                headPos: configs[i].readHeadPos,
-                                tape: configs[i].tape,
+                                tapes: configs[i].tapes,
+                                headPositions: configs[i].readHeadPositions,
+                                activeTapeIndex: selectedTape,
                                 isAccepted: () {
                                   final node = nodes[configs[i].nodeId];
                                   return node != null && node.isHaltAccept;
@@ -519,15 +596,25 @@ class TmConfigPanel extends StatelessWidget {
 
 class _TmConfigCard extends StatelessWidget {
   final String stateLabel;
-  final int headPos;
-  final TmTape tape;
+
+  /// One entry per tape this configuration carries (tapes[0] = tape 1, …).
+  final List<TmTape> tapes;
+
+  /// Head position for each tape, same order/length as [tapes].
+  final List<int> headPositions;
+
+  /// Which entry of [tapes] to actually render. Clamped internally so a
+  /// stale index (e.g. right after removing a tape) never throws.
+  final int activeTapeIndex;
+
   final bool isAccepted;
   final bool isRejected;
 
   const _TmConfigCard({
     required this.stateLabel,
-    required this.headPos,
-    required this.tape,
+    required this.tapes,
+    required this.headPositions,
+    required this.activeTapeIndex,
     required this.isAccepted,
     required this.isRejected,
   });
@@ -535,6 +622,9 @@ class _TmConfigCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
+    final idx = activeTapeIndex.clamp(0, tapes.length - 1);
+    final tape = tapes[idx];
+    final headPos = headPositions[idx];
     final borderColor = isAccepted
         ? theme.accentGreen
         : isRejected
@@ -608,7 +698,7 @@ class _TmConfigCard extends StatelessWidget {
           const SizedBox(height: 8),
 
           Text(
-            'tape',
+            tapes.length > 1 ? 'tape ${idx + 1}' : 'tape',
             style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
           ),
           const SizedBox(height: 4),

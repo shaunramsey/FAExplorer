@@ -1279,8 +1279,16 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               PdaStackPanel(simulator: _pdaSimulator, nodes: _nodes),
 
             // ── TM Config Panel ───────────────────────────────────────
+            // Shares _activeTapeIndex with the StringSimulatorPanel above so
+            // switching tapes in either place keeps both views in sync,
+            // instead of this panel being stuck showing tape 1 always.
             if (_showSimulator && _automataMode == AutomataMode.tm)
-              TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
+              TmConfigPanel(
+                simulator: _tmSimulator,
+                nodes: _nodes,
+                activeTapeIndex: _activeTapeIndex,
+                onTapeSelected: (i) => setState(() => _activeTapeIndex = i),
+              ),
 
             // ── Regex Panel ───────────────────────────────────────────
             if (_automataMode == AutomataMode.regex && _showRegexPanel)
