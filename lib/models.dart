@@ -464,3 +464,292 @@ class LineGeometry {
     required this.arrowAngle,
   }) : hasCircle = true;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Canonical automaton layout post-processor
+//
+//  Runs a convergence loop that pushes nodes apart so that:
+//
+//    A. No two nodes' circles overlap each other.
+//    B. No node sits on top of the straight chord between two OTHER nodes it
+//       isn't connected to.
+//    C. No node overlaps another line's label textbox.
+//    D. No node overlaps a self-loop (circle or label textbox) that isn't its
+//       own.
+//    E. When a single node has multiple self-loops, their angles are spread
+//       out evenly so their labels don't stack on top of each other.
+//
+//  This is the single shared implementation used by:
+//    • study mode's read-only solution previews (PDA and regex/DFA),
+//    • the regex-to-NFA/DFA sandbox conversion (regex_engine.dart),
+//    • DSL import (import_export.dart),
+//  — any place that builds or lays out a graph programmatically rather than
+//  from live user dragging (drag-and-drop already avoids overlap interactively
+//  and isn't touched by this function).
+//
+//  The algorithm only ever *moves nodes apart* when a clearance check fails,
+//  so it is convergent and a no-op on a layout that's already well-formed —
+//  safe to call unconditionally, including on round-tripped positions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Applies the canonical collision-avoidance layout pass to [nodes] and
+/// [lines] in place.
+///
+/// [setDefaultPerpendicular] — when true (the default, matching the original
+/// study-mode behavior), every non-self-loop line is given a default
+/// perpendicularPart of 30 before the convergence loop runs, so transitions
+/// arc gently instead of drawing as perfectly straight, easily-overlapping
+/// lines. Callers that already assign their own curvature (e.g. the regex
+/// engine's bidirectional-pair bending, or DSL-imported explicit curve
+/// values) should pass false to avoid clobbering it.
+void applyAutomatonLayout(
+  Map<String, NodeData> nodes,
+  Map<String, LineData> lines, {
+  bool setDefaultPerpendicular = true,
+}) {
+  // ── Pass 1: default perpendicularPart on all non-self-loop lines ───────────
+  if (setDefaultPerpendicular) {
+    for (final line in lines.values) {
+      if (line.nodeAId != line.nodeBId) {
+        line.perpendicularPart = 30.0;
+      }
+    }
+  }
+
+  // ── Shared constants ───────────────────────────────────────────────────────
+  const double nodeRadius     = 50.0;               // visual radius of a state circle
+  const double nodeDiameter   = nodeRadius * 2;
+  const double minNodeGap     = nodeDiameter + 40.0; // minimum centre-to-centre distance
+  const double clearance      = nodeRadius + 30.0;   // min dist: node centre ↔ chord
+  const double textBuffer     = 14.0;                // extra padding around textbox rect
+  const double boxWidth       = kLabelBoxWidth;       // must match LineWidget — see above
+  const double lineHeight     = kLabelLineHeight;      // single-line height in LineWidget — see above
+  const double selfLoopRadius = kSelfLoopRadius;       // loop circle radius — see above
+  const double selfLoopCenterDist = kSelfLoopCenterDistance; // centre offset for loop — see above
+  const int    iterations     = 30;                  // convergence passes
+
+  // Helper: push node away from an axis-aligned rect.
+  // Returns true if a push was applied.
+  bool pushNodeFromRect(
+    NodeData node,
+    double rLeft,
+    double rTop,
+    double rRight,
+    double rBottom,
+  ) {
+    final nc = node.center;
+    final closestX = nc.dx.clamp(rLeft, rRight);
+    final closestY = nc.dy.clamp(rTop, rBottom);
+    final dxFromBox = nc.dx - closestX;
+    final dyFromBox = nc.dy - closestY;
+    final distFromBox = sqrt(dxFromBox * dxFromBox + dyFromBox * dyFromBox);
+
+    if (distFromBox < nodeRadius) {
+      final push = nodeRadius - distFromBox + 2.0; // +2 px safety margin
+
+      final Offset pushDir;
+      if (distFromBox < 0.5) {
+        final rcx = (rLeft + rRight) / 2;
+        final rcy = (rTop + rBottom) / 2;
+        final awayDx = nc.dx - rcx;
+        final awayDy = nc.dy - rcy;
+        final awayLen = sqrt(awayDx * awayDx + awayDy * awayDy);
+        pushDir = awayLen < 0.5
+            ? const Offset(0, 1)
+            : Offset(awayDx / awayLen, awayDy / awayLen);
+      } else {
+        pushDir = Offset(dxFromBox / distFromBox, dyFromBox / distFromBox);
+      }
+
+      node.position = Offset(
+        node.position.dx + pushDir.dx * push,
+        node.position.dy + pushDir.dy * push,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  // ── Convergence loop ───────────────────────────────────────────────────────
+  for (int iter = 0; iter < iterations; iter++) {
+    bool anyMoved = false;
+    final nodeList = nodes.values.toList();
+
+    // ── Check A: node-node minimum distance ─────────────────────────────────
+    for (int i = 0; i < nodeList.length; i++) {
+      final na = nodeList[i];
+      if (na.isBlackBox) continue;
+      for (int j = i + 1; j < nodeList.length; j++) {
+        final nb = nodeList[j];
+        if (nb.isBlackBox) continue;
+
+        final cA = na.center;
+        final cB = nb.center;
+        final dx = cB.dx - cA.dx;
+        final dy = cB.dy - cA.dy;
+        final dist = sqrt(dx * dx + dy * dy);
+
+        if (dist < minNodeGap && dist > 0.1) {
+          final overlap = (minNodeGap - dist) / 2.0 + 2.0;
+          final ux = dx / dist;
+          final uy = dy / dist;
+          // Push both nodes apart equally.
+          na.position = Offset(na.position.dx - ux * overlap, na.position.dy - uy * overlap);
+          nb.position = Offset(nb.position.dx + ux * overlap, nb.position.dy + uy * overlap);
+          anyMoved = true;
+        }
+      }
+    }
+
+    // ── Checks B+C+D: per-line clearance for every node ─────────────────────
+    for (final node in nodeList) {
+      if (node.isBlackBox) continue;
+
+      for (final line in lines.values) {
+        final isSelfLoop = line.nodeAId == line.nodeBId;
+
+        if (isSelfLoop) {
+          // ── Check D: self-loop textbox must not overlap OTHER nodes ─────
+          // The loop belongs to its own node; we only care if it overlaps a
+          // *different* node's circle.
+          if (line.nodeAId == node.id) continue;
+
+          final ownerNode = nodes[line.nodeAId];
+          if (ownerNode == null) continue;
+
+          // Compute self-loop textbox centre (mirrors LineData.getTextBoxLocation).
+          final oc = ownerNode.center;
+          final angle = line.selfLoopAngle; // default: -π/2 (straight up)
+          final outward = Offset(cos(angle), sin(angle));
+          final loopCenter = Offset(
+            oc.dx + outward.dx * selfLoopCenterDist,
+            oc.dy + outward.dy * selfLoopCenterDist,
+          );
+          const textDistance = kSelfLoopTextDistance;
+          final textCenter = Offset(
+            loopCenter.dx + outward.dx * (selfLoopRadius + textDistance),
+            loopCenter.dy + outward.dy * (selfLoopRadius + textDistance),
+          );
+
+          if (line.label.isNotEmpty) {
+            final lineCount = '\n'.allMatches(line.label).length + 1;
+            final boxHeight = lineHeight * lineCount;
+            final tLeft   = textCenter.dx - boxWidth / 2 - textBuffer;
+            final tTop    = textCenter.dy - boxHeight / 2 - textBuffer;
+            final tRight  = textCenter.dx + boxWidth / 2 + textBuffer;
+            final tBottom = textCenter.dy + boxHeight / 2 + textBuffer;
+
+            if (pushNodeFromRect(node, tLeft, tTop, tRight, tBottom)) {
+              anyMoved = true;
+            }
+          }
+
+          // Also keep OTHER nodes away from the loop circle itself.
+          final nc = node.center;
+          final dxLoop = nc.dx - loopCenter.dx;
+          final dyLoop = nc.dy - loopCenter.dy;
+          final distLoop = sqrt(dxLoop * dxLoop + dyLoop * dyLoop);
+          final minDist = nodeRadius + selfLoopRadius + 10.0;
+          if (distLoop < minDist && distLoop > 0.1) {
+            final push = minDist - distLoop + 2.0;
+            final ux = dxLoop / distLoop;
+            final uy = dyLoop / distLoop;
+            node.position = Offset(
+              node.position.dx + ux * push,
+              node.position.dy + uy * push,
+            );
+            anyMoved = true;
+          }
+          continue;
+        }
+
+        // Non-self-loop: skip if this line directly touches the node.
+        if (line.nodeAId == node.id || line.nodeBId == node.id) continue;
+
+        final nodeA = nodes[line.nodeAId];
+        final nodeB = nodes[line.nodeBId];
+        if (nodeA == null || nodeB == null) continue;
+
+        final cA = nodeA.center;
+        final cB = nodeB.center;
+
+        // ── Check B: chord clearance ────────────────────────────────────
+        {
+          final nc = node.center;
+          final abx = cB.dx - cA.dx;
+          final aby = cB.dy - cA.dy;
+          final abLen = sqrt(abx * abx + aby * aby);
+
+          if (abLen >= 1) {
+            final t = ((nc.dx - cA.dx) * abx + (nc.dy - cA.dy) * aby) /
+                (abLen * abLen);
+            if (t >= -0.05 && t <= 1.05) {
+              final closestX = cA.dx + t * abx;
+              final closestY = cA.dy + t * aby;
+              final dxFromChord = nc.dx - closestX;
+              final dyFromChord = nc.dy - closestY;
+              final distFromChord =
+                  sqrt(dxFromChord * dxFromChord + dyFromChord * dyFromChord);
+
+              if (distFromChord < clearance) {
+                final push = clearance - distFromChord + 2.0;
+                final Offset perp;
+                if (distFromChord < 0.5) {
+                  perp = Offset(aby / abLen, -abx / abLen);
+                } else {
+                  perp = Offset(
+                      dxFromChord / distFromChord, dyFromChord / distFromChord);
+                }
+                node.position = Offset(
+                  node.position.dx + perp.dx * push,
+                  node.position.dy + perp.dy * push,
+                );
+                anyMoved = true;
+              }
+            }
+          }
+        }
+
+        // ── Check C: non-self-loop textbox clearance ────────────────────
+        if (line.label.isNotEmpty) {
+          final lineCount = '\n'.allMatches(line.label).length + 1;
+          final double boxHeight = lineHeight * lineCount;
+
+          final Offset topLeft = line.getTextBoxLocation(
+              cA, cB, boxWidth, boxHeight, line.label);
+
+          final rLeft   = topLeft.dx - textBuffer;
+          final rTop    = topLeft.dy - textBuffer;
+          final rRight  = topLeft.dx + boxWidth  + textBuffer;
+          final rBottom = topLeft.dy + boxHeight + textBuffer;
+
+          if (pushNodeFromRect(node, rLeft, rTop, rRight, rBottom)) {
+            anyMoved = true;
+          }
+        }
+      }
+    }
+
+    // ── Check E: self-loop textbox spacing between nodes on same node ────────
+    // When a node has multiple self-loops (shouldn't happen after merge, but
+    // guard anyway) or its own self-loop label would overlap itself, adjust
+    // selfLoopAngle to spread them out.
+    final selfLoopsByNode = <String, List<LineData>>{};
+    for (final line in lines.values) {
+      if (line.nodeAId == line.nodeBId) {
+        selfLoopsByNode.putIfAbsent(line.nodeAId, () => []).add(line);
+      }
+    }
+    for (final entry in selfLoopsByNode.entries) {
+      final loopsOnNode = entry.value;
+      if (loopsOnNode.length <= 1) continue;
+      // Spread multiple self-loops evenly around the node.
+      final angleStep = (2 * pi) / loopsOnNode.length;
+      for (int i = 0; i < loopsOnNode.length; i++) {
+        loopsOnNode[i].selfLoopAngle = -pi / 2 + angleStep * i;
+      }
+    }
+
+    if (!anyMoved) break;
+  }
+}
