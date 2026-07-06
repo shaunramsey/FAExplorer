@@ -131,6 +131,14 @@ class LineWidget extends StatefulWidget {
   /// highlighting.
   final bool isError;
 
+  /// When true, the label text field is displayed but not editable — the
+  /// player can still tap it to select/copy text, but keystrokes cannot
+  /// change it. Used for read-only previews (e.g. study mode's "target DFA"
+  /// diagram) so the label can't visibly get typed over. Does NOT affect
+  /// dragging the line's curve — that's handled by the parent canvas and is
+  /// still allowed so the player can reposition things for legibility.
+  final bool interactionLocked;
+
   final ValueChanged<String> onLabelChanged;
 
   const LineWidget({
@@ -141,6 +149,7 @@ class LineWidget extends StatefulWidget {
     required this.deleteMode,
     this.highlighted = false,
     this.isError = false,
+    this.interactionLocked = false,
     required this.onLabelChanged,
   });
 
@@ -285,6 +294,7 @@ class _LineWidgetState extends State<LineWidget> with SingleTickerProviderStateM
             child: TextField(
               controller: _controller,
               focusNode: _focusNode,
+              readOnly: widget.interactionLocked,
               textAlign: TextAlign.center,
               maxLines: null,
               keyboardType: TextInputType.multiline,
@@ -339,6 +349,11 @@ class StartArrowWidget extends StatefulWidget {
   final bool deleteMode;
   final bool highlighted;
 
+  /// When true, the label text field is displayed but not editable (see
+  /// [LineWidget.interactionLocked] for rationale). Dragging the arrow to
+  /// reposition it is handled by the parent canvas and is unaffected.
+  final bool interactionLocked;
+
   const StartArrowWidget({
     super.key,
     required this.data,
@@ -346,6 +361,7 @@ class StartArrowWidget extends StatefulWidget {
     this.onDelete,
     this.deleteMode = false,
     this.highlighted = false,
+    this.interactionLocked = false,
   });
 
   @override
@@ -449,6 +465,7 @@ class _StartArrowWidgetState extends State<StartArrowWidget> {
                 child: TextField(
                   controller: _controller,
                   focusNode: _focusNode,
+                  readOnly: widget.interactionLocked,
 
                   maxLines: null,
                   keyboardType: TextInputType.multiline,

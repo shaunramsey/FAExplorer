@@ -28,8 +28,13 @@ import 'app_theme.dart';
 //      state for grading or other purposes.
 //
 //  [readOnly]
-//      When true, disables all editing and the toolbar.  Only panning is
-//      allowed so the user can navigate the diagram.  Used to show the
+//      When true, disables structural editing and hides the toolbar: no
+//      creating/deleting nodes or transitions, no drawing new transitions,
+//      no toggling accept states, and labels can't be typed into. Dragging
+//      is still allowed — individual nodes, line curves, and the start
+//      arrow can all be repositioned, and dragging empty space pans the
+//      whole diagram — so the user can pull things apart if the automatic
+//      layout leaves anything overlapping or hard to read. Used to show the
 //      "target DFA" preview in study mode.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -349,12 +354,18 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
     final canvasBody = widget.readOnly
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
-            // Allow panning even in read-only so the user can navigate.
-            onPanUpdate: (d) => setState(() {
-              for (final n in _nodes.values) {
-                n.position = n.position + d.delta;
-              }
-            }),
+            // Read-only means "can't change the structure" — it doesn't mean
+            // frozen in place. Reuse the same drag handlers as edit mode so
+            // individual nodes/line-curves/the start arrow can be dragged
+            // apart when the auto-layout leaves things overlapping or hard
+            // to read; dragging empty space still pans everything at once.
+            // _lineMode/_deleteMode/_placingStartArrow are permanently false
+            // here (no toolbar to turn them on), so none of the structural
+            // branches inside these handlers (new transitions, deletion,
+            // start-arrow re-placement) can fire — only repositioning can.
+            onPanStart: _onPanStart,
+            onPanUpdate: _onPanUpdateWithTracking,
+            onPanEnd: _onPanEnd,
             child: _CanvasContents(
               nodes: _nodes,
               lines: _lines,
@@ -365,6 +376,7 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
               lineSourceNodeId: null,
               rubberBandEnd: null,
               isLabelTaken: _isLabelTaken,
+              interactionLocked: true,
               onNodeLabelChanged: (_, _) {},
               onLineModeSelect: (_) {},
               onNodeDoubleTap: (_) {},
@@ -401,6 +413,7 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
               lineSourceNodeId: _lineSourceNodeId,
               rubberBandEnd: _rubberBandEnd,
               isLabelTaken: _isLabelTaken,
+              interactionLocked: false,
               onNodeLabelChanged: (id, text) {
                 setState(() => _nodes[id]!.label = text);
                 _notify();
@@ -522,6 +535,13 @@ class _CanvasContents extends StatelessWidget {
   final Offset? rubberBandEnd;
 
   final bool Function(String label, String nodeId) isLabelTaken;
+
+  /// True for the read-only preview mode: node/line/start-arrow labels are
+  /// shown but can't be typed into. Does not affect dragging — positions
+  /// can still be adjusted so the player can fix overlapping/hard-to-read
+  /// layouts, only the label *text* is locked.
+  final bool interactionLocked;
+
   final void Function(String id, String text) onNodeLabelChanged;
   final void Function(String id) onLineModeSelect;
   final void Function(String id) onNodeDoubleTap;
@@ -540,6 +560,7 @@ class _CanvasContents extends StatelessWidget {
     required this.lineSourceNodeId,
     required this.rubberBandEnd,
     required this.isLabelTaken,
+    required this.interactionLocked,
     required this.onNodeLabelChanged,
     required this.onLineModeSelect,
     required this.onNodeDoubleTap,
@@ -561,6 +582,7 @@ class _CanvasContents extends StatelessWidget {
               data: startArrow!,
               nodeCenter: nodes[startArrow!.nodeId]!.center,
               deleteMode: deleteMode,
+              interactionLocked: interactionLocked,
               onDelete: onStartArrowDelete,
             ),
           ),
@@ -595,6 +617,7 @@ class _CanvasContents extends StatelessWidget {
                 centerB: b.center,
                 deleteMode: deleteMode,
                 highlighted: false,
+                interactionLocked: interactionLocked,
                 onLabelChanged: (text) => onLineLabelChanged(line.id, text),
               ),
             ),
@@ -606,7 +629,7 @@ class _CanvasContents extends StatelessWidget {
               key: ValueKey(node.id),
               data: node,
               lineMode: lineMode,
-              interactionLocked: placingStartArrow,
+              interactionLocked: interactionLocked || placingStartArrow,
               deleteMode: deleteMode,
               highlighted: false,
               tapeCount: 1,
