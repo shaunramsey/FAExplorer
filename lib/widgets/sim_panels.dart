@@ -44,7 +44,7 @@ class PdaStackPanel extends StatelessWidget {
     final theme = context.watch<AppThemeNotifier>();
     final configs = simulator.activeConfigs;
     final result = simulator.finalResult();
-    final atEnd = simulator.step == simulator.tokens.length;
+    final atEnd = simulator.step == simulator.maxStep;
 
     Color? headerColor;
     if (atEnd && simulator.tokens.isNotEmpty) {
@@ -374,10 +374,26 @@ class TmConfigPanel extends StatelessWidget {
   final TmSimulator simulator;
   final Map<String, NodeData> nodes;
 
+  /// Index of the tape (0-based) whose contents should be shown in each
+  /// branch's config card. Meaningless (and hidden) when the machine has
+  /// only one tape.
+  ///
+  /// This is deliberately the *same* index the caller feeds into
+  /// [StringSimulatorPanel.activeTapeIndex] — sharing one piece of state
+  /// means picking a tape tab in either panel keeps both in sync, rather
+  /// than the config panel silently being stuck on tape 1.
+  final int activeTapeIndex;
+
+  /// Called when the user taps a tape tab in this panel to switch which
+  /// tape is displayed.
+  final ValueChanged<int>? onTapeSelected;
+
   const TmConfigPanel({
     super.key,
     required this.simulator,
     required this.nodes,
+    this.activeTapeIndex = 0,
+    this.onTapeSelected,
   });
 
   String _stateLabel(String nodeId) => displayNodeLabel(nodeId, nodes);
@@ -388,6 +404,14 @@ class TmConfigPanel extends StatelessWidget {
     final configs = simulator.activeConfigs;
     final result  = simulator.result;
     final isDone  = result != TmResult.running;
+
+    // Tape count read off the live configs when available (defensive:
+    // stays correct even a frame before simulator.tapeCount and the
+    // configs agree), falling back to the simulator's own count.
+    final tapeCount = configs.isNotEmpty
+        ? configs.first.tapes.length
+        : (simulator.tapeCount < 1 ? 1 : simulator.tapeCount);
+    final selectedTape = activeTapeIndex.clamp(0, tapeCount - 1);
 
     Color? headerColor;
     if (isDone) {
@@ -455,6 +479,58 @@ class TmConfigPanel extends StatelessWidget {
                     '/ ${simulator.steps.isEmpty ? 0 : simulator.steps.length - 1}',
                     style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim),
                   ),
+
+                  // ── Tape tab strip (only when there's more than one
+                  //    tape to choose from) ───────────────────────────
+                  if (tapeCount > 1) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 22,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: tapeCount,
+                        separatorBuilder: (_, _) => const SizedBox(width: 4),
+                        itemBuilder: (context, i) {
+                          final isActive = i == selectedTape;
+                          return GestureDetector(
+                            onTap: () => onTapeSelected?.call(i),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 140),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? theme.accent.withValues(alpha: 0.15)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(
+                                  color: isActive
+                                      ? theme.accent.withValues(alpha: 0.7)
+                                      : theme.borderMid,
+                                  width: isActive ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'Tape ${i + 1}',
+                                  style: GoogleFonts.courierPrime(
+                                    fontSize: 10,
+                                    fontWeight: isActive
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                    color: isActive
+                                        ? theme.accent
+                                        : theme.textDim,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+
                   Divider(height: 16, color: theme.borderMid),
 
                   // ── Configs list ─────────────────────────────────────
@@ -485,8 +561,9 @@ class TmConfigPanel extends StatelessWidget {
                                 ),
                               _TmConfigCard(
                                 stateLabel: _stateLabel(configs[i].nodeId),
-                                headPos: configs[i].readHeadPos,
-                                tape: configs[i].tape,
+                                tapes: configs[i].tapes,
+                                headPositions: configs[i].readHeadPositions,
+                                activeTapeIndex: selectedTape,
                                 isAccepted: () {
                                   final node = nodes[configs[i].nodeId];
                                   return node != null && node.isHaltAccept;
@@ -519,15 +596,25 @@ class TmConfigPanel extends StatelessWidget {
 
 class _TmConfigCard extends StatelessWidget {
   final String stateLabel;
-  final int headPos;
-  final TmTape tape;
+
+  /// One entry per tape this configuration carries (tapes[0] = tape 1, …).
+  final List<TmTape> tapes;
+
+  /// Head position for each tape, same order/length as [tapes].
+  final List<int> headPositions;
+
+  /// Which entry of [tapes] to actually render. Clamped internally so a
+  /// stale index (e.g. right after removing a tape) never throws.
+  final int activeTapeIndex;
+
   final bool isAccepted;
   final bool isRejected;
 
   const _TmConfigCard({
     required this.stateLabel,
-    required this.headPos,
-    required this.tape,
+    required this.tapes,
+    required this.headPositions,
+    required this.activeTapeIndex,
     required this.isAccepted,
     required this.isRejected,
   });
@@ -535,6 +622,9 @@ class _TmConfigCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
+    final idx = activeTapeIndex.clamp(0, tapes.length - 1);
+    final tape = tapes[idx];
+    final headPos = headPositions[idx];
     final borderColor = isAccepted
         ? theme.accentGreen
         : isRejected
@@ -542,7 +632,7 @@ class _TmConfigCard extends StatelessWidget {
             : theme.borderMid;
 
     final bgColor = isAccepted
-        ? theme.accentGreen.withOpacity(0.08)
+        ? theme.accentGreen.withValues(alpha: 0.08)
         : isRejected
             ? const Color(0xFF1A0005)
             : theme.bg;
@@ -608,7 +698,7 @@ class _TmConfigCard extends StatelessWidget {
           const SizedBox(height: 8),
 
           Text(
-            'tape',
+            tapes.length > 1 ? 'tape ${idx + 1}' : 'tape',
             style: GoogleFonts.courierPrime(fontSize: 10, color: theme.textDim),
           ),
           const SizedBox(height: 4),
@@ -696,7 +786,7 @@ class _TapeCell extends StatelessWidget {
               child: Center(
                 child: Text(
                   '▲',
-                  style: TextStyle(fontSize: 7, color: theme.accent.withOpacity(0.7)),
+                  style: TextStyle(fontSize: 7, color: theme.accent.withValues(alpha: 0.7)),
                 ),
               ),
             ),
@@ -916,7 +1006,7 @@ class _RegexPanelState extends State<RegexPanel> {
                       border: Border.all(
                         color: _error != null
                             ? const Color(0xFFFF1744)
-                            : theme.accent.withOpacity(0.6),
+                            : theme.accent.withValues(alpha: 0.6),
                         width: 1.5,
                       ),
                       borderRadius: BorderRadius.circular(8),
@@ -1267,6 +1357,25 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   // ── playback ─────────────────────────────────────────────────────────────
 
+  /// The real stopping point for the shared step cursor (`widget.simulator.step`),
+  /// whichever mode is active.
+  ///
+  /// `widget.simulator` (the base [AutomataSimulator]) is used as the generic
+  /// token/step tracker in every mode, but the authoritative simulation — and
+  /// therefore the authoritative halting point — comes from whichever
+  /// mode-specific simulator is active: [TmSimulator] in TM mode,
+  /// [PdaSimulator] in PDA mode, or `widget.simulator` itself in FA/NFA mode.
+  /// Each of those exposes its own `maxStep` that reflects where its
+  /// computation actually stopped (halt-accept reached, every branch died,
+  /// etc.) — never padded out to `tokens.length`. See [AutomataSimulator.maxStep].
+  int get _effectiveMaxStep {
+    final tm = widget.tmSimulator as TmSimulator?;
+    if (tm != null) return tm.maxStep;
+    final pda = widget.pdaSimulator;
+    if (pda != null) return pda.maxStep;
+    return widget.simulator.maxStep;
+  }
+
   void _syncTmStep() {
     final tm = widget.tmSimulator as TmSimulator?;
     if (tm != null) {
@@ -1276,10 +1385,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
 
   void _startPlayback() {
     if (_playing) return;
-    final tm = widget.tmSimulator as TmSimulator?;
-    final maxStep = tm != null
-        ? tm.maxStep
-        : widget.simulator.tokens.length;
+    final maxStep = _effectiveMaxStep;
     if (widget.simulator.step >= maxStep) {
       setState(() => widget.simulator.step = -1);
       _syncTmStep();
@@ -1317,7 +1423,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
       return;
     }
 
-    final maxStep = sim.tokens.length;
+    final maxStep = _effectiveMaxStep;
     if (sim.step >= maxStep) {
       setState(_stopPlayback);
       widget.onStepChanged();
@@ -1373,7 +1479,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
       return;
     }
 
-    final maxStep = widget.simulator.tokens.length;
+    final maxStep = _effectiveMaxStep;
     if (widget.simulator.step < maxStep) {
       setState(() => widget.simulator.step++);
       widget.onStepChanged();
@@ -1413,10 +1519,10 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
       return;
     }
 
-    final maxStep = widget.simulator.tokens.length;
+    final maxStep = _effectiveMaxStep;
     setState(() => widget.simulator.step = maxStep);
     widget.onStepChanged();
-    _scrollToChip(widget.simulator.tokens.length - 1);
+    _scrollToChip(maxStep - 1);
   }
 
   // ── scroll ───────────────────────────────────────────────────────────────
@@ -1540,9 +1646,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
     final tm = widget.tmSimulator as TmSimulator?;
     final isTmMode = tm != null;
 
-    final maxStep = isTmMode
-        ? tm.maxStep
-        : tokens.length;
+    final maxStep = _effectiveMaxStep;
 
     if (_chipKeys.length != tokens.length) {
       _chipKeys
@@ -1599,12 +1703,12 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
             border: Border.all(color: theme.borderMid, width: 1),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
               BoxShadow(
-                color: theme.accent.withOpacity(0.04),
+                color: theme.accent.withValues(alpha: 0.04),
                 blurRadius: 24,
                 spreadRadius: -4,
               ),
@@ -1755,7 +1859,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                 child: ListView.separated(
                                   scrollDirection: Axis.horizontal,
                                   itemCount: widget.tapeNames.length,
-                                  separatorBuilder: (_, __) =>
+                                  separatorBuilder: (_, _) =>
                                       const SizedBox(width: 4),
                                   itemBuilder: (context, i) {
                                     final isActive = i == widget.activeTapeIndex;
@@ -1771,13 +1875,13 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                             left: 8, right: 4, top: 2, bottom: 2),
                                         decoration: BoxDecoration(
                                           color: isActive
-                                              ? theme.accent.withOpacity(0.15)
+                                              ? theme.accent.withValues(alpha: 0.15)
                                               : Colors.transparent,
                                           borderRadius:
                                               BorderRadius.circular(5),
                                           border: Border.all(
                                             color: isActive
-                                                ? theme.accent.withOpacity(0.7)
+                                                ? theme.accent.withValues(alpha: 0.7)
                                                 : theme.borderMid,
                                             width: isActive ? 1.5 : 1,
                                           ),
@@ -1901,7 +2005,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           controller: _tapeScroll,
                           scrollDirection: Axis.horizontal,
                           itemCount: tapeView.cells.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 2),
+                          separatorBuilder: (_, _) => const SizedBox(width: 2),
                           itemBuilder: (context, i) {
                             final isHeadHere = i == tapeView.headIndex;
                             final cell = tapeView.cells[i];
@@ -1921,7 +2025,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                           controller: _tapeScroll,
                           scrollDirection: Axis.horizontal,
                           itemCount: tokens.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 3),
+                          separatorBuilder: (_, _) => const SizedBox(width: 3),
                           itemBuilder: (context, i) {
                             final isCurrent  = i == currentChipIndex;
                             final isConsumed = currentChipIndex >= 0 ? i < currentChipIndex : i < step;
@@ -2031,10 +2135,10 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                         curve: Curves.easeOut,
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         decoration: BoxDecoration(
-                          color: _resultColor(result).withOpacity(0.12),
+                          color: _resultColor(result).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: _resultColor(result).withOpacity(0.5),
+                            color: _resultColor(result).withValues(alpha: 0.5),
                           ),
                         ),
                         child: Center(
@@ -2093,14 +2197,14 @@ class _StringNavArrow extends StatelessWidget {
                 : theme.bg,
             borderRadius: BorderRadius.circular(5),
             border: Border.all(
-              color: enabled ? theme.borderMid : theme.borderMid.withOpacity(0.4),
+              color: enabled ? theme.borderMid : theme.borderMid.withValues(alpha: 0.4),
               width: 1,
             ),
           ),
           child: Icon(
             icon,
             size: 16,
-            color: enabled ? theme.textMid : theme.textDim.withOpacity(0.35),
+            color: enabled ? theme.textMid : theme.textDim.withValues(alpha: 0.35),
           ),
         ),
       ),
@@ -2161,7 +2265,7 @@ class _TokenChip extends StatelessWidget {
         child: _chip(
           bg: theme.panelHighlight,
           fg: theme.textLight,
-          border: theme.panelHighlight.withOpacity(0.75),
+          border: theme.panelHighlight.withValues(alpha: 0.75),
           bold: true,
         ),
       );
@@ -2240,7 +2344,7 @@ class _TapeCellChip extends StatelessWidget {
             color: theme.panelHighlight,
             borderRadius: BorderRadius.circular(5),
             border: Border.all(
-              color: theme.panelHighlight.withOpacity(0.75),
+              color: theme.panelHighlight.withValues(alpha: 0.75),
               width: 1.2,
             ),
           ),

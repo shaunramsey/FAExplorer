@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 
 import '../widgets/app_theme.dart';
 import '../models.dart';
@@ -131,7 +130,7 @@ void showExportDialog(
         ),
       ],
     ),
-  );
+  ).then((_) => nameController.dispose());
 }
 
 void showImportDialog(
@@ -394,45 +393,15 @@ void showExportHistoryDialog(
                               ],
                               IconButton(
                                 icon: Icon(Icons.edit, color: theme.textMid),
+                                tooltip: 'Edit export',
                                 onPressed: () {
-                                  final controller =
-                                      TextEditingController(text: save.name);
-                                  showDialog(
-                                    context: context,
-                                    builder: (_) => AlertDialog(
-                                      backgroundColor: theme.surface,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                        side:
-                                            BorderSide(color: theme.borderMid),
-                                      ),
-                                      title: Text('Rename Export',
-                                          style:
-                                              TextStyle(color: theme.textLight)),
-                                      content: TextField(
-                                        controller: controller,
-                                        style: TextStyle(color: theme.textLight),
-                                        cursorColor: theme.accent,
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context),
-                                          child: const Text('Cancel'),
-                                        ),
-                                        FilledButton(
-                                          onPressed: () {
-                                            save.name =
-                                                controller.text.trim();
-                                            onListChanged();
-                                            setDialogState(() {});
-                                            Navigator.pop(context);
-                                          },
-                                          child: const Text('Save'),
-                                        ),
-                                      ],
-                                    ),
+                                  showEditSavedExportDialog(
+                                    context,
+                                    save: save,
+                                    onSaved: () {
+                                      onListChanged();
+                                      setDialogState(() {});
+                                    },
                                   );
                                 },
                               ),
@@ -462,6 +431,25 @@ void showExportHistoryDialog(
       );
     },
   );
+}
+
+/// Opens an editor for a saved export's name and DSL code.
+///
+/// Works for both plain graph exports and black-box exports — a black box's
+/// `dsl` is the DSL of its internal automaton, so editing it in place is the
+/// same operation either way. [onSaved] is only invoked if the user actually
+/// commits a change (i.e. taps Save on a valid DSL), not on Cancel.
+void showEditSavedExportDialog(
+  BuildContext context, {
+  required SavedExport save,
+  required void Function() onSaved,
+}) {
+  showDialog<bool>(
+    context: context,
+    builder: (_) => _EditSavedExportDialog(save: save),
+  ).then((changed) {
+    if (changed == true) onSaved();
+  });
 }
 
 void showBlackBoxRunnerDialog(
@@ -622,8 +610,139 @@ String _tmOutputString(TmSimulator sim) {
   final cells = tape.cells.map((c) => c == kBlank ? '' : c).toList();
   int start = 0;
   int end = cells.length;
-  while (start < end && cells[start].isEmpty) start++;
-  while (end > start && cells[end - 1].isEmpty) end--;
+  while (start < end && cells[start].isEmpty) {
+    start++;
+  }
+  while (end > start && cells[end - 1].isEmpty) {
+    end--;
+  }
   if (start >= end) return '';
   return cells.sublist(start, end).join();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Edit Saved Export — name + DSL code editor for showExportHistoryDialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EditSavedExportDialog extends StatefulWidget {
+  const _EditSavedExportDialog({required this.save});
+
+  final SavedExport save;
+
+  @override
+  State<_EditSavedExportDialog> createState() =>
+      _EditSavedExportDialogState();
+}
+
+class _EditSavedExportDialogState extends State<_EditSavedExportDialog> {
+  late final TextEditingController _nameController =
+      TextEditingController(text: widget.save.name);
+  late final TextEditingController _dslController =
+      TextEditingController(text: widget.save.dsl);
+
+  String? _dslError;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _dslController.dispose();
+    super.dispose();
+  }
+
+  /// Empty DSL is allowed (an export can represent an empty graph); anything
+  /// else must parse via the same codec the rest of the app uses, so a saved
+  /// export can never be edited into a state the app itself can't load back.
+  void _validate(String value) {
+    if (value.trim().isEmpty) {
+      setState(() => _dslError = null);
+      return;
+    }
+    try {
+      DslCodec.importFromDsl(value);
+      setState(() => _dslError = null);
+    } catch (e) {
+      setState(() => _dslError = 'Invalid DSL: $e');
+    }
+  }
+
+  void _save() {
+    if (_dslError != null) return;
+    final trimmedName = _nameController.text.trim();
+    widget.save.name = trimmedName.isEmpty ? widget.save.name : trimmedName;
+    widget.save.dsl = _dslController.text;
+    Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppThemeNotifier.read(context);
+    return AlertDialog(
+      backgroundColor: theme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.borderMid),
+      ),
+      title: Text(
+        'Edit Export',
+        style: GoogleFonts.courierPrime(
+            fontWeight: FontWeight.bold, color: theme.textLight),
+      ),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _nameController,
+              style: GoogleFonts.courierPrime(
+                  color: theme.textLight, fontSize: 13),
+              cursorColor: theme.accent,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              widget.save.isBlackBox
+                  ? 'Internal DSL (black box machine)'
+                  : 'DSL code',
+              style: GoogleFonts.courierPrime(
+                  fontSize: 12, color: theme.textMid),
+            ),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 260, minHeight: 160),
+              child: TextField(
+                controller: _dslController,
+                onChanged: _validate,
+                maxLines: null,
+                expands: true,
+                textAlignVertical: TextAlignVertical.top,
+                style: GoogleFonts.courierPrime(
+                    fontSize: 13, color: theme.textLight),
+                cursorColor: theme.accent,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  errorText: _dslError,
+                  errorMaxLines: 3,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _dslError == null ? _save : null,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }

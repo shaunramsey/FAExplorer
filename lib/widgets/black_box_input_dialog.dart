@@ -107,6 +107,7 @@ _DslValidation _validate(String raw) {
 class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
   late final TextEditingController _dslController;
   late final TextEditingController _descController;
+  late final TextEditingController _tapesController;
   late _DslValidation _validation;
 
   // Focus node for the DSL field, so we can insert text at the cursor.
@@ -117,6 +118,9 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
     super.initState();
     _dslController = TextEditingController(text: widget.node.blackBoxDsl);
     _descController = TextEditingController(text: widget.node.blackBoxDescription);
+    _tapesController = TextEditingController(
+      text: widget.node.blackBoxActiveTapes.join(','),
+    );
     _validation = _validate(_dslController.text);
     _dslController.addListener(_onDslChanged);
   }
@@ -126,6 +130,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
     _dslController.removeListener(_onDslChanged);
     _dslController.dispose();
     _descController.dispose();
+    _tapesController.dispose();
     _dslFocus.dispose();
     super.dispose();
   }
@@ -142,6 +147,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
   void _save() {
     widget.node.blackBoxDsl = _dslController.text.trim();
     widget.node.blackBoxDescription = _descController.text.trim();
+    widget.node.blackBoxActiveTapes = _parseActiveTapes(_tapesController.text);
     Navigator.of(context).pop(true);
   }
 
@@ -149,7 +155,22 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
     setState(() {
       _dslController.clear();
       _descController.clear();
+      _tapesController.clear();
     });
+  }
+
+  /// Parses the comma-separated "Active tapes" field (e.g. `3` or `2,3`)
+  /// into a list of 1-based tape indices, dropping anything malformed.
+  /// A blank field yields an empty list, which preserves the default
+  /// positional triple → tape mapping (see [NodeData.blackBoxActiveTapes]).
+  static List<int> _parseActiveTapes(String raw) {
+    if (raw.trim().isEmpty) return <int>[];
+    return raw
+        .split(',')
+        .map((t) => int.tryParse(t.trim()))
+        .whereType<int>()
+        .where((t) => t >= 1)
+        .toList();
   }
 
   /// Insert [text] at the current cursor position in the DSL field.
@@ -246,6 +267,27 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                 ),
               ),
 
+              const SizedBox(height: 12),
+
+              // ── Active tapes ─────────────────────────────────────────
+              _FieldLabel(text: 'Active tapes (optional)', theme: theme),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _tapesController,
+                style: GoogleFonts.courierPrime(fontSize: 13, color: theme.textLight),
+                decoration: _inputDecoration(
+                  theme: theme,
+                  hint: 'e.g. 3  or  2,3 — leave blank for default',
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Which tapes the outgoing-line RWD triples address, in order. '
+                'Leave blank for the default (triple 1 → tape 1, triple 2 → '
+                'tape 2, …); tapes not listed are left untouched.',
+                style: TextStyle(fontSize: 11, color: theme.textDim, height: 1.3),
+              ),
+
               const SizedBox(height: 14),
               Divider(height: 1, color: theme.borderMid),
               const SizedBox(height: 14),
@@ -259,7 +301,8 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                   _ValidationBadge(validation: _validation, theme: theme),
                   const Spacer(),
                   if (_dslController.text.trim().isNotEmpty ||
-                      _descController.text.trim().isNotEmpty)
+                      _descController.text.trim().isNotEmpty ||
+                      _tapesController.text.trim().isNotEmpty)
                     TextButton.icon(
                       onPressed: _clear,
                       icon: Icon(Icons.delete_outline, size: 13, color: theme.textDim),
@@ -299,9 +342,9 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: _validation.status == _DslStatus.invalid
-                        ? const Color(0xFFFF5252).withOpacity(0.6)
+                        ? const Color(0xFFFF5252).withValues(alpha: 0.6)
                         : _validation.status == _DslStatus.valid
-                            ? theme.accentGreen.withOpacity(0.4)
+                            ? theme.accentGreen.withValues(alpha: 0.4)
                             : theme.borderMid,
                   ),
                 ),
@@ -322,7 +365,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                         'from another graph, or write one directly.',
                     hintStyle: TextStyle(
                       fontSize: 12,
-                      color: theme.textDim.withOpacity(0.6),
+                      color: theme.textDim.withValues(alpha: 0.6),
                     ),
                     contentPadding: const EdgeInsets.all(10),
                   ),
@@ -340,9 +383,9 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: theme.accent.withOpacity(0.07),
+                  color: theme.accent.withValues(alpha: 0.07),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: theme.accent.withOpacity(0.25)),
+                  border: Border.all(color: theme.accent.withValues(alpha: 0.25)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -354,7 +397,10 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                         'Tape routing is encoded in the outgoing line labels '
                         'as RWD triples per tape — e.g. aXRa1R means '
                         '"tape 1: read a, write X, Right; tape 2: read a, '
-                        'write 1, Right". No separate tape-routing dialog needed.',
+                        'write 1, Right". With "Active tapes" set (e.g. 3), a '
+                        'label of just 10R addresses tape 3 alone — no '
+                        'padding for the other tapes needed. No separate '
+                        'tape-routing dialog needed.',
                         style: TextStyle(
                             fontSize: 11, color: theme.textMid, height: 1.4),
                       ),
@@ -383,7 +429,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
                     style: FilledButton.styleFrom(
                       backgroundColor: theme.accent,
                       disabledBackgroundColor:
-                          theme.accent.withOpacity(0.35),
+                          theme.accent.withValues(alpha: 0.35),
                     ),
                     child: const Text('Save'),
                   ),
@@ -403,7 +449,7 @@ class _BlackBoxEditDialogState extends State<BlackBoxEditDialog> {
     return InputDecoration(
       isDense: true,
       hintText: hint,
-      hintStyle: TextStyle(color: theme.textDim.withOpacity(0.6)),
+      hintStyle: TextStyle(color: theme.textDim.withValues(alpha: 0.6)),
       filled: true,
       fillColor: theme.bg,
       border: OutlineInputBorder(
@@ -450,10 +496,10 @@ class _ValidationBadge extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1FD99A).withOpacity(0.14),
+                  color: const Color(0xFF1FD99A).withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(
-                      color: const Color(0xFF1FD99A).withOpacity(0.4)),
+                      color: const Color(0xFF1FD99A).withValues(alpha: 0.4)),
                 ),
                 child: Text(
                   validation.type!,

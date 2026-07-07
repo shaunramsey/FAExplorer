@@ -192,7 +192,7 @@ class DslCodec {
         final dslLines = n.blackBoxDsl.split('\n');
         out.add('${n.id} blackbox dsl {');
         for (final dslLine in dslLines) {
-          out.add('  ${dslLine}');
+          out.add('  $dslLine');
         }
         out.add('}');
         if (n.blackBoxReadTape != 1) {
@@ -200,6 +200,9 @@ class DslCodec {
         }
         if (n.blackBoxWriteTape != 1) {
           out.add('${n.id} blackbox write tape = ${n.blackBoxWriteTape}');
+        }
+        if (n.blackBoxActiveTapes.isNotEmpty) {
+          out.add('${n.id} blackbox tapes = ${n.blackBoxActiveTapes.join(',')}');
         }
       }
     }
@@ -268,8 +271,98 @@ class DslCodec {
   }
 
   // ── DSL IMPORT ─────────────────────────────────────────────────────────────
+  //
+  //  GRAMMAR (informal EBNF)
+  //  ───────────────────────
+  //  This is the one place the whole format is written down — everything
+  //  below is implemented as a chain of line-by-line RegExp checks in
+  //  importFromDsl(), in this same order (first match wins). If you add a
+  //  new statement form, add a line here too.
+  //
+  //    program      ::= (statement | comment | blank-line)*
+  //    comment      ::= '#' any-text-to-end-of-line          -- stripped, not stored
+  //
+  //    statement    ::= mode-decl
+  //                    | start-arrow
+  //                    | line-curve
+  //                    | line-loop-angle
+  //                    | node-accept
+  //                    | edge
+  //                    | node-position
+  //                    | node-def
+  //                    | blackbox-desc
+  //                    | blackbox-dsl-inline
+  //                    | blackbox-dsl-block      -- multi-line; see below
+  //                    | blackbox-read-tape
+  //                    | blackbox-write-tape
+  //                    | blackbox-tapes
+  //                    | bare-node               -- fallback: any other
+  //                                                 non-empty line becomes an
+  //                                                 isolated node with that
+  //                                                 label
+  //
+  //    mode-decl    ::= ('pda' | 'tm' | 'regex') 'mode' ('on' | 'off')?
+  //                      -- bare form (no on/off) means 'on'
+  //
+  //    start-arrow  ::= 'to' node (
+  //                        WS 'length' '=' number
+  //                      | WS 'angle' '=' number ',' number
+  //                      | '=' label
+  //                      )?
+  //
+  //    line-curve      ::= line-ref WS 'curve' '=' number
+  //    line-loop-angle ::= line-ref WS 'loop' WS 'angle' '=' number
+  //    node-accept     ::= node WS 'is' WS 'accepted'
+  //
+  //    edge         ::= node WS 'to' WS node ('=' label)?
+  //                      -- creates a transition nodeA → nodeB, optionally
+  //                         labelled. The literal ' to ' is the separator,
+  //                         so a node LABEL cannot itself contain ' to '.
+  //
+  //    node-position   ::= label '=' '(' number ',' number ')'
+  //    node-def        ::= nodeId '=' label
+  //    blackbox-desc   ::= nodeId WS 'blackbox' '=' text
+  //    blackbox-dsl-inline ::= nodeId WS 'blackbox' WS 'dsl' '=' escaped-text
+  //    blackbox-dsl-block  ::= nodeId WS 'blackbox' WS 'dsl' WS '{' ... '}'
+  //                      -- everything between the braces (which may itself
+  //                         be several lines of nested DSL) is extracted by
+  //                         _preprocessBlackboxBlocks() BEFORE the main
+  //                         line-by-line pass runs, and re-injected as its
+  //                         own `nodeId blackbox dsl = ...` entry afterwards.
+  //    blackbox-read-tape  ::= nodeId WS 'blackbox' WS 'read'  WS 'tape' '=' int
+  //    blackbox-write-tape ::= nodeId WS 'blackbox' WS 'write' WS 'tape' '=' int
+  //    blackbox-tapes      ::= nodeId WS 'blackbox' WS 'tapes' '=' int (',' int)*
+  //                      -- sets NodeData.blackBoxActiveTapes: the 1-based
+  //                         tape indices this box's outgoing-line compact
+  //                         triples address, in order (e.g. `tapes = 2,3`).
+  //                         Omitted/empty preserves the default positional
+  //                         mapping (triple i → tape i+1).
+  //
+  //    node         ::= label | nodeId '(' label ')'
+  //                      -- the `id(label)` form disambiguates when the same
+  //                         label is used on more than one node; label alone
+  //                         is otherwise resolved to the unique node with
+  //                         that label
+  //    nodeId       ::= 'n' digit+                -- e.g. n0, n1, n17
+  //    line-ref     ::= label | '~' int '(' label ')'
+  //                      -- '~N(label)' picks the Nth (0-based) line among
+  //                         several sharing the same label, in file order
+  //
+  //    label        ::= ('<<' text '>>')          -- halt-ACCEPT state
+  //                    | ('>>' text '<<')          -- halt-REJECT state
+  //                    | text
+  //    text         ::= any characters, with '\\' and '\n' escaped as
+  //                      '\\\\' and '\\n' respectively (see _escapeDsl /
+  //                      _unescapeDsl) so labels can safely contain the
+  //                      characters this grammar otherwise treats as
+  //                      syntax ('=', 'to', etc).
+  //
+  //  Transition LABEL payloads (the text after `=` on an `edge` line) are
+  //  themselves a nested mini-syntax interpreted by the simulators, not by
+  //  this parser — see simulator.dart for FA/PDA/TM label formats
+  //  (`read,pop|push` for PDA, `tapeIndex:read,write,L/R/S` for TM, etc).
+  // ─────────────────────────────────────────────────────────────────────────
 
-  /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   /// Returns a [GraphState] on success, or throws a descriptive [Exception].
   static GraphState importFromDsl(String src) {
     // Preprocess: normalize multi-line blackbox dsl blocks into single lines
@@ -565,6 +658,28 @@ class DslCodec {
         final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
         node.blackBoxWriteTape = tapeNum < 1 ? 1 : tapeNum;
+        if (node.label.trim().isEmpty) {
+          node.label = 'BB ${id.toUpperCase()}';
+        }
+        newNodes[id] = node;
+        continue;
+      }
+
+      // ── nN blackbox tapes = N[,N...] ─────────────────────────────────────
+      final bbActiveTapesMatch = RegExp(r'^(n\d+)\s+blackbox\s+tapes\s*=\s*([\d,\s]+)$', caseSensitive: false).firstMatch(line);
+      if (bbActiveTapesMatch != null) {
+        final id = bbActiveTapesMatch.group(1)!;
+        final tapes = bbActiveTapesMatch.group(2)!
+            .split(',')
+            .map((t) => int.tryParse(t.trim()))
+            .whereType<int>()
+            .where((t) => t >= 1)
+            .toList();
+        final num = int.tryParse(id.substring(1)) ?? -1;
+        if (num >= nodeCounter) nodeCounter = num + 1;
+        final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
+        node.isBlackBox = true;
+        node.blackBoxActiveTapes = tapes;
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
         }
@@ -952,11 +1067,6 @@ double _fromPt(double pt) => pt * 2;
 /// Convert a node id (e.g. "n3") to a safe tikz node name ("state_n3").
 String _tikzName(String id) => 'state_$id';
 
-/// Reverse a tikz node name back to an internal id.
-String? _idFromTikzName(String name) {
-  if (name.startsWith('state_n')) return name.substring('state_'.length);
-  return null;
-}
 
 /// Determine the loop direction for self-loop tikz style from [selfLoopAngle]
 /// (radians, measured from +x axis, same convention as the canvas).
@@ -1111,7 +1221,7 @@ class LatexExporter {
     //   accepting     – normal double-ring accept state
     //   accepting by double – same (alias sometimes preferred)
 
-    final startNodeId = g.startArrow != null ? g.startArrow!.nodeId : null;
+    final startNodeId = g.startArrow?.nodeId;
 
     for (final node in g.nodes.values) {
       final name = _tikzName(node.id);
@@ -1530,9 +1640,9 @@ class _LatexExportDialogState extends State<_LatexExportDialog> {
             Container(
               constraints: const BoxConstraints(maxHeight: 340),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: theme.colorScheme.outline.withOpacity(0.4)),
+                border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.4)),
               ),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(12),
@@ -1551,7 +1661,7 @@ class _LatexExportDialogState extends State<_LatexExportDialog> {
               'Compile with pdflatex / xelatex / lualatex.\n'
               'Requires: \\usetikzlibrary{automata,positioning,arrows.meta}',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
           ],
@@ -1656,7 +1766,7 @@ class _LatexImportDialogState extends State<_LatexImportDialog> {
                 hintStyle: TextStyle(
                   fontFamily: 'Courier New',
                   fontSize: 11,
-                  color: theme.colorScheme.onSurface.withOpacity(0.4),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
                 errorText: _error,
               ),
@@ -1774,7 +1884,9 @@ FaToRegexResult faToRegex({
   final Map<String, Map<String, _RE?>> gnfa = {};
 
   void ensureRow(String s) => gnfa.putIfAbsent(s, () => {});
-  for (final s in allStates) ensureRow(s);
+  for (final s in allStates) {
+    ensureRow(s);
+  }
   ensureRow(superStart);
   ensureRow(superAccept);
 
@@ -1817,7 +1929,7 @@ FaToRegexResult faToRegex({
   // Re-score and pick the best state to eliminate each round (greedy).
   // Score = sum of string lengths of the new edges that would be created,
   // minus the edges that would be removed.  Lower is better.
-  int _score(String q) {
+  int score(String q) {
     final preds = gnfa.keys
         .where((p) => p != q && (gnfa[p]?[q]) != null)
         .toList();
@@ -1847,9 +1959,9 @@ FaToRegexResult faToRegex({
   while (remaining.isNotEmpty) {
     // Pick the state with minimum elimination cost.
     String best = remaining.first;
-    int bestScore = _score(best);
+    int bestScore = score(best);
     for (final q in remaining) {
-      final s = _score(q);
+      final s = score(q);
       if (s < bestScore) {
         bestScore = s;
         best = q;
@@ -2064,7 +2176,7 @@ int _size(_RE? r) {
   if (r is _Empty || r is _Eps || r is _Lit) return 1;
   if (r is _Star)  return 1 + _size(r.child);
   if (r is _Cat)   return _size(r.left) + _size(r.right);
-  if (r is _Union) return _size((r as _Union).left) + _size(r.right);
+  if (r is _Union) return _size((r).left) + _size(r.right);
   return 1;
 }
 
@@ -2102,7 +2214,9 @@ String _printPrec(_RE r, int prec) {
     final arms = <_RE>[];
     void collect(_RE node) {
       if (node is _Union) { collect(node.left); collect(node.right); }
-      else arms.add(node);
+      else {
+        arms.add(node);
+      }
     }
     collect(r);
     final s = arms.map((a) => _printPrec(a, 0)).join('+');
@@ -2176,7 +2290,7 @@ class SvgExporter {
       if (nodeA == null || nodeB == null) continue;
 
       if (line.label.trim().isNotEmpty) {
-        const boxW = 120.0;
+        const boxW = kLabelBoxWidth;
         const lineH = 36.0;
         final lineCount = '\n'.allMatches(line.label).length + 1;
         final boxH = lineH * lineCount;
@@ -2205,7 +2319,7 @@ class SvgExporter {
         expandPoint(arrowEnd.dx, arrowEnd.dy);
 
         if (startArrow.label.trim().isNotEmpty) {
-          const boxW = 120.0;
+          const boxW = kLabelBoxWidth;
           const lineH = 36.0;
           final lineCount = '\n'.allMatches(startArrow.label).length + 1;
           final boxH = lineH * lineCount;
@@ -2336,7 +2450,7 @@ class SvgExporter {
       }
 
       if (line.label.trim().isNotEmpty) {
-        const boxW = 120.0;
+        const boxW = kLabelBoxWidth;
         const lineH = 36.0;
         final lineCount = '\n'.allMatches(line.label).length + 1;
         final boxH = lineH * lineCount;
@@ -2432,7 +2546,7 @@ class SvgExporter {
         buffer.writeln('  ${_arrowhead(tipPt, angle)}');
 
         if (startArrow.label.trim().isNotEmpty) {
-          const boxW = 120.0;
+          const boxW = kLabelBoxWidth;
           const lineH = 36.0;
           final lineCount = '\n'.allMatches(startArrow.label).length + 1;
           final boxH = lineH * lineCount;
@@ -2633,7 +2747,7 @@ class _FaToRegexDialogState extends State<_FaToRegexDialog> {
                         color: theme.bg,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: theme.accent.withOpacity(0.5),
+                          color: theme.accent.withValues(alpha: 0.5),
                           width: 1.5,
                         ),
                       ),

@@ -18,7 +18,10 @@
 //  The converter produces:
 //    • An NFA (NodeData + LineData) with ε-transitions (Thompson construction)
 //    • OR a minimal DFA (NodeData + LineData, no ε-transitions, each symbol on
-//      its own line) — subset construction followed by Hopcroft minimization.
+//      its own line) — subset construction followed by DFA minimization via
+//      Moore's partition-refinement algorithm (see the note above
+//      _minimizeDfa() for why this isn't Hopcroft's algorithm despite an
+//      earlier version of this comment saying so).
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -393,8 +396,8 @@ RegexConversionResult _fragmentToGraph(_Fragment fragment, _NfaBuilder builder, 
   int effectiveStart  = startState;
   int effectiveAccept = acceptState;
 
-  final _startOut = trans[startState] ?? [];
-  if (_startOut.isNotEmpty && _startOut.every((e) => e.symbol == _kEpsilon)) {
+  final startOut = trans[startState] ?? [];
+  if (startOut.isNotEmpty && startOut.every((e) => e.symbol == _kEpsilon)) {
     // Compute ε-closure of the start state.
     final closure = <int>{startState};
     final wl = <int>[startState];
@@ -712,9 +715,28 @@ class _NfaTable {
   }
 }
 
-// ─── DFA minimization (Hopcroft's algorithm) ──────────────────────────────────
+// ─── DFA minimization (Moore's partition-refinement algorithm) ────────────────
+//
+//  NOTE ON NAMING: earlier comments in this file called this "Hopcroft
+//  minimization" / "Hopcroft's algorithm". That was inaccurate and has been
+//  corrected. What's implemented below is Moore's algorithm: each round,
+//  every partition is split by grouping its states according to which
+//  partition each transition leads to, and this repeats until no partition
+//  splits any further. That's the simple O(n² · |alphabet|) minimization
+//  algorithm taught alongside Hopcroft's in most automata courses — it is
+//  NOT Hopcroft's algorithm, which instead maintains an explicit worklist of
+//  (partition, symbol) pairs and only reprocesses the specific partitions
+//  affected by the smaller half of each split, giving it its better
+//  O(n log n) bound. If you came here expecting Hopcroft's specific
+//  worklist/"process the smaller half" technique, it isn't here — this is
+//  the more approachable (if asymptotically slower) alternative, which is a
+//  reasonable choice for the state counts this app deals with.
+// ─────────────────────────────────────────────────────────────────────────────
 
-/// Minimizes a DFA given as a transition table.
+/// Minimizes a DFA given as a transition table, via Moore's partition-
+/// refinement algorithm (see the note above — this is not Hopcroft's
+/// algorithm, despite this function having previously been mislabeled as
+/// such).
 ///
 /// [numStates]   — total number of DFA states (0..numStates-1).
 /// [acceptStates] — set of accepting state indices.
@@ -904,7 +926,7 @@ RegexConversionResult _dfaTableToGraph(_NfaTable nfa, String pattern) {
     rawTransMap['${t.from}__${t.symbol}'] = t.to;
   }
 
-  // ── Step 3: Hopcroft minimization ─────────────────────────────────────────
+  // ── Step 3: DFA minimization (Moore's algorithm — see note above _minimizeDfa) ──
   final minDfa = _minimizeDfa(
     numStates: dfaStates.length,
     acceptStates: rawAcceptStates,
@@ -947,7 +969,7 @@ RegexConversionResult _dfaTableToGraph(_NfaTable nfa, String pattern) {
   final Map<String, List<String>> edgeSymbols = {};
   for (final entry in minDfa.transitions.entries) {
     final parts = entry.key.split('__');
-    final ek = '${parts[0]}__${parts[1]}'; // from__sym, but we want from__to
+// from__sym, but we want from__to
     // Rebuild as from__to
     final fromIdx = parts[0];
     final sym = parts[1];

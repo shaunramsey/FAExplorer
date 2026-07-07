@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -43,6 +45,7 @@ class _BatchHighlightController extends TextEditingController {
 Future<void> showBatchSimulatorDialog(
   BuildContext context, {
   required AutomataSimulator simulator,
+  PdaSimulator? pdaSimulator,
   TmSimulator? tmSimulator,
   required StartArrowData? startArrow,
 }) async {
@@ -77,6 +80,23 @@ Future<void> showBatchSimulatorDialog(
           ..clear()
           ..addAll(oldSteps);
         tmSimulator.step = oldStep;
+      } else if (pdaSimulator != null) {
+        final oldStep  = pdaSimulator.step;
+        final oldSteps = List<PdaStepSnapshot>.from(pdaSimulator.steps);
+
+        pdaSimulator.rebuild(str, startArrow: startArrow);
+        final result = pdaSimulator.finalResult();
+
+        if (result == PdaSimResult.accept) {
+          accepted.add(i);
+        } else {
+          rejected.add(i);
+        }
+
+        pdaSimulator.steps
+          ..clear()
+          ..addAll(oldSteps);
+        pdaSimulator.step = oldStep;
       } else {
         final oldTokens = List<String>.from(simulator.tokens);
         final oldStates = simulator.states.map(Set<String>.from).toList();
@@ -128,7 +148,7 @@ Future<void> showBatchSimulatorDialog(
               side: BorderSide(color: theme.borderMid),
             ),
             title: Text(
-              'Batch String Simulator${tmSimulator != null ? ' (TM)' : ''}',
+              'Batch String Simulator${tmSimulator != null ? ' (TM)' : pdaSimulator != null ? ' (PDA)' : ''}',
               style: GoogleFonts.courierPrime(
                 color: theme.textLight,
                 fontWeight: FontWeight.bold,
@@ -209,9 +229,12 @@ Future<void> showBatchSimulatorDialog(
                               allowedExtensions: ['txt'],
                             );
                             if (result == null ||
-                                result.files.single.bytes == null) return;
-                            final text = String.fromCharCodes(
-                                result.files.single.bytes!);
+                                result.files.single.bytes == null) {
+                              return;
+                            }
+                            final text = utf8.decode(
+                                result.files.single.bytes!,
+                                allowMalformed: true);
                             setLocalState(() {
                               controller.text = text;
                               rebuildResults();
@@ -250,9 +273,9 @@ class _SummaryChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(
         label,

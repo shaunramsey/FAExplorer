@@ -73,6 +73,8 @@ enum TutorialIllustration {
   tmTape,
   deleteMode,
   checkAnswer,
+  addSuperStates,
+  stateElimination,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +190,7 @@ class _TutorialScreenState extends State<TutorialScreen>
                   decoration: BoxDecoration(
                     color: active
                         ? accentColor
-                        : theme.textDim.withOpacity(0.4),
+                        : theme.textDim.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 );
@@ -222,7 +224,7 @@ class _TutorialScreenState extends State<TutorialScreen>
                 color: theme.bg,
                 border: Border(
                   top: BorderSide(
-                    color: theme.borderMid.withOpacity(0.5),
+                    color: theme.borderMid.withValues(alpha: 0.5),
                   ),
                 ),
               ),
@@ -326,16 +328,16 @@ class _SlidePage extends StatelessWidget {
           if (slide.illustrationType != TutorialIllustration.none)
             AnimatedBuilder(
               animation: animCtrl,
-              builder: (_, __) => Center(
+              builder: (_, _) => Center(
                 child: Container(
                   width: double.infinity,
                   height: 200,
                   margin: const EdgeInsets.only(bottom: 28),
                   decoration: BoxDecoration(
-                    color: theme.border.withOpacity(0.5),
+                    color: theme.border.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: accentColor.withOpacity(0.3),
+                      color: accentColor.withValues(alpha: 0.3),
                       width: 1.5,
                     ),
                   ),
@@ -556,6 +558,12 @@ class _TutorialIllustrationPainter extends CustomPainter {
       case TutorialIllustration.checkAnswer:
         _paintCheckAnswer(canvas, size, cx, cy);
         break;
+      case TutorialIllustration.addSuperStates:
+        _paintAddSuperStates(canvas, size, cx, cy);
+        break;
+      case TutorialIllustration.stateElimination:
+        _paintStateElimination(canvas, size, cx, cy);
+        break;
       case TutorialIllustration.none:
         break;
     }
@@ -581,7 +589,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy),
       rippleRadius,
       Paint()
-        ..color = accentColor.withOpacity(tapOpacity * 0.3)
+        ..color = accentColor.withValues(alpha: tapOpacity * 0.3)
         ..style = PaintingStyle.fill,
     );
 
@@ -590,8 +598,8 @@ class _TutorialIllustrationPainter extends CustomPainter {
       canvas,
       Offset(cx, cy),
       26,
-      accentColor.withOpacity(nodeOpacity),
-      bgColor.withOpacity(nodeOpacity),
+      accentColor.withValues(alpha: nodeOpacity),
+      bgColor.withValues(alpha: nodeOpacity),
       'q₀',
     );
 
@@ -601,7 +609,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 55),
       'Double-tap on empty space to add a state',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -631,7 +639,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 55),
       'Hold Shift + drag between states to draw a transition',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -661,7 +669,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
         Offset(cx, cy - 10),
         r + 6,
         Paint()
-          ..color = accentColor.withOpacity(0.15 + 0.1 * sin(phase))
+          ..color = accentColor.withValues(alpha: 0.15 + 0.1 * sin(phase))
           ..style = PaintingStyle.fill,
       );
     }
@@ -673,7 +681,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
           ? 'Double ring = accepting state ✓'
           : 'Tap a state then toggle "Accept" to mark it',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -697,7 +705,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 52),
       'Drag the start arrow to set the initial state',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -723,10 +731,10 @@ class _TutorialIllustrationPainter extends CustomPainter {
     final arrowOpacity = (0.5 + 0.5 * sin(progress * 2 * pi)).clamp(0.0, 1.0);
 
     _drawNode(canvas, n0, 20, nfaColor, bgColor, 'A');
-    _drawNode(canvas, n1, 20, nfaColor.withOpacity(arrowOpacity), bgColor, 'B');
-    _drawNode(canvas, n2, 20, nfaColor.withOpacity(arrowOpacity), bgColor, 'C');
-    _drawArrow(canvas, n0, n1, nfaColor.withOpacity(arrowOpacity));
-    _drawArrow(canvas, n0, n2, nfaColor.withOpacity(arrowOpacity));
+    _drawNode(canvas, n1, 20, nfaColor.withValues(alpha: arrowOpacity), bgColor, 'B');
+    _drawNode(canvas, n2, 20, nfaColor.withValues(alpha: arrowOpacity), bgColor, 'C');
+    _drawArrow(canvas, n0, n1, nfaColor.withValues(alpha: arrowOpacity));
+    _drawArrow(canvas, n0, n2, nfaColor.withValues(alpha: arrowOpacity));
     _drawLabel(canvas, Offset(cx * 1.37, cy - 55), 'a', color: nfaColor);
     _drawLabel(canvas, Offset(cx * 1.37, cy - 3), 'a', color: nfaColor);
     _drawLabel(canvas, Offset(cx * 1.37, cy + 24), 'NFA', color: nfaColor);
@@ -735,7 +743,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     canvas.drawLine(
       Offset(cx, cy - 80),
       Offset(cx, cy + 60),
-      _linePaint(dimColor.withOpacity(0.25)),
+      _linePaint(dimColor.withValues(alpha: 0.25)),
     );
   }
 
@@ -768,7 +776,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 48),
       'No input consumed — machine can jump for free',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -799,12 +807,12 @@ class _TutorialIllustrationPainter extends CustomPainter {
     canvas.drawRect(
       Rect.fromLTWH(stackLeft, stackBottom - cellH * 4, cellW, cellH * 4),
       Paint()
-        ..color = dimColor.withOpacity(0.1)
+        ..color = dimColor.withValues(alpha: 0.1)
         ..style = PaintingStyle.fill,
     );
     canvas.drawRect(
       Rect.fromLTWH(stackLeft, stackBottom - cellH * 4, cellW, cellH * 4),
-      _linePaint(dimColor.withOpacity(0.4)),
+      _linePaint(dimColor.withValues(alpha: 0.4)),
     );
 
     // Number of items on stack oscillates
@@ -812,8 +820,8 @@ class _TutorialIllustrationPainter extends CustomPainter {
 
     final stackColors = [
       accentColor,
-      accentColor.withOpacity(0.7),
-      accentColor.withOpacity(0.5),
+      accentColor.withValues(alpha: 0.7),
+      accentColor.withValues(alpha: 0.5),
     ];
     final stackLabels = ['a', 'a', 'Z'];
 
@@ -822,7 +830,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       canvas.drawRect(
         Rect.fromLTWH(stackLeft + 2, top + 2, cellW - 4, cellH - 4),
         Paint()
-          ..color = stackColors[i].withOpacity(0.3)
+          ..color = stackColors[i].withValues(alpha: 0.3)
           ..style = PaintingStyle.fill,
       );
       _drawLabel(
@@ -839,7 +847,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
         color: dimColor, fontSize: 10);
     _drawLabel(canvas, Offset(cx, stackBottom + 20),
         'PDA adds a stack — push/pop symbols to count',
-        color: dimColor.withOpacity(0.85), fontSize: 10);
+        color: dimColor.withValues(alpha: 0.85), fontSize: 10);
   }
 
   // ── tmTape: animated read/write head scanning a tape ──────────────────────
@@ -862,14 +870,14 @@ class _TutorialIllustrationPainter extends CustomPainter {
         Rect.fromLTWH(x, tapeTop, cellW, cellH),
         Paint()
           ..color = isHead
-              ? accentColor.withOpacity(0.2)
-              : dimColor.withOpacity(0.08)
+              ? accentColor.withValues(alpha: 0.2)
+              : dimColor.withValues(alpha: 0.08)
           ..style = PaintingStyle.fill,
       );
       canvas.drawRect(
         Rect.fromLTWH(x, tapeTop, cellW, cellH),
         _linePaint(
-          isHead ? accentColor : dimColor.withOpacity(0.35),
+          isHead ? accentColor : dimColor.withValues(alpha: 0.35),
           w: isHead ? 2 : 1,
         ),
       );
@@ -899,7 +907,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
 
     _drawLabel(canvas, Offset(cx, tapeTop + cellH + 20),
         'TM reads and writes a tape, moving left or right',
-        color: dimColor.withOpacity(0.85), fontSize: 10);
+        color: dimColor.withValues(alpha: 0.85), fontSize: 10);
   }
 
   // ── deleteMode: state fades out with X ────────────────────────────────────
@@ -911,7 +919,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     const Color deleteColor = Color(0xFFEF5350);
 
     _drawNode(canvas, Offset(cx, cy - 10), 28,
-        deleteColor.withOpacity(opacity), bgColor.withOpacity(opacity), 'q₀');
+        deleteColor.withValues(alpha: opacity), bgColor.withValues(alpha: opacity), 'q₀');
 
     // X mark
     if (progress > 0.3) {
@@ -919,7 +927,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       final y = cy - 10;
       const r = 14.0;
       final xOpacity = ((progress - 0.3) / 0.2).clamp(0.0, 1.0);
-      final xPaint = _linePaint(deleteColor.withOpacity(xOpacity * opacity), w: 3);
+      final xPaint = _linePaint(deleteColor.withValues(alpha: xOpacity * opacity), w: 3);
       canvas.drawLine(
           Offset(x - r, y - r), Offset(x + r, y + r), xPaint);
       canvas.drawLine(
@@ -931,7 +939,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 46),
       'Use the trash-can toolbar button to enter delete mode',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 
@@ -948,13 +956,13 @@ class _TutorialIllustrationPainter extends CustomPainter {
     canvas.drawRRect(
       rrect,
       Paint()
-        ..color = green.withOpacity(0.15 + pulse * 0.1)
+        ..color = green.withValues(alpha: 0.15 + pulse * 0.1)
         ..style = PaintingStyle.fill,
     );
     canvas.drawRRect(
       rrect,
       Paint()
-        ..color = green.withOpacity(0.6 + pulse * 0.3)
+        ..color = green.withValues(alpha: 0.6 + pulse * 0.3)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -973,7 +981,256 @@ class _TutorialIllustrationPainter extends CustomPainter {
       Offset(cx, cy + 42),
       'Tap "Check" to submit your automaton for grading',
       fontSize: 10,
-      color: dimColor.withOpacity(0.85),
+      color: dimColor.withValues(alpha: 0.85),
+    );
+  }
+
+  // ── addSuperStates: super-start & super-accept fade in around a DFA ───────
+  //
+  //  Illustrates step 1 of DFA→regex state elimination: before removing any
+  //  state you first wrap the automaton with a fresh super-start S (ε into
+  //  the old start) and a fresh super-accept F (ε out of the old accept
+  //  state). Only S and F keep their start/accept status from then on, which
+  //  frees every other state — including the old accept state — to be
+  //  eliminated in step 2.
+  void _paintAddSuperStates(Canvas canvas, Size size, double cx, double cy) {
+    final q0 = Offset(cx - 35, cy - 5);
+    final q1 = Offset(cx + 35, cy - 5);
+    final superStart = Offset(cx - 95, cy - 5);
+    final superAccept = Offset(cx + 95, cy - 5);
+
+    // Original DFA edge.
+    _drawArrow(canvas, q0, q1, dimColor);
+    _drawLabel(canvas, Offset(cx, cy - 28), 'a', color: dimColor);
+
+    final startT = ((progress - 0.15) / 0.35).clamp(0.0, 1.0);
+    final acceptT = ((progress - 0.55) / 0.35).clamp(0.0, 1.0);
+
+    // q1 hands its acceptance off to the super-accept once F appears.
+    final q1Accepting = acceptT < 0.5;
+
+    _drawNode(canvas, q0, 20, accentColor, bgColor, 'q0');
+    _drawNode(canvas, q1, 20, q1Accepting ? accentColor : dimColor, bgColor,
+        'q1', doubleRing: q1Accepting);
+
+    if (startT > 0.0) {
+      _drawNode(
+        canvas,
+        superStart,
+        16,
+        accentColor.withValues(alpha: startT),
+        bgColor.withValues(alpha: startT),
+        'S',
+      );
+
+      // Start arrow into S — S is now the start state, so it needs the same
+      // "arrow from nowhere" marker every start state gets.
+      final tickColor = accentColor.withValues(alpha: startT);
+      final tickTip = Offset(superStart.dx - 16, superStart.dy);
+      final tickTail = Offset(superStart.dx - 34, superStart.dy);
+      canvas.drawLine(tickTail, tickTip, _linePaint(tickColor, w: 2.2));
+      const tickLen = 8.0;
+      const tickWing = 5.0;
+      canvas.drawPath(
+        Path()
+          ..moveTo(tickTip.dx, tickTip.dy)
+          ..lineTo(tickTip.dx - tickLen, tickTip.dy - tickWing)
+          ..lineTo(tickTip.dx - tickLen, tickTip.dy + tickWing)
+          ..close(),
+        Paint()
+          ..color = tickColor
+          ..style = PaintingStyle.fill,
+      );
+
+      _drawDashedPath(
+        canvas,
+        Path()
+          ..moveTo(superStart.dx + 16, superStart.dy)
+          ..lineTo(q0.dx - 20, q0.dy),
+        Paint()
+          ..color = accentColor.withValues(alpha: startT * 0.9)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke,
+        dashLen: 6,
+        gapLen: 4,
+        offset: progress * 24,
+      );
+      if (startT > 0.4) {
+        _drawLabel(
+          canvas,
+          Offset((superStart.dx + q0.dx) / 2, superStart.dy - 16),
+          'ε',
+          color: accentColor.withValues(alpha: startT),
+        );
+      }
+    }
+
+    if (acceptT > 0.0) {
+      _drawNode(
+        canvas,
+        superAccept,
+        16,
+        accentColor.withValues(alpha: acceptT),
+        bgColor.withValues(alpha: acceptT),
+        'F',
+        doubleRing: acceptT > 0.5,
+      );
+      _drawDashedPath(
+        canvas,
+        Path()
+          ..moveTo(q1.dx + 20, q1.dy)
+          ..lineTo(superAccept.dx - 16, superAccept.dy),
+        Paint()
+          ..color = accentColor.withValues(alpha: acceptT * 0.9)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke,
+        dashLen: 6,
+        gapLen: 4,
+        offset: progress * 24,
+      );
+      if (acceptT > 0.4) {
+        _drawLabel(
+          canvas,
+          Offset((q1.dx + superAccept.dx) / 2, superAccept.dy - 16),
+          'ε',
+          color: accentColor.withValues(alpha: acceptT),
+        );
+      }
+    }
+
+    _drawLabel(
+      canvas,
+      Offset(cx, cy + 55),
+      'Add a super-start S and super-accept F, linked by ε-edges',
+      fontSize: 10,
+      color: dimColor.withValues(alpha: 0.85),
+    );
+  }
+
+  // ── stateElimination: remove an inner state, merge into one regex edge ────
+  //
+  //  Illustrates step 2: to eliminate B, fold its incoming edge (A→B),
+  //  self-loop (B→B), and outgoing edge (B→C) into a single new A→C edge
+  //  labelled with the combined regex. Repeating this for every remaining
+  //  inner state leaves just the super-start/super-accept edge — that
+  //  label is the answer.
+  void _paintStateElimination(Canvas canvas, Size size, double cx, double cy) {
+    final a = Offset(cx - 90, cy - 10);
+    final b = Offset(cx, cy - 10);
+    final c = Offset(cx + 90, cy - 10);
+
+    // Phase timing: B and its edges fade out, then a merged A→C edge fades in.
+    final removeT = ((progress - 0.35) / 0.25).clamp(0.0, 1.0);
+    final mergeT = ((progress - 0.55) / 0.35).clamp(0.0, 1.0);
+    final bOpacity = 1.0 - removeT;
+
+    _drawNode(canvas, a, 22, accentColor, bgColor, 'A');
+    _drawNode(canvas, c, 22, accentColor, bgColor, 'C', doubleRing: true);
+
+    if (bOpacity > 0.01) {
+      _drawNode(canvas, b, 20, dimColor.withValues(alpha: bOpacity),
+          bgColor.withValues(alpha: bOpacity), 'B');
+
+      _drawArrow(canvas, a, b, dimColor.withValues(alpha: bOpacity));
+      _drawLabel(canvas, Offset((a.dx + b.dx) / 2, cy - 34), 'a',
+          color: dimColor.withValues(alpha: bOpacity));
+
+      _drawArrow(canvas, b, c, dimColor.withValues(alpha: bOpacity));
+      _drawLabel(canvas, Offset((b.dx + c.dx) / 2, cy - 34), 'c',
+          color: dimColor.withValues(alpha: bOpacity));
+
+      // Self-loop on B: a true circle tangent to the node's top edge, with
+      // a small gap facing straight down into B and an arrowhead at that
+      // gap — so it reads as "leaves B, loops around, re-enters B" instead
+      // of a disconnected floating oval.
+      const loopRadius = 16.0;
+      final loopCenter = Offset(b.dx, b.dy - 20 - loopRadius);
+      const gapAngle = 0.55;
+      final loopStart = pi / 2 + gapAngle;
+      final loopSweep = 2 * pi - gapAngle * 2;
+      canvas.drawArc(
+        Rect.fromCircle(center: loopCenter, radius: loopRadius),
+        loopStart,
+        loopSweep,
+        false,
+        _linePaint(dimColor.withValues(alpha: bOpacity)),
+      );
+
+      // Arrowhead pointing straight down into B, centred in the gap.
+      final loopTip = Offset(loopCenter.dx, loopCenter.dy + loopRadius);
+      const tipLen = 8.0;
+      const tipWing = 5.0;
+      canvas.drawPath(
+        Path()
+          ..moveTo(loopTip.dx, loopTip.dy)
+          ..lineTo(loopTip.dx - tipWing, loopTip.dy - tipLen)
+          ..lineTo(loopTip.dx + tipWing, loopTip.dy - tipLen)
+          ..close(),
+        Paint()
+          ..color = dimColor.withValues(alpha: bOpacity)
+          ..style = PaintingStyle.fill,
+      );
+
+      _drawLabel(
+        canvas,
+        Offset(loopCenter.dx, loopCenter.dy - loopRadius - 12),
+        'b',
+        color: dimColor.withValues(alpha: bOpacity),
+        fontSize: 10,
+      );
+
+      // X mark once removal begins.
+      if (removeT > 0.15) {
+        final xOpacity = ((removeT - 0.15) / 0.3).clamp(0.0, 1.0) * bOpacity;
+        final xPaint = _linePaint(
+            const Color(0xFFEF5350).withValues(alpha: xOpacity), w: 3);
+        const r = 13.0;
+        canvas.drawLine(
+            Offset(b.dx - r, b.dy - r), Offset(b.dx + r, b.dy + r), xPaint);
+        canvas.drawLine(
+            Offset(b.dx + r, b.dy - r), Offset(b.dx - r, b.dy + r), xPaint);
+      }
+    }
+
+    // New direct A → C edge with the merged regex label, curving underneath.
+    if (mergeT > 0.0) {
+      final p0 = Offset(a.dx + 14, a.dy + 16);
+      final p2 = Offset(c.dx - 14, c.dy + 16);
+      final control = Offset(cx, cy + 50);
+
+      final path = Path()
+        ..moveTo(p0.dx, p0.dy)
+        ..quadraticBezierTo(control.dx, control.dy, p2.dx, p2.dy);
+      canvas.drawPath(
+          path, _linePaint(accentColor.withValues(alpha: mergeT), w: 2.2));
+
+      // Arrowhead, aligned to the curve's tangent at its end point.
+      final angle = atan2(p2.dy - control.dy, p2.dx - control.dx);
+      const len = 10.0;
+      const wing = 6.0;
+      canvas.drawPath(
+        Path()
+          ..moveTo(p2.dx, p2.dy)
+          ..lineTo(p2.dx - len * cos(angle) + wing * sin(angle),
+              p2.dy - len * sin(angle) - wing * cos(angle))
+          ..lineTo(p2.dx - len * cos(angle) - wing * sin(angle),
+              p2.dy - len * sin(angle) + wing * cos(angle))
+          ..close(),
+        Paint()
+          ..color = accentColor.withValues(alpha: mergeT)
+          ..style = PaintingStyle.fill,
+      );
+
+      _drawLabel(canvas, Offset(cx, cy + 66), 'ab*c',
+          color: accentColor.withValues(alpha: mergeT), fontSize: 13);
+    }
+
+    _drawLabel(
+      canvas,
+      Offset(cx, cy + 85),
+      'Eliminate B — merge its in/out/self-loop edges into one label',
+      fontSize: 10,
+      color: dimColor.withValues(alpha: 0.85),
     );
   }
 

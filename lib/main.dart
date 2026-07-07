@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'automata_screen.dart';
 import 'game_data.dart';
+import 'game_level.dart' show kLayerConstraintErrors;
 import 'level_select_screen.dart';
 import 'login_screen.dart';
 import 'persistence.dart';
@@ -15,6 +16,14 @@ export 'automata_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Enforced in all builds so malformed level definitions cannot ship with a
+  // broken level-select layout (previously this lived inside assert() and was
+  // stripped from release builds).
+  final layerErrors = kLayerConstraintErrors;
+  if (layerErrors.isNotEmpty) {
+    throw StateError('Layer constraint violations:\n${layerErrors.join('\n')}');
+  }
 
   final themeNotifier = await AppThemeNotifier.load();
 
@@ -151,6 +160,7 @@ class _AppGateState extends State<AppGate> {
 
   Future<void> _handleSignOut() async {
     await widget.authService.signOut();
+    if (!mounted) return;
     setState(() {
       _authenticated = false;
       _mode = _AppMode.none;
@@ -197,18 +207,23 @@ class _AppGateState extends State<AppGate> {
           userEmail: widget.authService.user?.email,
           onSignOut: _handleSignOut,
           onGoToGame: () => setState(() => _mode = _AppMode.game),
+          onGoToStudy: () => setState(() => _mode = _AppMode.study),
+          onGoToMenu: () => setState(() => _mode = _AppMode.none),
         );
       case _AppMode.study:
         return StudyModeScreen(
           progressStore: _progressStore!,
           onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
           onGoToStudy: () => setState(() => _mode = _AppMode.study),
+          onGoToGame: () => setState(() => _mode = _AppMode.game),
+          onGoToMenu: () => setState(() => _mode = _AppMode.none),
         );
       case _AppMode.game:
         return LevelSelectScreen(
           progressStore: _progressStore!,
           onGoToSandbox: () => setState(() => _mode = _AppMode.sandbox),
           onGoToStudy: () => setState(() => _mode = _AppMode.study),
+          onGoToMenu: () => setState(() => _mode = _AppMode.none),
         );
     }
   }

@@ -109,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen>
           // Animated grid background
           AnimatedBuilder(
             animation: _bgCtrl,
-            builder: (_, __) => CustomPaint(
+            builder: (_, _) => CustomPaint(
               size: MediaQuery.of(context).size,
               painter: _GridPainter(
                 animValue: _bgCtrl.value,
@@ -179,8 +179,8 @@ class _LoginScreenState extends State<LoginScreen>
             fontWeight: FontWeight.w900,
             letterSpacing: 6,
             shadows: [
-              Shadow(color: theme.accent.withOpacity(0.6), blurRadius: 18),
-              Shadow(color: theme.accent.withOpacity(0.3), blurRadius: 40),
+              Shadow(color: theme.accent.withValues(alpha: 0.6), blurRadius: 18),
+              Shadow(color: theme.accent.withValues(alpha: 0.3), blurRadius: 40),
             ],
           ),
         ),
@@ -277,9 +277,9 @@ class _LoginScreenState extends State<LoginScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: _kError.withOpacity(0.08),
+        color: _kError.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _kError.withOpacity(0.35)),
+        border: Border.all(color: _kError.withValues(alpha: 0.35)),
       ),
       child: Text(
         _error!,
@@ -465,7 +465,7 @@ class _GlowButton extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         boxShadow: enabled
-            ? [BoxShadow(color: color.withOpacity(0.25), blurRadius: 16, spreadRadius: 0)]
+            ? [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 16, spreadRadius: 0)]
             : null,
       ),
       child: SizedBox(
@@ -485,8 +485,8 @@ class _GlowButton extends StatelessWidget {
             ),
           ),
           style: OutlinedButton.styleFrom(
-            backgroundColor: enabled ? color.withOpacity(0.08) : Colors.transparent,
-            side: BorderSide(color: enabled ? color.withOpacity(0.6) : theme.borderMid, width: 1.2),
+            backgroundColor: enabled ? color.withValues(alpha: 0.08) : Colors.transparent,
+            side: BorderSide(color: enabled ? color.withValues(alpha: 0.6) : theme.borderMid, width: 1.2),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             padding: const EdgeInsets.symmetric(horizontal: 20),
           ),
@@ -531,7 +531,7 @@ class _GridPainter extends CustomPainter {
     final pulse = (sin(animValue * 2 * pi) + 1) / 2; // 0..1
 
     final dotPaint = Paint()
-      ..color = accentColor.withOpacity(0.04 + pulse * 0.04)
+      ..color = accentColor.withValues(alpha: 0.04 + pulse * 0.04)
       ..style = PaintingStyle.fill;
 
     for (double x = 0; x < size.width; x += spacing) {
@@ -541,7 +541,7 @@ class _GridPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(x, y),
           1.2 * fade,
-          dotPaint..color = accentColor.withOpacity((0.08 + pulse * 0.06) * fade),
+          dotPaint..color = accentColor.withValues(alpha: (0.08 + pulse * 0.06) * fade),
         );
       }
     }
@@ -768,7 +768,7 @@ class _ModeCardState extends State<_ModeCard> {
         onTap: widget.onTap,
         child: AnimatedBuilder(
           animation: widget.pulseAnim,
-          builder: (_, __) {
+          builder: (_, _) {
             final glow = widget.featured
                 ? (0.2 + widget.pulseAnim.value * 0.15)
                 : (_hovered ? 0.3 : 0.1);
@@ -779,14 +779,14 @@ class _ModeCardState extends State<_ModeCard> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: widget.accent.withOpacity(_hovered ? 0.9 : 0.4),
+                  color: widget.accent.withValues(alpha: _hovered ? 0.9 : 0.4),
                   width: _hovered ? 1.5 : 1.0,
                 ),
                 borderRadius: BorderRadius.circular(16),
-                color: widget.accent.withOpacity(0.04),
+                color: widget.accent.withValues(alpha: 0.04),
                 boxShadow: [
                   BoxShadow(
-                    color: widget.accent.withOpacity(glow),
+                    color: widget.accent.withValues(alpha: glow),
                     blurRadius: widget.featured ? 24 : 12,
                     spreadRadius: widget.featured ? 2 : 0,
                   ),
@@ -799,8 +799,8 @@ class _ModeCardState extends State<_ModeCard> {
                     height: 52,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: widget.accent.withOpacity(0.1),
-                      border: Border.all(color: widget.accent.withOpacity(0.5), width: 1.5),
+                      color: widget.accent.withValues(alpha: 0.1),
+                      border: Border.all(color: widget.accent.withValues(alpha: 0.5), width: 1.5),
                     ),
                     child: Icon(widget.icon, color: widget.accent, size: 24),
                   ),
@@ -830,7 +830,7 @@ class _ModeCardState extends State<_ModeCard> {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: widget.accent.withOpacity(0.5)),
+                  Icon(Icons.chevron_right, color: widget.accent.withValues(alpha: 0.5)),
                 ],
               ),
             );

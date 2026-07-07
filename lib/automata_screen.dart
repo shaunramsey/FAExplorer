@@ -26,6 +26,8 @@ class AutomataScreen extends StatefulWidget {
     this.userEmail,
     this.onSignOut,
     this.onGoToGame,
+    this.onGoToStudy,
+    this.onGoToMenu,
   });
 
   final AutomataSessionStore sessionStore;
@@ -33,6 +35,8 @@ class AutomataScreen extends StatefulWidget {
   final String? userEmail;
   final Future<void> Function()? onSignOut;
   final VoidCallback? onGoToGame;
+  final VoidCallback? onGoToStudy;
+  final VoidCallback? onGoToMenu;
 
   @override
   State<AutomataScreen> createState() => _AutomataScreenState();
@@ -94,6 +98,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Future<void> _openBatchSimulatorDialog() => showBatchSimulatorDialog(
         context,
         simulator: _simulator,
+        pdaSimulator: _automataMode == AutomataMode.pda ? _pdaSimulator : null,
         tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
         startArrow: _startArrow,
       );
@@ -112,10 +117,13 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   // ────────────────────────────────────────────────────────────────────────
   final TextEditingController _simController = TextEditingController();
 
-  /// Whether we are at the final step and the result is accepted.
+  /// Whether we are at the final recorded step (the round where the
+  /// computation actually halted — see [AutomataSimulator.maxStep], which
+  /// can be reached before every input token is consumed when a halt-accept
+  /// state fires mid-string) and the result is accepted.
   bool get _isAtAcceptedFinalStep {
     if (_simulator.tokens.isEmpty) return false;
-    if (_simulator.step != _simulator.tokens.length) return false;
+    if (_simulator.step != _simulator.maxStep) return false;
     return _simulator.finalResult() == SimResult.accept;
   }
 
@@ -159,21 +167,37 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
   Future<void> _persistNow() async {
     if (!_persistenceReady) return;
 
-    await widget.sessionStore.save(
-      PersistedSnapshot(
-        graphDsl: _exportToDsl(),
-        savedExports: List<SavedExport>.from(_savedExports),
-        showSimulator: _showSimulator,
-        showHelpOverlay: _showHelpOverlay,
-        simInput: _simController.text,
-        simStep: _simulator.step,
-        additionalTapeInputs: _tapeControllers.map((c) => c.text).toList(),
-      ),
-    );
+    try {
+      await widget.sessionStore.save(
+        PersistedSnapshot(
+          graphDsl: _exportToDsl(),
+          savedExports: List<SavedExport>.from(_savedExports),
+          showSimulator: _showSimulator,
+          showHelpOverlay: _showHelpOverlay,
+          simInput: _simController.text,
+          simStep: _simulator.step,
+          additionalTapeInputs: _tapeControllers.map((c) => c.text).toList(),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save workspace: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _loadPreferences() async {
-    final snapshot = await widget.sessionStore.load();
+    PersistedSnapshot snapshot;
+    String? loadError;
+
+    try {
+      snapshot = await widget.sessionStore.load();
+    } catch (e) {
+      snapshot = const PersistedSnapshot();
+      loadError = 'Could not load saved workspace. ($e)';
+    }
 
     if (snapshot.graphDsl != null && snapshot.graphDsl!.trim().isNotEmpty) {
       try {
@@ -188,8 +212,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         _nodeCounter = state.nodeCounter;
         _lineCounter = state.lineCounter;
         _automataMode = state.automataMode;
-      } catch (_) {
-        // Ignore corrupt saved graphs.
+      } catch (e) {
+        loadError = 'Could not restore saved graph. Starting with a blank canvas. ($e)';
       }
     }
 
@@ -212,12 +236,18 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
 
     if (_simController.text.isNotEmpty || _startArrow != null) {
       _simRebuild();
+      _syncSimulatorSteps();
     }
 
     _persistenceReady = true;
 
     if (mounted) {
       setState(() => _loadingPrefs = false);
+      if (loadError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(loadError)),
+        );
+      }
     }
   }
 
@@ -287,14 +317,24 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
     return maxTape;
   }
 
+  void _syncSimulatorSteps() {
+    final savedStep = _simulator.step;
+    // Clamp against each simulator's own maxStep (the round where its
+    // computation actually halted), not tokens.length — the PDA or FA/NFA
+    // computation can halt (halt-accept, or every branch dying) before every
+    // token is consumed, and steps/states stop growing at that point.
+    _pdaSimulator.step = savedStep.clamp(-1, _pdaSimulator.maxStep);
+    _tmSimulator.step = savedStep.clamp(-1, _tmSimulator.maxStep);
+  }
+
   void _simRebuild() {
     _simulator.rebuild(_simController.text, startArrow: _startArrow);
-    if (_simulator.step > _simulator.tokens.length) {
-      _simulator.step = _simulator.tokens.length;
+    if (_simulator.step > _simulator.maxStep) {
+      _simulator.step = _simulator.maxStep;
     }
     _pdaSimulator.rebuild(_simController.text, startArrow: _startArrow);
-    if (_pdaSimulator.step > _pdaSimulator.tokens.length) {
-      _pdaSimulator.step = _pdaSimulator.tokens.length;
+    if (_pdaSimulator.step > _pdaSimulator.maxStep) {
+      _pdaSimulator.step = _pdaSimulator.maxStep;
     }
     // Auto-detect required tape count from the graph so the simulator always
     // has enough tapes even if the user hasn't manually added them via the UI.
@@ -320,6 +360,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       startArrow: _startArrow,
       additionalTapeInputs: additionalInputs,
     );
+    _syncSimulatorSteps();
   }
 
   void _cancelRubberBand() {
@@ -617,6 +658,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       context,
       node: node,
     );
+    if (!mounted) return;
     if (changed == true) {
       setState(() {
         _refreshSimulation();
@@ -729,30 +771,32 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
       return;
     }
 
+    if (_lineMode) {
+      final node = _nodeAt(pos);
+      if (node != null && _canStartLineFrom(node.id)) {
+        _lineSourceNodeId = node.id;
+      }
+      return;
+    }
+
+    // Lines take priority over nodes so transitions can be curved near states.
+    final line = _lineAt(pos);
+    if (line != null) {
+      _draggingLineId = line.id;
+      return;
+    }
+
+    if (_hitStartArrow(pos)) {
+      _draggingStartArrow = true;
+      return;
+    }
+
     final node = _nodeAt(pos);
-
     if (node != null) {
-      if (_lineMode) {
-        if (_canStartLineFrom(node.id)) {
-          _lineSourceNodeId = node.id;
-        }
-      } else {
-        _draggingNodeId = node.id;
-      }
+      _draggingNodeId = node.id;
     } else {
-      if (_hitStartArrow(pos)) {
-        _draggingStartArrow = true;
-        return;
-      }
-
-      final line = _lineAt(pos);
-
-      if (line != null) {
-        _draggingLineId = line.id;
-      } else if (!_lineMode) {
-        // Nothing hit — pan the canvas
-        _isPanningCanvas = true;
-      }
+      // Nothing hit — pan the canvas
+      _isPanningCanvas = true;
     }
   }
 
@@ -925,7 +969,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
             _activeTapeIndex = 0; // reset tape selection on mode switch
             _simRebuild();
             if (mode == AutomataMode.pda) {
-              _pdaSimulator.step = _simulator.step;
+              _pdaSimulator.step = _simulator.step.clamp(-1, _pdaSimulator.maxStep);
             } else if (mode == AutomataMode.tm) {
               _tmSimulator.step = _simulator.step.clamp(-1, _tmSimulator.maxStep);
             }
@@ -943,12 +987,12 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         onExportHistory: _showExportHistory,
         onReset: _reset,
         onSignOut: widget.onSignOut,
-        onGoToGame: widget.onGoToGame,
       ),
 
       appBar: AppBar(
         title: const Text('Automata Designer'),
         actions: [
+          MainMenuButton(onPressed: widget.onGoToMenu),
           if (widget.isGuest)
             const Padding(
               padding: EdgeInsets.only(right: 8),
@@ -1160,7 +1204,11 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
           ),
         ),
             ),
-            if (_showHelpOverlay) const HelpOverlay(),
+            if (_showHelpOverlay)
+              HelpOverlay(
+                automataMode: _automataMode,
+                onClose: () => _setShowHelpOverlay(false),
+              ),
             if (_showSimulator)
               StringSimulatorPanel(
                 boundaryKey: _simulatorPanelBoundaryKey,
@@ -1180,7 +1228,7 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   _schedulePersist();
                 },
                 onStepChanged: () {
-                  _pdaSimulator.step = _simulator.step; // keep in sync
+                  _syncSimulatorSteps();
                   setState(() {});
                   _schedulePersist();
                 },
@@ -1231,8 +1279,16 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
               PdaStackPanel(simulator: _pdaSimulator, nodes: _nodes),
 
             // ── TM Config Panel ───────────────────────────────────────
+            // Shares _activeTapeIndex with the StringSimulatorPanel above so
+            // switching tapes in either place keeps both views in sync,
+            // instead of this panel being stuck showing tape 1 always.
             if (_showSimulator && _automataMode == AutomataMode.tm)
-              TmConfigPanel(simulator: _tmSimulator, nodes: _nodes),
+              TmConfigPanel(
+                simulator: _tmSimulator,
+                nodes: _nodes,
+                activeTapeIndex: _activeTapeIndex,
+                onTapeSelected: (i) => setState(() => _activeTapeIndex = i),
+              ),
 
             // ── Regex Panel ───────────────────────────────────────────
             if (_automataMode == AutomataMode.regex && _showRegexPanel)

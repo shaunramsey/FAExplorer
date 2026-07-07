@@ -28,15 +28,18 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'dialogs/equivalence_dialog.dart'
-    show checkEquivalence, EquivalenceResult, EquivalenceStatus;
-import 'import_export.dart';
-import 'game_level.dart';
+    show checkEquivalence, EquivalenceStatus;
+import 'game_data.dart' show GameProgressStore;
+import 'game_level.dart' show GameLevel, kAllLevels;
 import 'models.dart';
 import 'simulator.dart';
 import 'study_mode_pda.dart';
+import 'study_mode_symbols.dart';
+import 'tutorial_screen.dart' show TutorialScreen;
 import 'widgets/app_theme.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
+import 'widgets/responsive_layout.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Challenge pool
@@ -69,23 +72,13 @@ enum _Difficulty { easy, medium, hard }
 //  different concrete expressions.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// All alphabets the generator may pick from.
-const _kAlphabets = [
-  {'a', 'b'},
-  {'0', '1'},
-  {'x', 'y'},
-  {'p', 'q'},
-];
-
 /// Generates a fresh list of [count] randomised challenges.
 List<_Challenge> _generateChallenges(Random rng, {int count = 30}) {
   final results = <_Challenge>[];
 
-  // Each entry is a factory that takes (rng, alphabet) and returns a regex.
-  // Factories that don't need both symbols only use the first/second element.
-  final alphabets = List.of(_kAlphabets)..shuffle(rng);
-
-  // We'll cycle through alphabets and difficulty buckets.
+  // We'll cycle through difficulty buckets; the alphabet for each challenge
+  // is drawn fresh below via randomStudyAlphabet() so puzzles don't cluster
+  // around the same couple of symbols.
   final easyTemplates   = _kEasyTemplates;
   final mediumTemplates = _kMediumTemplates;
   final hardTemplates   = _kHardTemplates;
@@ -110,7 +103,7 @@ List<_Challenge> _generateChallenges(Random rng, {int count = 30}) {
     };
     for (int i = 0; i < n; i++) {
       final template = pool[i % pool.length];
-      final alphabet = alphabets[rng.nextInt(alphabets.length)];
+      final alphabet = randomStudyAlphabet(rng);
       final symbols  = alphabet.toList()..sort();
       final a = symbols[0];
       final b = symbols.length > 1 ? symbols[1] : symbols[0];
@@ -145,12 +138,8 @@ const List<_RegexTemplate> _kEasyTemplates = [
   _tABStar,
   // Star of first then second
   _tStarAB,
-  // Optional single symbol
-  _tOptional,
   // Exact three-symbol string
   _tExactThree,
-  // Two-symbol string or empty
-  _tTwoOrEps,
 ];
 
 String _tSingle(String a, String b, Random rng)      => rng.nextBool() ? a : b;
@@ -160,13 +149,11 @@ String _tStarA(String a, String b, Random rng)       => '$a*';
 String _tStarUnion(String a, String b, Random rng)   => '($a+$b)*';
 String _tABStar(String a, String b, Random rng)      => '$a$b*';
 String _tStarAB(String a, String b, Random rng)      => '$a*$b';
-String _tOptional(String a, String b, Random rng)    => rng.nextBool() ? '$a?' : '$b?';
 String _tExactThree(String a, String b, Random rng)  {
   final s = [a, b, a];
   if (rng.nextBool()) s[1] = a;
   return s.join();
 }
-String _tTwoOrEps(String a, String b, Random rng)    => '($a$b)?';
 
 // ── Medium templates ──────────────────────────────────────────────────────────
 const List<_RegexTemplate> _kMediumTemplates = [
@@ -218,7 +205,7 @@ String _tThirdFromEnd(String a, String b, Random rng)  =>
 String _tEvenBothCounts(String a, String b, Random rng) =>
     '($a$a+$b$b+($a$b+$b$a)($a$a+$b$b)*($a$b+$b$a))*';
 String _tComplexSuffix(String a, String b, Random rng)  =>
-    '$a*($b$a+)*$b?';
+    '$a*($b$a+)*';
 String _tRepeatTriple(String a, String b, Random rng)   => '($a$b$a)*';
 String _tOddLength(String a, String b, Random rng)      =>
     '($a+$b)(($a+$b)($a+$b))*';
@@ -256,8 +243,6 @@ const List<_DescTemplate> _kDescTemplates = [
   _dAnySingleSymbol,
   // Accepts all strings (including empty)
   _dAllStrings,
-  // Accepts only the empty string OR a single symbol
-  _dEmptyOrSingle,
   // Accepts strings consisting entirely of one repeated symbol
   _dRepeatOneSymbol,
   // Accepts strings of length exactly 2
@@ -296,8 +281,6 @@ const List<_DescTemplate> _kDescTemplates = [
 
   // Accepts strings where every occurrence of 'a' is immediately followed by 'b'
   _dAAlwaysFollowedByB,
-  // Accepts strings where 'a' and 'b' alternate (starting with either)
-  _dAlternating,
   // Accepts strings that contain the substring consisting of two identical symbols in a row
   _dContainsDouble,
   // Accepts strings where the number of 'a's and 'b's are both even
@@ -308,8 +291,6 @@ const List<_DescTemplate> _kDescTemplates = [
   _dSameEnds,
   // Accepts strings that contain at least two occurrences of a specific symbol consecutively
   _dAtLeastTwoConsecutive,
-  // Accepts strings where no two consecutive symbols are the same
-  _dNoTwoConsecutiveSame,
   // Accepts strings where the third-to-last symbol (if reachable) is a specific symbol
   _dThirdFromEnd,
   // Accepts strings over {a,b} where the count of 'a' mod 3 equals 0
@@ -352,17 +333,6 @@ const List<_DescTemplate> _kDescTemplates = [
           regex: '($a+$b)*',
           difficulty: _Difficulty.easy,
         );
-
-({String description, String regex, _Difficulty difficulty})
-    _dEmptyOrSingle(String a, String b, Random rng) {
-  final sym = rng.nextBool() ? a : b;
-  return (
-    description: 'Build an FA that accepts only the empty string (ε) '
-        'and the one-character string "$sym" — nothing longer.',
-    regex: '$sym?',
-    difficulty: _Difficulty.easy,
-  );
-}
 
 ({String description, String regex, _Difficulty difficulty})
     _dRepeatOneSymbol(String a, String b, Random rng) {
@@ -530,15 +500,6 @@ const List<_DescTemplate> _kDescTemplates = [
         );
 
 ({String description, String regex, _Difficulty difficulty})
-    _dAlternating(String a, String b, Random rng) => (
-          description: 'Build an FA that accepts strings over {$a, $b} where '
-              'no two consecutive characters are the same '
-              '(i.e. "$a" and "$b" must strictly alternate, possibly starting with either).',
-          regex: '($a($b$a)*($b)?+$b($a$b)*($a)?)?',
-          difficulty: _Difficulty.hard,
-        );
-
-({String description, String regex, _Difficulty difficulty})
     _dContainsDouble(String a, String b, Random rng) {
   final sym = rng.nextBool() ? a : b;
   return (
@@ -587,15 +548,6 @@ const List<_DescTemplate> _kDescTemplates = [
 }
 
 ({String description, String regex, _Difficulty difficulty})
-    _dNoTwoConsecutiveSame(String a, String b, Random rng) => (
-          description: 'Build an FA that accepts strings over {$a, $b} where '
-              'no symbol appears twice in a row anywhere in the string '
-              '(so "$a$b$a" is accepted but "$a$a" is not).',
-          regex: '($a($b$a)*($b)?+$b($a$b)*($a)?)?',
-          difficulty: _Difficulty.hard,
-        );
-
-({String description, String regex, _Difficulty difficulty})
     _dThirdFromEnd(String a, String b, Random rng) {
   final sym = rng.nextBool() ? a : b;
   return (
@@ -618,12 +570,11 @@ const List<_DescTemplate> _kDescTemplates = [
 List<_Challenge> _generateDescriptionChallenges(Random rng,
     {int count = 15}) {
   final results = <_Challenge>[];
-  final alphabets = List.of(_kAlphabets)..shuffle(rng);
   final templates = List.of(_kDescTemplates)..shuffle(rng);
 
   for (int i = 0; i < count; i++) {
     final tmpl = templates[i % templates.length];
-    final alphabet = alphabets[rng.nextInt(alphabets.length)];
+    final alphabet = randomStudyAlphabet(rng);
     final symbols = alphabet.toList()..sort();
     final a = symbols[0];
     final b = symbols.length > 1 ? symbols[1] : symbols[0];
@@ -711,12 +662,25 @@ class StudyModeScreen extends StatefulWidget {
 
   // Kept for API compat with old callers.
   final VoidCallback? onGoToStudy;
-  final dynamic progressStore; // GameProgressStore? — not used here
+
+  /// Called when the user taps "GAME" — navigate to the level-select screen.
+  final VoidCallback? onGoToGame;
+
+  /// Called when the user taps the main-menu (home) icon — navigate back to
+  /// [ModeSelectScreen]. Null when this screen isn't reachable from the menu.
+  final VoidCallback? onGoToMenu;
+
+  /// Used to open the tutorial library (so users can watch/re-watch the
+  /// game-mode tutorial slideshows without leaving Study Mode) and to mark
+  /// them completed once finished.
+  final GameProgressStore? progressStore;
 
   const StudyModeScreen({
     super.key,
     VoidCallback? onGoToSandbox,
     this.onGoToStudy,
+    this.onGoToGame,
+    this.onGoToMenu,
     this.progressStore,
   }) : onGoToSandbox = onGoToSandbox ?? _noop;
 
@@ -782,11 +746,6 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     return pool[_rng.nextInt(pool.length)];
   }
 
-  /// Pick a mode at random from the selected set.
-  _PracticeMode _pickMode() {
-    final list = _selectedModes.toList();
-    return list[_rng.nextInt(list.length)];
-  }
 
   // For DFA → REGEX: player types a regex into this controller.
   final TextEditingController _regexInputCtrl = TextEditingController();
@@ -825,12 +784,16 @@ class _StudyModeScreenState extends State<StudyModeScreen>
 
   void _buildQueue() {
     final all = <_AnyChallenge>[];
-    final hasRegexModes = _selectedModes.any((m) =>
-        m == _PracticeMode.regexToDfa ||
-        m == _PracticeMode.dfaToRegex ||
-        m == _PracticeMode.describeToFa);
-    if (hasRegexModes) {
+    // Plain regex-template challenges (description == null) back REGEX→DFA
+    // and DFA→REGEX only — they must not be queued for a describeToFa-only
+    // session, or _pickModeForChallenge has nothing to fall back to but
+    // regexToDfa and silently serves a regex prompt in a describe-only run.
+    final wantsRegexTemplates = _selectedModes.contains(_PracticeMode.regexToDfa) ||
+        _selectedModes.contains(_PracticeMode.dfaToRegex);
+    if (wantsRegexTemplates) {
       all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
+    }
+    if (_selectedModes.contains(_PracticeMode.describeToFa)) {
       all.addAll(
           _generateDescriptionChallenges(_rng).map(_AnyChallenge.regex));
     }
@@ -1000,6 +963,36 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     return _GradeResult.wrong(studyPdaFailureMessage(grade.failedCase!));
   }
 
+  // ── Tutorial library ─────────────────────────────────────────────────────
+
+  /// Opens a sheet listing every game-mode tutorial slideshow, so someone
+  /// studying can watch (or re-watch) any of them without having to unlock
+  /// or step through the corresponding game levels.
+  void _openTutorials() {
+    final store = widget.progressStore;
+    if (store == null) return;
+
+    final tutorials = kAllLevels.where((l) => l.isTutorial).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _TutorialLibrarySheet(
+        tutorials: tutorials,
+        onSelect: (level) {
+          Navigator.of(sheetContext).pop();
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => TutorialScreen(
+              level: level,
+              progressStore: store,
+            ),
+          ));
+        },
+      ),
+    );
+  }
+
   void _submit() {
     final _GradeResult result;
     if (_mode == _PracticeMode.pdaToDraw) {
@@ -1047,6 +1040,9 @@ class _StudyModeScreenState extends State<StudyModeScreen>
             correct: _correct,
             total: _attempted,
             onGoToSandbox: widget.onGoToSandbox,
+            onGoToGame: widget.onGoToGame,
+            onGoToMenu: widget.onGoToMenu,
+            onOpenTutorials: widget.progressStore != null ? _openTutorials : null,
           ),
           Expanded(
             child: FadeTransition(
@@ -1055,7 +1051,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
                 curve: Curves.easeOut,
               ),
               child: _ChallengeBody(
-                key: ValueKey('${_mode.name}:${_queueIndex}'),
+                key: ValueKey('${_mode.name}:$_queueIndex'),
                 mode: _mode,
                 challenge: challenge,
                 queueIndex: _queueIndex,
@@ -1104,6 +1100,9 @@ class _TopBar extends StatelessWidget {
   final int correct;
   final int total;
   final VoidCallback onGoToSandbox;
+  final VoidCallback? onGoToGame;
+  final VoidCallback? onGoToMenu;
+  final VoidCallback? onOpenTutorials;
 
   const _TopBar({
     required this.mode,
@@ -1113,216 +1112,495 @@ class _TopBar extends StatelessWidget {
     required this.correct,
     required this.total,
     required this.onGoToSandbox,
+    this.onGoToGame,
+    this.onGoToMenu,
+    this.onOpenTutorials,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
     final allSelected = selectedModes.length == _PracticeMode.values.length;
+    final compact = isCompactLayout(context);
+    final hPad = responsiveHorizontalPadding(context);
 
-    return SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Row(
-          children: [
-            // Title
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'PRACTICE',
-                  style: GoogleFonts.orbitron(
-                    color: theme.accent,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
+    final modeChips = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // "Select All" toggle chip
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: GestureDetector(
+              onTap: onSelectAllToggled,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: allSelected
+                      ? theme.accentGreen.withValues(alpha: 0.15)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: allSelected
+                        ? theme.accentGreen.withValues(alpha: 0.8)
+                        : theme.borderMid,
                   ),
                 ),
-                Text(
-                  'MODE',
-                  style: GoogleFonts.orbitron(
-                    color: theme.textDim,
-                    fontSize: 9,
-                    letterSpacing: 4,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(width: 16),
-
-            // Multi-select mode chips
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // "Select All" toggle chip
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: GestureDetector(
-                        onTap: onSelectAllToggled,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: allSelected
-                                ? theme.accentGreen.withOpacity(0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: allSelected
-                                  ? theme.accentGreen.withOpacity(0.8)
-                                  : theme.borderMid,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 160),
-                                child: Icon(
-                                  allSelected
-                                      ? Icons.check_box_rounded
-                                      : Icons.check_box_outline_blank_rounded,
-                                  key: ValueKey(allSelected),
-                                  size: 12,
-                                  color: allSelected
-                                      ? theme.accentGreen
-                                      : theme.textDim,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                'ALL',
-                                style: GoogleFonts.orbitron(
-                                  color: allSelected
-                                      ? theme.accentGreen
-                                      : theme.textDim,
-                                  fontSize: 8,
-                                  letterSpacing: 1.5,
-                                  fontWeight: allSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 160),
+                      child: Icon(
+                        allSelected
+                            ? Icons.check_box_rounded
+                            : Icons.check_box_outline_blank_rounded,
+                        key: ValueKey(allSelected),
+                        size: 12,
+                        color: allSelected ? theme.accentGreen : theme.textDim,
                       ),
                     ),
-
-                    // Individual mode chips
-                    ..._PracticeMode.values.map((m) {
-                      final sel = selectedModes.contains(m);
-                      // Use green for dfaToRegex, violet for describeToFa, accent for regexToDfa
-                      final chipColor = m == _PracticeMode.dfaToRegex
-                          ? theme.accentGreen
-                          : m == _PracticeMode.describeToFa
-                              ? const Color(0xFFB47FFF)
-                              : m == _PracticeMode.pdaToDraw
-                                  ? const Color(0xFF26C6DA)
-                                  : theme.accent;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: GestureDetector(
-                          onTap: () => onModeToggled(m),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: sel
-                                  ? chipColor.withOpacity(0.15)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: sel
-                                    ? chipColor.withOpacity(0.8)
-                                    : theme.borderMid,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 160),
-                                  child: Icon(
-                                    sel
-                                        ? Icons.check_box_rounded
-                                        : Icons.check_box_outline_blank_rounded,
-                                    key: ValueKey(sel),
-                                    size: 12,
-                                    color: sel ? chipColor : theme.textDim,
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  m.label,
-                                  style: GoogleFonts.orbitron(
-                                    color: sel ? chipColor : theme.textDim,
-                                    fontSize: 8,
-                                    letterSpacing: 1.5,
-                                    fontWeight: sel
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
+                    const SizedBox(width: 5),
+                    Text(
+                      'ALL',
+                      style: GoogleFonts.orbitron(
+                        color: allSelected ? theme.accentGreen : theme.textDim,
+                        fontSize: 8,
+                        letterSpacing: 1.5,
+                        fontWeight:
+                            allSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
+          ),
 
+          // Individual mode chips
+          ..._PracticeMode.values.map((m) {
+            final sel = selectedModes.contains(m);
+            final chipColor = m == _PracticeMode.dfaToRegex
+                ? theme.accentGreen
+                : m == _PracticeMode.describeToFa
+                    ? const Color(0xFFB47FFF)
+                    : m == _PracticeMode.pdaToDraw
+                        ? const Color(0xFF26C6DA)
+                        : theme.accent;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GestureDetector(
+                onTap: () => onModeToggled(m),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: sel
+                        ? chipColor.withValues(alpha: 0.15)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: sel
+                          ? chipColor.withValues(alpha: 0.8)
+                          : theme.borderMid,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 160),
+                        child: Icon(
+                          sel
+                              ? Icons.check_box_rounded
+                              : Icons.check_box_outline_blank_rounded,
+                          key: ValueKey(sel),
+                          size: 12,
+                          color: sel ? chipColor : theme.textDim,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        m.label,
+                        style: GoogleFonts.orbitron(
+                          color: sel ? chipColor : theme.textDim,
+                          fontSize: 8,
+                          letterSpacing: 1.5,
+                          fontWeight:
+                              sel ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: compact ? 6 : 10),
+        child: compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'PRACTICE',
+                            style: GoogleFonts.orbitron(
+                              color: theme.accent,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 3,
+                            ),
+                          ),
+                          Text(
+                            'MODE',
+                            style: GoogleFonts.orbitron(
+                              color: theme.textDim,
+                              fontSize: 8,
+                              letterSpacing: 3,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      if (total > 0)
+                        Text(
+                          '$correct / $total',
+                          style: GoogleFonts.orbitron(
+                            color: theme.textMid,
+                            fontSize: 11,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      IconButton(
+                        tooltip: 'Appearance',
+                        icon: Icon(Icons.palette_outlined,
+                            color: theme.textMid, size: 20),
+                        onPressed: () => showAppThemeSettings(context),
+                      ),
+                      if (onOpenTutorials != null)
+                        IconButton(
+                          tooltip: 'Tutorials',
+                          icon: Icon(Icons.school_outlined,
+                              color: theme.textMid, size: 20),
+                          onPressed: onOpenTutorials,
+                        ),
+                      MainMenuButton(onPressed: onGoToMenu),
+                      if (onGoToGame != null)
+                        TextButton(
+                          onPressed: onGoToGame,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              side: BorderSide(color: theme.borderMid),
+                            ),
+                          ),
+                          child: Text(
+                            'GAME',
+                            style: GoogleFonts.orbitron(
+                                color: theme.textDim,
+                                fontSize: 8,
+                                letterSpacing: 2),
+                          ),
+                        ),
+                      TextButton(
+                        onPressed: onGoToSandbox,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            side: BorderSide(color: theme.borderMid),
+                          ),
+                        ),
+                        child: Text(
+                          'SANDBOX',
+                          style: GoogleFonts.orbitron(
+                              color: theme.textDim,
+                              fontSize: 8,
+                              letterSpacing: 2),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  modeChips,
+                ],
+              )
+            : Row(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'PRACTICE',
+                        style: GoogleFonts.orbitron(
+                          color: theme.accent,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                      Text(
+                        'MODE',
+                        style: GoogleFonts.orbitron(
+                          color: theme.textDim,
+                          fontSize: 9,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(child: modeChips),
+                  const SizedBox(width: 12),
+                  if (total > 0)
+                    Text(
+                      '$correct / $total',
+                      style: GoogleFonts.orbitron(
+                        color: theme.textMid,
+                        fontSize: 11,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Appearance',
+                    icon: Icon(Icons.palette_outlined,
+                        color: theme.textMid, size: 20),
+                    onPressed: () => showAppThemeSettings(context),
+                  ),
+                  if (onOpenTutorials != null)
+                    IconButton(
+                      tooltip: 'Tutorials',
+                      icon: Icon(Icons.school_outlined,
+                          color: theme.textMid, size: 20),
+                      onPressed: onOpenTutorials,
+                    ),
+                  MainMenuButton(onPressed: onGoToMenu),
+                  if (onGoToGame != null) ...[
+                    TextButton(
+                      onPressed: onGoToGame,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          side: BorderSide(color: theme.borderMid),
+                        ),
+                      ),
+                      child: Text(
+                        'GAME',
+                        style: GoogleFonts.orbitron(
+                            color: theme.textDim, fontSize: 8, letterSpacing: 2),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  TextButton(
+                    onPressed: onGoToSandbox,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        side: BorderSide(color: theme.borderMid),
+                      ),
+                    ),
+                    child: Text(
+                      'SANDBOX',
+                      style: GoogleFonts.orbitron(
+                          color: theme.textDim, fontSize: 8, letterSpacing: 2),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Tutorial library sheet
+//
+//  Lets someone in Study Mode watch any game-mode tutorial slideshow on
+//  demand, without unlocking or stepping through the corresponding game
+//  levels first. Opened from the school-cap icon in the top bar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TutorialLibrarySheet extends StatelessWidget {
+  final List<GameLevel> tutorials;
+  final ValueChanged<GameLevel> onSelect;
+
+  const _TutorialLibrarySheet({
+    required this.tutorials,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    final accentColor = theme.tagColor('tutorial');
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.only(top: 60),
+        decoration: BoxDecoration(
+          color: theme.bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border.all(color: theme.borderMid),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            // Grabber handle.
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: theme.textDim.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.school_outlined, color: accentColor, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'TUTORIALS',
+                          style: GoogleFonts.orbitron(
+                            color: theme.textLight,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        Text(
+                          'Watch any lesson without unlocking it in Game mode',
+                          style: GoogleFonts.sourceCodePro(
+                            color: theme.textDim,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: theme.borderMid.withValues(alpha: 0.6)),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: tutorials.length,
+                separatorBuilder: (_, _) => Divider(
+                  height: 1,
+                  color: theme.borderMid.withValues(alpha: 0.3),
+                  indent: 20,
+                  endIndent: 20,
+                ),
+                itemBuilder: (_, i) => _TutorialLibraryTile(
+                  level: tutorials[i],
+                  accentColor: accentColor,
+                  theme: theme,
+                  onTap: () => onSelect(tutorials[i]),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TutorialLibraryTile extends StatelessWidget {
+  final GameLevel level;
+  final Color accentColor;
+  final AppThemeNotifier theme;
+  final VoidCallback onTap;
+
+  const _TutorialLibraryTile({
+    required this.level,
+    required this.accentColor,
+    required this.theme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+              ),
+              child: Icon(Icons.play_arrow_rounded,
+                  color: accentColor, size: 18),
+            ),
             const SizedBox(width: 12),
-
-            // Score
-            if (total > 0)
-              Text(
-                '$correct / $total',
-                style: GoogleFonts.orbitron(
-                  color: theme.textMid,
-                  fontSize: 11,
-                  letterSpacing: 1,
-                ),
-              ),
-
-            const SizedBox(width: 8),
-
-            // Theme settings
-            IconButton(
-              tooltip: 'Appearance',
-              icon:
-                  Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
-              onPressed: () => showAppThemeSettings(context),
-            ),
-
-            // Sandbox shortcut
-            TextButton(
-              onPressed: onGoToSandbox,
-              style: TextButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  side: BorderSide(color: theme.borderMid),
-                ),
-              ),
-              child: Text(
-                'SANDBOX',
-                style: GoogleFonts.orbitron(
-                    color: theme.textDim, fontSize: 8, letterSpacing: 2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    level.title,
+                    style: GoogleFonts.orbitron(
+                      color: theme.textLight,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    level.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.sourceCodePro(
+                      color: theme.textDim,
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
               ),
             ),
+            Icon(Icons.chevron_right_rounded, color: theme.textDim, size: 20),
           ],
         ),
       ),
@@ -1374,31 +1652,52 @@ class _ChallengeBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Progress bar
-          _ProgressRow(
-            index: queueIndex,
-            total: queueTotal,
-            theme: theme,
-          ),
+    final compact = isCompactLayout(context);
+    final hPad = responsiveHorizontalPadding(context);
+    final vGap = compact ? 6.0 : 12.0;
 
-          const SizedBox(height: 16),
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: compact ? 2 : 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ProgressRow(
+              index: queueIndex,
+              total: queueTotal,
+              theme: theme,
+            ),
 
-          // Challenge card
-          _ChallengeCard(
-            mode: mode,
-            challenge: challenge,
-            theme: theme,
-          ),
+            SizedBox(height: vGap),
 
-          const SizedBox(height: 16),
+            // Challenge card — scrollable and height-capped so it can never
+            // crowd out the drawing/input area below, which is what the
+            // player actually needs room to see and work in.
+            if (compact)
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.18,
+                ),
+                child: SingleChildScrollView(
+                  child: _ChallengeCard(
+                    mode: mode,
+                    challenge: challenge,
+                    theme: theme,
+                  ),
+                ),
+              )
+            else
+              _ChallengeCard(
+                mode: mode,
+                challenge: challenge,
+                theme: theme,
+              ),
 
-          // Input area (drawing canvas for REGEX→DFA / DESCRIBE→FA, text field for DFA→REGEX)
-          Expanded(
+            SizedBox(height: vGap),
+
+            // Input area (drawing canvas for REGEX→DFA / DESCRIBE→FA, text field for DFA→REGEX)
+            Expanded(
             child: mode == _PracticeMode.dfaToRegex
                 ? _RegexInputArea(
                     challenge: challenge.regexChallenge!,
@@ -1427,7 +1726,7 @@ class _ChallengeBody extends StatelessWidget {
                       ),
           ),
 
-          const SizedBox(height: 14),
+          SizedBox(height: compact ? 8 : 14),
 
           // Feedback banner (shown after submission)
           if (gradeResult != null)
@@ -1441,7 +1740,7 @@ class _ChallengeBody extends StatelessWidget {
               theme: theme,
             ),
 
-          if (gradeResult != null) const SizedBox(height: 12),
+          if (gradeResult != null) SizedBox(height: compact ? 6 : 12),
 
           // Action row
           _ActionRow(
@@ -1453,12 +1752,14 @@ class _ChallengeBody extends StatelessWidget {
             onSubmit: onSubmit,
             onSkip: onSkip,
             theme: theme,
+            compact: compact,
           ),
 
-          const SizedBox(height: 16),
+          SizedBox(height: compact ? 4 : 12),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -1493,7 +1794,7 @@ class _ProgressRow extends StatelessWidget {
               minHeight: 3,
               backgroundColor: theme.gridLine,
               valueColor:
-                  AlwaysStoppedAnimation(theme.accent.withOpacity(0.6)),
+                  AlwaysStoppedAnimation(theme.accent.withValues(alpha: 0.6)),
             ),
           ),
         ),
@@ -1541,6 +1842,7 @@ class _ChallengeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompactLayout(context);
     final accentColor = mode == _PracticeMode.regexToDfa
         ? theme.accent
         : mode == _PracticeMode.describeToFa
@@ -1550,18 +1852,22 @@ class _ChallengeCard extends StatelessWidget {
                 : theme.accentGreen;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: compact
+          ? const EdgeInsets.symmetric(horizontal: 14, vertical: 10)
+          : const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: theme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accentColor.withOpacity(0.35), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: accentColor.withOpacity(0.07),
-            blurRadius: 24,
-            spreadRadius: 4,
-          ),
-        ],
+        borderRadius: BorderRadius.circular(compact ? 12 : 16),
+        border: Border.all(color: accentColor.withValues(alpha: 0.35), width: 1.5),
+        boxShadow: compact
+            ? null
+            : [
+                BoxShadow(
+                  color: accentColor.withValues(alpha: 0.07),
+                  blurRadius: 24,
+                  spreadRadius: 4,
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1586,39 +1892,42 @@ class _ChallengeCard extends StatelessWidget {
                 'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
                 style: GoogleFonts.courierPrime(
                   color: theme.textDim,
-                  fontSize: 12,
+                  fontSize: compact ? 11 : 12,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 16),
+          SizedBox(height: compact ? 8 : 16),
 
           // The regex (shown large and prominent)
           if (mode == _PracticeMode.regexToDfa) ...[
-            Text(
-              'REGULAR EXPRESSION',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'REGULAR EXPRESSION',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: theme.accent.withOpacity(0.06),
+                color: theme.accent.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: theme.accent.withOpacity(0.2)),
+                border: Border.all(color: theme.accent.withValues(alpha: 0.2)),
               ),
               child: SelectableText(
                 challenge.regex,
                 style: GoogleFonts.courierPrime(
                   color: theme.accent,
-                  fontSize: 26,
+                  fontSize: compact ? 18 : 26,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                 ),
@@ -1626,62 +1935,72 @@ class _ChallengeCard extends StatelessWidget {
             ),
           ] else if (mode == _PracticeMode.describeToFa) ...[
             // DESCRIBE → FA: show the plain-language description
-            Text(
-              'LANGUAGE DESCRIPTION',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'LANGUAGE DESCRIPTION',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFFB47FFF).withOpacity(0.06),
+                color: const Color(0xFFB47FFF).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: const Color(0xFFB47FFF).withOpacity(0.25)),
+                    color: const Color(0xFFB47FFF).withValues(alpha: 0.25)),
               ),
               child: Text(
                 challenge.description ?? '',
                 style: GoogleFonts.sourceCodePro(
                   color: const Color(0xFFD4AAFF),
-                  fontSize: 14,
-                  height: 1.55,
+                  fontSize: compact ? 12 : 14,
+                  height: compact ? 1.3 : 1.55,
                 ),
+                maxLines: compact ? 3 : null,
+                overflow: compact ? TextOverflow.ellipsis : TextOverflow.clip,
               ),
             ),
           ] else if (mode == _PracticeMode.pdaToDraw) ...[
-            Text(
-              'CONTEXT-FREE LANGUAGE',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'CONTEXT-FREE LANGUAGE',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFF26C6DA).withOpacity(0.06),
+                color: const Color(0xFF26C6DA).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: const Color(0xFF26C6DA).withOpacity(0.25)),
+                    color: const Color(0xFF26C6DA).withValues(alpha: 0.25)),
               ),
               child: Text(
                 challenge.description ?? '',
                 style: GoogleFonts.sourceCodePro(
                   color: const Color(0xFF80DEEA),
-                  fontSize: 14,
-                  height: 1.55,
+                  fontSize: compact ? 12 : 14,
+                  height: compact ? 1.3 : 1.55,
                 ),
+                maxLines: compact ? 3 : null,
+                overflow: compact ? TextOverflow.ellipsis : TextOverflow.clip,
               ),
             ),
-            if (challenge.hint != null) ...[
+            if (challenge.hint != null && !compact) ...[
               const SizedBox(height: 10),
               Text(
                 challenge.hint!,
@@ -1694,29 +2013,32 @@ class _ChallengeCard extends StatelessWidget {
             ],
           ] else ...[
             // DFA→REGEX: no description shown — alphabet is the only hint
-            Text(
-              'ALPHABET',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'ALPHABET',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: theme.accentGreen.withOpacity(0.06),
+                color: theme.accentGreen.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
                 border:
-                    Border.all(color: theme.accentGreen.withOpacity(0.20)),
+                    Border.all(color: theme.accentGreen.withValues(alpha: 0.20)),
               ),
               child: Text(
                 'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
                 style: GoogleFonts.courierPrime(
                   color: theme.accentGreen,
-                  fontSize: 20,
+                  fontSize: compact ? 15 : 20,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                 ),
@@ -1724,37 +2046,40 @@ class _ChallengeCard extends StatelessWidget {
             ),
           ],
 
-          const SizedBox(height: 14),
-
-          // Task instruction
-          Row(
-            children: [
-              Icon(
-                mode == _PracticeMode.dfaToRegex
-                    ? Icons.keyboard_outlined
-                    : Icons.edit_outlined,
-                color: theme.textDim,
-                size: 14,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  mode == _PracticeMode.regexToDfa
-                      ? 'Draw a DFA on the canvas below whose language equals this regex.'
-                      : mode == _PracticeMode.describeToFa
-                          ? 'Draw a DFA on the canvas below whose language matches the description above.'
-                          : mode == _PracticeMode.pdaToDraw
-                              ? 'Draw a PDA on the canvas below that accepts exactly this language.'
-                              : 'Type a regular expression below that describes exactly this language.',
-                  style: GoogleFonts.sourceCodePro(
-                    color: theme.textDim,
-                    fontSize: 11,
-                    height: 1.5,
+          // Task instruction — on compact screens this is capped to one
+          // line so it can never push the card past its height budget;
+          // the full multi-line version only shows where there's room.
+          if (!compact) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Icon(
+                  mode == _PracticeMode.dfaToRegex
+                      ? Icons.keyboard_outlined
+                      : Icons.edit_outlined,
+                  color: theme.textDim,
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    mode == _PracticeMode.regexToDfa
+                        ? 'Draw a DFA on the canvas below whose language equals this regex.'
+                        : mode == _PracticeMode.describeToFa
+                            ? 'Draw a DFA on the canvas below whose language matches the description above.'
+                            : mode == _PracticeMode.pdaToDraw
+                                ? 'Draw a PDA on the canvas below that accepts exactly this language.'
+                                : 'Type a regular expression below that describes exactly this language.',
+                    style: GoogleFonts.sourceCodePro(
+                      color: theme.textDim,
+                      fontSize: 11,
+                      height: 1.5,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -1779,7 +2104,6 @@ class _DfaDrawingArea extends StatefulWidget {
   final AppThemeNotifier theme;
 
   const _DfaDrawingArea({
-    super.key,
     required this.challenge,
     required this.submitted,
     required this.gradeResult,
@@ -1795,18 +2119,12 @@ class _DfaDrawingArea extends StatefulWidget {
 class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
   // The player's in-progress FA lives here; the embedded AutomataDrawer
   // mutates these via its onChanged callback.
-  Map<String, NodeData> _nodes = {};
-  Map<String, LineData> _lines = {};
-  StartArrowData? _start;
 
   void _onFaChanged(
     Map<String, NodeData> nodes,
     Map<String, LineData> lines,
     StartArrowData? start,
   ) {
-    _nodes = nodes;
-    _lines = lines;
-    _start = start;
     widget.onFaChanged(nodes, lines, start);
   }
 
@@ -1821,7 +2139,7 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
         decoration: BoxDecoration(
           color: theme.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFFFB300).withOpacity(0.5), width: 1.5),
+          border: Border.all(color: const Color(0xFFFFB300).withValues(alpha: 0.5), width: 1.5),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -1839,7 +2157,7 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
               child: Text(
                 'CORRECT DFA  (read-only)',
                 style: GoogleFonts.orbitron(
-                  color: const Color(0xFFFFB300).withOpacity(0.7),
+                  color: const Color(0xFFFFB300).withValues(alpha: 0.7),
                   fontSize: 8,
                   letterSpacing: 2,
                 ),
@@ -1879,7 +2197,7 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
             child: Text(
               'YOUR DFA',
               style: GoogleFonts.orbitron(
-                color: theme.textDim.withOpacity(0.4),
+                color: theme.textDim.withValues(alpha: 0.4),
                 fontSize: 8,
                 letterSpacing: 2,
               ),
@@ -1904,7 +2222,6 @@ class _RegexInputArea extends StatelessWidget {
   final AppThemeNotifier theme;
 
   const _RegexInputArea({
-    super.key,
     required this.challenge,
     required this.controller,
     required this.focusNode,
@@ -1918,17 +2235,20 @@ class _RegexInputArea extends StatelessWidget {
   Widget build(BuildContext context) {
     final correct = gradeResult?.correct ?? false;
     final borderColor = !submitted
-        ? theme.accentGreen.withOpacity(0.35)
+        ? theme.accentGreen.withValues(alpha: 0.35)
         : correct
             ? const Color(0xFF4CAF50)
             : theme.error;
+    final compact = isCompactLayout(context);
+    final previewFlex = compact ? 2 : 3;
+    final inputFlex = compact ? 1 : 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Read-only DFA preview (so player can actually see the machine)
         Expanded(
-          flex: 3,
+          flex: previewFlex,
           child: Container(
             decoration: BoxDecoration(
               color: theme.surface,
@@ -1951,7 +2271,7 @@ class _RegexInputArea extends StatelessWidget {
                   child: Text(
                     'TARGET DFA  (read-only)',
                     style: GoogleFonts.orbitron(
-                      color: theme.textDim.withOpacity(0.5),
+                      color: theme.textDim.withValues(alpha: 0.5),
                       fontSize: 8,
                       letterSpacing: 2,
                     ),
@@ -1966,7 +2286,7 @@ class _RegexInputArea extends StatelessWidget {
 
         // Regex text field
         Expanded(
-          flex: 1,
+          flex: inputFlex,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -2006,7 +2326,7 @@ class _RegexInputArea extends StatelessWidget {
                     decoration: InputDecoration(
                       hintText: 'e.g.  a*(ba+b)*',
                       hintStyle: GoogleFonts.courierPrime(
-                        color: theme.textDim.withOpacity(0.5),
+                        color: theme.textDim.withValues(alpha: 0.5),
                         fontSize: 18,
                       ),
                       border: InputBorder.none,
@@ -2056,9 +2376,9 @@ class _OpHint extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
           decoration: BoxDecoration(
-            color: theme.accent.withOpacity(0.08),
+            color: theme.accent.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: theme.accent.withOpacity(0.2)),
+            border: Border.all(color: theme.accent.withValues(alpha: 0.2)),
           ),
           child: Text(
             op,
@@ -2152,7 +2472,7 @@ class _ReadOnlyDfaPreviewState extends State<_ReadOnlyDfaPreview> {
       initialNodes: _nodes!,
       initialLines: _lines!,
       initialStart: _start,
-      onChanged: (_, __, ___) {}, // read-only; ignore
+      onChanged: (_, _, _) {}, // read-only; ignore
       readOnly: true,
     );
   }
@@ -2280,9 +2600,9 @@ class _Banner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.4), width: 1.5),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2333,6 +2653,7 @@ class _ActionRow extends StatelessWidget {
   final VoidCallback onSubmit;
   final VoidCallback onSkip;
   final AppThemeNotifier theme;
+  final bool compact;
 
   const _ActionRow({
     required this.submitted,
@@ -2343,10 +2664,13 @@ class _ActionRow extends StatelessWidget {
     required this.onSubmit,
     required this.onSkip,
     required this.theme,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final gap = compact ? 8.0 : 12.0;
+
     // Parse error → "Try Again" + Skip
     if (submitted && gradeResult?.error != null) {
       return Row(
@@ -2356,15 +2680,17 @@ class _ActionRow extends StatelessWidget {
               label: 'TRY AGAIN',
               icon: Icons.refresh_rounded,
               color: theme.accent,
+              compact: compact,
               onTap: onSubmit,
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: gap),
           _Btn(
             label: 'SKIP',
             icon: Icons.skip_next_rounded,
             color: theme.textDim,
             small: true,
+            compact: compact,
             onTap: onSkip,
           ),
         ],
@@ -2377,6 +2703,7 @@ class _ActionRow extends StatelessWidget {
         label: 'NEXT CHALLENGE',
         icon: Icons.arrow_forward_rounded,
         color: const Color(0xFF4CAF50),
+        compact: compact,
         onTap: onSubmit, // onSubmit is wired to _nextChallenge at this point
       );
     }
@@ -2387,6 +2714,7 @@ class _ActionRow extends StatelessWidget {
         label: 'NEXT CHALLENGE',
         icon: Icons.arrow_forward_rounded,
         color: const Color(0xFFFFB300),
+        compact: compact,
         onTap: onSubmit,
       );
     }
@@ -2401,15 +2729,17 @@ class _ActionRow extends StatelessWidget {
               label: 'TRY AGAIN  ($triesLeft left)',
               icon: Icons.refresh_rounded,
               color: theme.error,
+              compact: compact,
               onTap: onSubmit,
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: gap),
           _Btn(
             label: 'SKIP',
             icon: Icons.skip_next_rounded,
             color: theme.textDim,
             small: true,
+            compact: compact,
             onTap: onSkip,
           ),
         ],
@@ -2424,15 +2754,17 @@ class _ActionRow extends StatelessWidget {
             label: 'CHECK',
             icon: Icons.check_rounded,
             color: theme.accent,
+            compact: compact,
             onTap: onSubmit,
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         _Btn(
           label: 'SKIP',
           icon: Icons.skip_next_rounded,
           color: theme.textDim,
           small: true,
+          compact: compact,
           onTap: onSkip,
         ),
       ],
@@ -2446,6 +2778,7 @@ class _Btn extends StatefulWidget {
   final Color color;
   final VoidCallback onTap;
   final bool small;
+  final bool compact;
 
   const _Btn({
     required this.label,
@@ -2453,6 +2786,7 @@ class _Btn extends StatefulWidget {
     required this.color,
     required this.onTap,
     this.small = false,
+    this.compact = false,
   });
 
   @override
@@ -2474,16 +2808,16 @@ class _BtnState extends State<_Btn> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
         padding: EdgeInsets.symmetric(
-          vertical: widget.small ? 10 : 14,
+          vertical: widget.small ? (widget.compact ? 7 : 10) : (widget.compact ? 9 : 14),
           horizontal: widget.small ? 16 : 20,
         ),
         decoration: BoxDecoration(
           color: _pressed
-              ? widget.color.withOpacity(0.22)
-              : widget.color.withOpacity(0.10),
+              ? widget.color.withValues(alpha: 0.22)
+              : widget.color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: widget.color.withOpacity(_pressed ? 0.9 : 0.5),
+            color: widget.color.withValues(alpha: _pressed ? 0.9 : 0.5),
             width: 1.5,
           ),
         ),
@@ -2524,9 +2858,9 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(
         label,
@@ -2618,8 +2952,8 @@ void _applyStudyModeLayout(
   const double nodeRadius  = 50.0;              // visual radius of a state circle
   const double clearance   = nodeRadius + 30.0; // min distance: node centre ↔ chord
   const double textBuffer  = 12.0;              // extra padding around textbox rect
-  const double boxWidth    = 120.0;             // must match LineWidget / StartArrowWidget
-  const double lineHeight  = 36.0;              // single-line height used by those widgets
+  const double boxWidth    = kLabelBoxWidth;    // must match LineWidget / StartArrowWidget — see models.dart
+  const double lineHeight  = kLabelLineHeight;  // single-line height used by those widgets — see models.dart
   const int    iterations  = 20;                // enough passes to propagate cascades
 
   for (int iter = 0; iter < iterations; iter++) {

@@ -244,6 +244,23 @@ String _read(String sym) => '$sym,~|~';
 String _eps() => '~,~|~';
 String _pushSym(String sym) => '$sym,~|$sym';
 
+// A plain _eps() ('~,~|~') fires unconditionally — it doesn't check the
+// stack at all. That's fine for building up intermediate transitions, but
+// it's wrong for the *final* move into an accept state whenever "accept"
+// is supposed to mean "every pushed marker has since been popped" (e.g.
+// a^n b^n, or any exact frame/ratio match). Using a bare _eps() there lets
+// the machine jump to accept from a *prefix* of the real match — e.g. after
+// only some of the b's/c's have been popped, or none at all — because
+// leftover markers on the stack are simply never inspected.
+//
+// _epsWhenEmpty() closes that hole: it's still a true epsilon move (fires
+// at any point, doesn't consume input) but additionally requires popping
+// the implicit stack-bottom sentinel ∅, which only succeeds once the stack
+// is genuinely empty of real markers. Use this (instead of _eps()) for any
+// transition into the accept state that is meant to certify "fully matched,
+// nothing left over".
+String _epsWhenEmpty() => '~,∅|~';
+
 // ── Language families ───────────────────────────────────────────────────────
 
 GraphState _buildAnBn(String a, String b, {required bool acceptEmpty}) {
@@ -251,10 +268,10 @@ GraphState _buildAnBn(String a, String b, {required bool acceptEmpty}) {
     ('n0', 'n0', _push(a)),
     ('n0', 'n1', _pop(b)),
     ('n1', 'n1', _pop(b)),
-    ('n1', 'n2', _eps()),
+    ('n1', 'n2', _epsWhenEmpty()),
   ];
   if (acceptEmpty) {
-    transitions.add(('n0', 'n2', _eps()));
+    transitions.add(('n0', 'n2', _epsWhenEmpty()));
   }
   return _graph(
     states: [
@@ -288,11 +305,19 @@ GraphState _buildRatio(String a, String b, int k, int j) {
       final push = List.filled(j, _m).join(' ');
       trans.add(('a$i', 'a0', '$a,~|$push'));
     }
-    if (j == 1) {
-      trans.add(('a$i', 'a0', _pop(b)));
-    } else {
-      trans.add(('a$i', 'b0', _read(b)));
-    }
+  }
+
+  // The switch into "consume b's" must only be reachable from a0 — the state
+  // that means "zero a's into the current group" (either nothing read yet,
+  // or a group of k a's has just completed and pushed its marker(s)).
+  // Adding this transition from every a$i (as before) let an *incomplete*
+  // group of a's (i in 1..k-1) bail straight into popping b's using markers
+  // left over from an earlier completed group, so e.g. for k=3, j=1 the old
+  // code wrongly accepted "aaaaab" (5 a's, 1 b — not a multiple of 3).
+  if (j == 1) {
+    trans.add(('a0', 'a0', _pop(b)));
+  } else {
+    trans.add(('a0', 'b0', _read(b)));
   }
 
   for (int i = 0; i < j; i++) {

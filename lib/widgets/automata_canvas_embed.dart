@@ -28,8 +28,13 @@ import 'app_theme.dart';
 //      state for grading or other purposes.
 //
 //  [readOnly]
-//      When true, disables all editing and the toolbar.  Only panning is
-//      allowed so the user can navigate the diagram.  Used to show the
+//      When true, disables structural editing and hides the toolbar: no
+//      creating/deleting nodes or transitions, no drawing new transitions,
+//      no toggling accept states, and labels can't be typed into. Dragging
+//      is still allowed — individual nodes, line curves, and the start
+//      arrow can all be repositioned, and dragging empty space pans the
+//      whole diagram — so the user can pull things apart if the automatic
+//      layout leaves anything overlapping or hard to read. Used to show the
 //      "target DFA" preview in study mode.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -157,7 +162,9 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
   void _deleteNode(String id) {
     final node = _nodes[id];
     if (node == null) return;
-    for (final lid in node.connectedLineIds.toList()) _deleteLine(lid);
+    for (final lid in node.connectedLineIds.toList()) {
+      _deleteLine(lid);
+    }
     if (_startArrow?.nodeId == id) _startArrow = null;
     _nodes.remove(id);
     _notify();
@@ -206,13 +213,18 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
       return;
     }
 
-    final node = _nodeAt(pos);
-    if (node != null) {
-      if (_lineMode) {
-        if (_canStartLineFrom(node.id)) _lineSourceNodeId = node.id;
-      } else {
-        _draggingNodeId = node.id;
+    if (_lineMode) {
+      final node = _nodeAt(pos);
+      if (node != null && _canStartLineFrom(node.id)) {
+        _lineSourceNodeId = node.id;
       }
+      return;
+    }
+
+    // Lines take priority over nodes so transitions can be curved near states.
+    final line = _lineAt(pos);
+    if (line != null) {
+      _draggingLineId = line.id;
       return;
     }
 
@@ -221,10 +233,10 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
       return;
     }
 
-    final line = _lineAt(pos);
-    if (line != null) {
-      _draggingLineId = line.id;
-    } else if (!_lineMode) {
+    final node = _nodeAt(pos);
+    if (node != null) {
+      _draggingNodeId = node.id;
+    } else {
       _isPanningCanvas = true;
     }
   }
@@ -342,12 +354,18 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
     final canvasBody = widget.readOnly
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
-            // Allow panning even in read-only so the user can navigate.
-            onPanUpdate: (d) => setState(() {
-              for (final n in _nodes.values) {
-                n.position = n.position + d.delta;
-              }
-            }),
+            // Read-only means "can't change the structure" — it doesn't mean
+            // frozen in place. Reuse the same drag handlers as edit mode so
+            // individual nodes/line-curves/the start arrow can be dragged
+            // apart when the auto-layout leaves things overlapping or hard
+            // to read; dragging empty space still pans everything at once.
+            // _lineMode/_deleteMode/_placingStartArrow are permanently false
+            // here (no toolbar to turn them on), so none of the structural
+            // branches inside these handlers (new transitions, deletion,
+            // start-arrow re-placement) can fire — only repositioning can.
+            onPanStart: _onPanStart,
+            onPanUpdate: _onPanUpdateWithTracking,
+            onPanEnd: _onPanEnd,
             child: _CanvasContents(
               nodes: _nodes,
               lines: _lines,
@@ -358,12 +376,13 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
               lineSourceNodeId: null,
               rubberBandEnd: null,
               isLabelTaken: _isLabelTaken,
-              onNodeLabelChanged: (_, __) {},
+              interactionLocked: true,
+              onNodeLabelChanged: (_, _) {},
               onLineModeSelect: (_) {},
               onNodeDoubleTap: (_) {},
               onNodeDelete: (_) {},
               onLineDelete: (_) {},
-              onLineLabelChanged: (_, __) {},
+              onLineLabelChanged: (_, _) {},
               onStartArrowDelete: () {},
             ),
           )
@@ -394,6 +413,7 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
               lineSourceNodeId: _lineSourceNodeId,
               rubberBandEnd: _rubberBandEnd,
               isLabelTaken: _isLabelTaken,
+              interactionLocked: false,
               onNodeLabelChanged: (id, text) {
                 setState(() => _nodes[id]!.label = text);
                 _notify();
@@ -441,14 +461,14 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.touch_app_outlined,
-                        color: theme.textDim.withOpacity(0.22), size: 36),
+                        color: theme.textDim.withValues(alpha: 0.22), size: 36),
                     const SizedBox(height: 10),
                     Text(
                       'Double-tap to add a state\n'
                       'Drag node to move  ·  Use toolbar to draw transitions',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: theme.textDim.withOpacity(0.28),
+                        color: theme.textDim.withValues(alpha: 0.28),
                         fontSize: 11,
                         height: 1.7,
                       ),
@@ -515,6 +535,13 @@ class _CanvasContents extends StatelessWidget {
   final Offset? rubberBandEnd;
 
   final bool Function(String label, String nodeId) isLabelTaken;
+
+  /// True for the read-only preview mode: node/line/start-arrow labels are
+  /// shown but can't be typed into. Does not affect dragging — positions
+  /// can still be adjusted so the player can fix overlapping/hard-to-read
+  /// layouts, only the label *text* is locked.
+  final bool interactionLocked;
+
   final void Function(String id, String text) onNodeLabelChanged;
   final void Function(String id) onLineModeSelect;
   final void Function(String id) onNodeDoubleTap;
@@ -533,6 +560,7 @@ class _CanvasContents extends StatelessWidget {
     required this.lineSourceNodeId,
     required this.rubberBandEnd,
     required this.isLabelTaken,
+    required this.interactionLocked,
     required this.onNodeLabelChanged,
     required this.onLineModeSelect,
     required this.onNodeDoubleTap,
@@ -554,6 +582,7 @@ class _CanvasContents extends StatelessWidget {
               data: startArrow!,
               nodeCenter: nodes[startArrow!.nodeId]!.center,
               deleteMode: deleteMode,
+              interactionLocked: interactionLocked,
               onDelete: onStartArrowDelete,
             ),
           ),
@@ -588,6 +617,7 @@ class _CanvasContents extends StatelessWidget {
                 centerB: b.center,
                 deleteMode: deleteMode,
                 highlighted: false,
+                interactionLocked: interactionLocked,
                 onLabelChanged: (text) => onLineLabelChanged(line.id, text),
               ),
             ),
@@ -599,7 +629,7 @@ class _CanvasContents extends StatelessWidget {
               key: ValueKey(node.id),
               data: node,
               lineMode: lineMode,
-              interactionLocked: placingStartArrow,
+              interactionLocked: interactionLocked || placingStartArrow,
               deleteMode: deleteMode,
               highlighted: false,
               tapeCount: 1,
@@ -650,12 +680,12 @@ class _MiniToolbar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: theme.surface.withOpacity(0.92),
+        color: theme.surface.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: theme.borderMid),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
+            color: Colors.black.withValues(alpha: 0.15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),

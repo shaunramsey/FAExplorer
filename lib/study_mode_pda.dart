@@ -8,8 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'models.dart';
 import 'simulator.dart';
 import 'pda_study_solutions.dart';
+import 'study_mode_symbols.dart';
 import 'widgets/app_theme.dart';
-import 'widgets/automata_drawer.dart' show AutomataMode;
 import 'widgets/automata_canvas_embed.dart';
 
 enum StudyPdaDifficulty { easy, medium, hard }
@@ -59,11 +59,20 @@ List<StudyPdaChallenge> generateStudyPdaChallenges(Random rng, {int count = 20})
   return [for (int i = 0; i < count; i++) all[i % all.length]];
 }
 
+/// Draws a fresh, randomly-ordered 2-symbol alphabet.
+(String, String) _freshPair(Random rng) {
+  final syms = randomStudyAlphabet(rng).toList()..shuffle(rng);
+  return (syms[0], syms[1]);
+}
+
 List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
   final challenges = <StudyPdaChallenge>[];
-  final pairs = [('a', 'b'), ('0', '1'), ('x', 'y'), ('p', 'q')];
-  final pair = pairs[rng.nextInt(pairs.length)];
-  final (a, b) = pair;
+
+  // Every challenge below draws its own alphabet via _freshPair() /
+  // randomStudyAlphabet() rather than sharing one pair across the whole
+  // batch — otherwise a single build could lock onto e.g. "x"/"y" for all
+  // fifteen-odd PDA problems in a session.
+  var (a, b) = _freshPair(rng);
 
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 0 }\n\n'
@@ -83,10 +92,11 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$b$a', false),
     ],
     acceptExamples: ['ε', '$a$b', '$a$a$b$b'],
-    rejectExamples: ['$a', '$b', '$a$a$b'],
+    rejectExamples: [a, b, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b),
   ));
 
+  (a, b) = _freshPair(rng);
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 1 }\n\n'
         'Accept non-empty strings with equal "$a" and "$b" counts.',
@@ -101,7 +111,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$a$b', false),
     ],
     acceptExamples: ['$a$b', '$a$a$b$b'],
-    rejectExamples: ['ε', '$a', '$a$a$b'],
+    rejectExamples: ['ε', a, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b, acceptEmpty: false),
   ));
 
@@ -110,14 +120,17 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     (1, 2, StudyPdaDifficulty.medium),
     (2, 3, StudyPdaDifficulty.hard),
   ]) {
-    challenges.add(_ratioChallenge(a, b, k, j, diff));
+    final (ra, rb) = _freshPair(rng);
+    challenges.add(_ratioChallenge(ra, rb, k, j, diff));
   }
 
   for (final rel in _CompRelation.values) {
-    challenges.add(_comparisonChallenge(a, b, rel));
+    final (ca, cb) = _freshPair(rng);
+    challenges.add(_comparisonChallenge(ca, cb, rel));
   }
 
-  const s1 = 'a', s2 = 'b', s3 = 'c', s4 = 'd';
+  final quad = randomStudyAlphabet(rng, size: 4).toList()..shuffle(rng);
+  final s1 = quad[0], s2 = quad[1], s3 = quad[2], s4 = quad[3];
   challenges.add(StudyPdaChallenge(
     description: 'L = { $s1^n $s2^m $s3^n $s4^m | n, m ≥ 0 }',
     hint: 'Use separate stack markers for the two pairs of symbols.',
@@ -135,9 +148,8 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     solutionSpec: PdaSolutionSpec.interleaved4(s1, s2, s3, s4),
   ));
 
-  const mid = 'b';
-  const outer = 'a';
-  const frame = 'c';
+  final triple = randomStudyAlphabet(rng, size: 3).toList()..shuffle(rng);
+  final outer = triple[0], mid = triple[1], frame = triple[2];
   challenges.add(StudyPdaChallenge(
     description: 'L = { $outer^n $mid^m $frame^n | n, m ≥ 0 }',
     hint: 'Push for each "$outer", ignore "$mid"s, pop for each "$frame".',
@@ -156,6 +168,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     solutionSpec: PdaSolutionSpec.outerFrame(outer, mid, frame),
   ));
 
+  (a, b) = _freshPair(rng);
   challenges.add(StudyPdaChallenge(
     description: 'L = palindromes over {$a, $b}',
     hint: 'Nondeterministically guess the midpoint, push then pop.',
@@ -172,6 +185,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
     solutionSpec: PdaSolutionSpec.palindrome(a, b),
   ));
 
+  (a, b) = _freshPair(rng);
   challenges.add(StudyPdaChallenge(
     description: 'L = { w $b w^R | w ∈ {$a}* }',
     hint: 'Push "$a"s, read "$b", pop "$a"s on the way back.',
@@ -324,7 +338,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
           color: theme.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-              color: const Color(0xFFFFB300).withOpacity(0.5), width: 1.5),
+              color: const Color(0xFFFFB300).withValues(alpha: 0.5), width: 1.5),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -334,7 +348,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
                 initialNodes: graph.nodes,
                 initialLines: graph.lines,
                 initialStart: graph.startArrow,
-                onChanged: (_, __, ___) {},
+                onChanged: (_, _, _) {},
                 readOnly: true,
               ),
             ),
@@ -344,7 +358,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
               child: Text(
                 'CORRECT PDA  (read-only)',
                 style: GoogleFonts.orbitron(
-                  color: const Color(0xFFFFB300).withOpacity(0.7),
+                  color: const Color(0xFFFFB300).withValues(alpha: 0.7),
                   fontSize: 8,
                   letterSpacing: 2,
                 ),
@@ -386,7 +400,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
                   child: Text(
                     'YOUR PDA',
                     style: GoogleFonts.orbitron(
-                      color: theme.textDim.withOpacity(0.4),
+                      color: theme.textDim.withValues(alpha: 0.4),
                       fontSize: 8,
                       letterSpacing: 2,
                     ),
@@ -405,7 +419,7 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
   final StudyPdaChallenge challenge;
   final AppThemeNotifier theme;
 
-  const StudyPdaTestCaseStrip({
+  const StudyPdaTestCaseStrip({super.key, 
     required this.challenge,
     required this.theme,
   });
@@ -420,9 +434,9 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 6),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.10),
+          color: color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withOpacity(0.35)),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
         child: Text(
           label,
@@ -496,10 +510,10 @@ void _applyStudyModeLayout(
   const double minNodeGap     = nodeDiameter + 40.0; // minimum centre-to-centre distance
   const double clearance      = nodeRadius + 30.0;   // min dist: node centre ↔ chord
   const double textBuffer     = 14.0;                // extra padding around textbox rect
-  const double boxWidth       = 120.0;               // must match LineWidget
-  const double lineHeight     = 36.0;                // single-line height in LineWidget
-  const double selfLoopRadius = 35.0;                // loop circle radius (from models.dart)
-  const double selfLoopCenterDist = 65.0;            // centre offset for loop (from models.dart)
+  const double boxWidth       = kLabelBoxWidth;       // must match LineWidget — see models.dart
+  const double lineHeight     = kLabelLineHeight;      // single-line height in LineWidget — see models.dart
+  const double selfLoopRadius = kSelfLoopRadius;       // loop circle radius — see models.dart
+  const double selfLoopCenterDist = kSelfLoopCenterDistance; // centre offset for loop — see models.dart
   const int    iterations     = 30;                  // convergence passes
 
   // Helper: push node away from an axis-aligned rect.
@@ -599,7 +613,7 @@ void _applyStudyModeLayout(
             oc.dx + outward.dx * selfLoopCenterDist,
             oc.dy + outward.dy * selfLoopCenterDist,
           );
-          const textDistance = 65.0;
+          const textDistance = kSelfLoopTextDistance;
           final textCenter = Offset(
             loopCenter.dx + outward.dx * (selfLoopRadius + textDistance),
             loopCenter.dy + outward.dy * (selfLoopRadius + textDistance),
@@ -686,7 +700,7 @@ void _applyStudyModeLayout(
 
         // ── Check C: non-self-loop textbox clearance ────────────────────
         if (line.label.isNotEmpty) {
-          final nc = node.center; // re-read after chord push
+// re-read after chord push
           final lineCount = '\n'.allMatches(line.label).length + 1;
           final double boxHeight = lineHeight * lineCount;
 

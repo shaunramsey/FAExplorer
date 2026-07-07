@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -205,88 +206,300 @@ class AppThemeData {
     panelHighlight: Color(0xFF7C3AED),
   );
 
-  factory AppThemeData.midnight() => AppThemeData.cyberDark().copyWith(
-    bg: const Color(0xFF030510),
-    surface: const Color(0xFF080C16),
-    accent: const Color(0xFF8B5CF6),
-    accentGreen: const Color(0xFF34D399),
-    panelHighlight: const Color(0xFFA78BFA),
-    nodeBorderHighlight: const Color(0xFFA78BFA),
-    lineHighlight: const Color(0xFFA78BFA),
-    tagIntro: const Color(0xFF8B5CF6),
-    tagTm: const Color(0xFFC084FC),
+  /// Indigo-violet "aurora" night theme. Deliberately NOT derived from
+  /// [cyberDark] — shares only the general dark-UI contrast rules, not the
+  /// specific hues, so it reads as its own theme rather than a recolored
+  /// accent on top of the default. Cool violet bg, lavender node/line
+  /// strokes, pink-magenta highlight, rose reject/delete.
+  factory AppThemeData.midnight() => const AppThemeData(
+    bg: Color(0xFF0A0A1F),
+    gridLine: Color(0xFF17153A),
+    accent: Color(0xFF8B5CF6),
+    accentGreen: Color(0xFF34D399),
+    textDim: Color(0xFF8783A6),
+    textMid: Color(0xFFB4AFCF),
+    textLight: Color(0xFFEDEBF7),
+    surface: Color(0xFF120F28),
+    border: Color(0xFF1E1A3C),
+    borderMid: Color(0xFF2C2652),
+    nodeBorder: Color(0xFFE9E4FF),
+    nodeBorderSelected: Color(0xFF60A5FA),
+    nodeBorderHighlight: Color(0xFFF472B6),
+    nodeBorderDuplicate: Color(0xFFFACC15),
+    nodeBorderDelete: Color(0xFFF43F5E),
+    lineColor: Color(0xFFE9E4FF),
+    lineHighlight: Color(0xFFF472B6),
+    acceptState: Color(0xFF34D399),
+    rejectState: Color(0xFFF43F5E),
+    edgeDim: Color(0xFF241F44),
+    edgeActive: Color(0xFF8B5CF6),
+    edgeBright: Color(0xFFC084FC),
+    edgeAlmost: Color(0xFFF472B6),
+    edgeBlocking: Color(0xFFF43F5E),
+    tagIntro: Color(0xFF8B5CF6),
+    tagDfa: Color(0xFF34D399),
+    tagNfa: Color(0xFFFACC15),
+    tagPda: Color(0xFF60A5FA),
+    tagTm: Color(0xFFF472B6),
+    tagBoss: Color(0xFFF43F5E),
+    tagDefault: Color(0xFF8783A6),
+    error: Color(0xFFF43F5E),
+    warning: Color(0xFFFACC15),
+    panelHighlight: Color(0xFFF472B6),
   );
 
-  factory AppThemeData.ocean() => AppThemeData.cyberDark().copyWith(
-    bg: const Color(0xFF041018),
-    accent: const Color(0xFF22D3EE),
-    accentGreen: const Color(0xFF2DD4BF),
-    edgeActive: const Color(0xFF14B8A6),
-    edgeBright: const Color(0xFF2DD4BF),
-    tagIntro: const Color(0xFF22D3EE),
-    tagDfa: const Color(0xFF34D399),
-    panelHighlight: const Color(0xFF06B6D4),
-    nodeBorderHighlight: const Color(0xFF06B6D4),
-    lineHighlight: const Color(0xFF06B6D4),
+  /// Deep-sea teal theme with warm gold/coral accents used *against* the
+  /// cool background — the inverse relationship of [midnight]'s all-cool
+  /// palette — so simulation highlights and warnings pop rather than
+  /// blending into a same-hue-family backdrop.
+  factory AppThemeData.ocean() => const AppThemeData(
+    bg: Color(0xFF03141A),
+    gridLine: Color(0xFF0A2530),
+    accent: Color(0xFF14B8A6),
+    accentGreen: Color(0xFF2DD4BF),
+    textDim: Color(0xFF6B94A0),
+    textMid: Color(0xFF9EC3CC),
+    textLight: Color(0xFFE3F6F5),
+    surface: Color(0xFF082027),
+    border: Color(0xFF0F3038),
+    borderMid: Color(0xFF1B4048),
+    nodeBorder: Color(0xFFDFF8F0),
+    nodeBorderSelected: Color(0xFF2DD4BF),
+    nodeBorderHighlight: Color(0xFFFFB020),
+    nodeBorderDuplicate: Color(0xFFFF8A65),
+    nodeBorderDelete: Color(0xFFFF5252),
+    lineColor: Color(0xFFDFF8F0),
+    lineHighlight: Color(0xFFFFB020),
+    acceptState: Color(0xFF2DD4BF),
+    rejectState: Color(0xFFFF5252),
+    edgeDim: Color(0xFF123840),
+    edgeActive: Color(0xFF14B8A6),
+    edgeBright: Color(0xFF5EEAD4),
+    edgeAlmost: Color(0xFFFFB020),
+    edgeBlocking: Color(0xFFFF7043),
+    tagIntro: Color(0xFF14B8A6),
+    tagDfa: Color(0xFF5EEAD4),
+    tagNfa: Color(0xFFFFB020),
+    tagPda: Color(0xFFFF7043),
+    tagTm: Color(0xFF7DD3FC),
+    tagBoss: Color(0xFFFF5252),
+    tagDefault: Color(0xFF6B94A0),
+    error: Color(0xFFFF5252),
+    warning: Color(0xFFFFB020),
+    panelHighlight: Color(0xFFFFB020),
   );
 
-  factory AppThemeData.ember() => AppThemeData.cyberDark().copyWith(
-    bg: const Color(0xFF0C0806),
-    surface: const Color(0xFF14100C),
-    accent: const Color(0xFFFFB020),
-    accentGreen: const Color(0xFF84CC16),
-    edgeBlocking: const Color(0xFFFF6B35),
-    edgeAlmost: const Color(0xFFFFB020),
-    tagIntro: const Color(0xFFFFB020),
-    tagNfa: const Color(0xFFFFD166),
-    panelHighlight: const Color(0xFFFF8C42),
-    nodeBorderHighlight: const Color(0xFFFF8C42),
-    lineHighlight: const Color(0xFFFF8C42),
+  /// Warm ember/firelight theme. Every color is tuned toward amber/rust/red
+  /// rather than reusing [cyberDark]'s cool grays and white strokes, so it
+  /// doesn't just look like "dark theme with an orange accent."
+  factory AppThemeData.ember() => const AppThemeData(
+    bg: Color(0xFF120A06),
+    gridLine: Color(0xFF241610),
+    accent: Color(0xFFFFB020),
+    accentGreen: Color(0xFF84CC16),
+    textDim: Color(0xFFB0937A),
+    textMid: Color(0xFFD3B79A),
+    textLight: Color(0xFFF5E6D3),
+    surface: Color(0xFF1C120B),
+    border: Color(0xFF2A1B12),
+    borderMid: Color(0xFF3D2718),
+    nodeBorder: Color(0xFFFCEEDD),
+    nodeBorderSelected: Color(0xFFFFB020),
+    nodeBorderHighlight: Color(0xFFFF5A36),
+    nodeBorderDuplicate: Color(0xFFFFD166),
+    nodeBorderDelete: Color(0xFFE53935),
+    lineColor: Color(0xFFFCEEDD),
+    lineHighlight: Color(0xFFFF5A36),
+    acceptState: Color(0xFF84CC16),
+    rejectState: Color(0xFFE53935),
+    edgeDim: Color(0xFF2A1810),
+    edgeActive: Color(0xFFD97706),
+    edgeBright: Color(0xFFFFD166),
+    edgeAlmost: Color(0xFFFF8C42),
+    edgeBlocking: Color(0xFFB91C1C),
+    tagIntro: Color(0xFFFFB020),
+    tagDfa: Color(0xFF84CC16),
+    tagNfa: Color(0xFFFFD166),
+    tagPda: Color(0xFFFF6B35),
+    tagTm: Color(0xFFC2410C),
+    tagBoss: Color(0xFFE53935),
+    tagDefault: Color(0xFFB0937A),
+    error: Color(0xFFE53935),
+    warning: Color(0xFFFF8C42),
+    panelHighlight: Color(0xFFFF5A36),
+  );
+
+  /// Desaturated, low-glow "quiet" theme. Where cyberDark/midnight/ocean/ember
+  /// all share the same recipe (near-black bg + one saturated neon accent +
+  /// white strokes + neon pink/orange highlight), Slate deliberately drops
+  /// saturation across the board: warm charcoal instead of blue-black, a
+  /// dusty steel-blue accent instead of neon, and earth-toned semantic colors
+  /// (sage, ochre, clay, brick) instead of primary-color coding. Nothing here
+  /// glows — it's the professional/subdued option next to the louder themes.
+  factory AppThemeData.slate() => const AppThemeData(
+    bg: Color(0xFF1A1917),
+    gridLine: Color(0xFF242320),
+    accent: Color(0xFF7C8B99),
+    accentGreen: Color(0xFF8FA680),
+    textDim: Color(0xFF8C8880),
+    textMid: Color(0xFFB8B3A9),
+    textLight: Color(0xFFEDEAE3),
+    surface: Color(0xFF211F1C),
+    border: Color(0xFF2E2C27),
+    borderMid: Color(0xFF3A3730),
+    nodeBorder: Color(0xFFD8D4CA),
+    nodeBorderSelected: Color(0xFF7C8B99),
+    nodeBorderHighlight: Color(0xFFB08968),
+    nodeBorderDuplicate: Color(0xFFC9A227),
+    nodeBorderDelete: Color(0xFFA65D57),
+    lineColor: Color(0xFFD8D4CA),
+    lineHighlight: Color(0xFFB08968),
+    acceptState: Color(0xFF8FA680),
+    rejectState: Color(0xFFA65D57),
+    edgeDim: Color(0xFF33312B),
+    edgeActive: Color(0xFF7C8B99),
+    edgeBright: Color(0xFFA8B8C4),
+    edgeAlmost: Color(0xFFC9A227),
+    edgeBlocking: Color(0xFFA65D57),
+    tagIntro: Color(0xFF7C8B99),
+    tagDfa: Color(0xFF8FA680),
+    tagNfa: Color(0xFFC9A227),
+    tagPda: Color(0xFFB08968),
+    tagTm: Color(0xFF9B8AA6),
+    tagBoss: Color(0xFFA65D57),
+    tagDefault: Color(0xFF8C8880),
+    error: Color(0xFFA65D57),
+    warning: Color(0xFFC9A227),
+    panelHighlight: Color(0xFFB08968),
+  );
+
+  /// Monochrome CRT-terminal theme. Instead of hue-coding categories like the
+  /// other dark themes, almost every color here is a brightness step of one
+  /// green — the identity comes from being single-hue, not from which hue.
+  /// Red and amber are held back as the only two breaks from green, reserved
+  /// for genuine alarm states (delete/reject, duplicate/warning), so they
+  /// read as alerts rather than as two more colors in a rainbow.
+  factory AppThemeData.phosphor() => const AppThemeData(
+    bg: Color(0xFF030503),
+    gridLine: Color(0xFF0A130A),
+    accent: Color(0xFF33FF66),
+    accentGreen: Color(0xFF33FF66),
+    textDim: Color(0xFF2C7A3E),
+    textMid: Color(0xFF4FCB6C),
+    textLight: Color(0xFFB9FFC9),
+    surface: Color(0xFF071A0B),
+    border: Color(0xFF0F2814),
+    borderMid: Color(0xFF16351C),
+    nodeBorder: Color(0xFFB9FFC9),
+    nodeBorderSelected: Color(0xFF33FF66),
+    nodeBorderHighlight: Color(0xFFE8FFEC),
+    nodeBorderDuplicate: Color(0xFFFFC53D),
+    nodeBorderDelete: Color(0xFFFF4B4B),
+    lineColor: Color(0xFF4FCB6C),
+    lineHighlight: Color(0xFFE8FFEC),
+    acceptState: Color(0xFF33FF66),
+    rejectState: Color(0xFFFF4B4B),
+    edgeDim: Color(0xFF123018),
+    edgeActive: Color(0xFF2C7A3E),
+    edgeBright: Color(0xFF33FF66),
+    edgeAlmost: Color(0xFFFFC53D),
+    edgeBlocking: Color(0xFFFF4B4B),
+    tagIntro: Color(0xFF33FF66),
+    tagDfa: Color(0xFF4FCB6C),
+    tagNfa: Color(0xFFFFC53D),
+    tagPda: Color(0xFF2C7A3E),
+    tagTm: Color(0xFFB9FFC9),
+    tagBoss: Color(0xFFFF4B4B),
+    tagDefault: Color(0xFF2C7A3E),
+    error: Color(0xFFFF4B4B),
+    warning: Color(0xFFFFC53D),
+    panelHighlight: Color(0xFFE8FFEC),
+  );
+
+  /// Warm "old technical manual" light theme — a second light option that's
+  /// deliberately not a reskin of [light]. Cream parchment instead of
+  /// cool gray-blue paper, ink-brown text instead of slate gray, and muted
+  /// denim/forest/rust/plum inks instead of clinical saturated primaries.
+  factory AppThemeData.parchment() => const AppThemeData(
+    bg: Color(0xFFF2EBDA),
+    gridLine: Color(0xFFE4D9C0),
+    accent: Color(0xFF3A5A7A),
+    accentGreen: Color(0xFF4C7A52),
+    textDim: Color(0xFF8A7A63),
+    textMid: Color(0xFF5C4E3D),
+    textLight: Color(0xFF2B2013),
+    surface: Color(0xFFFBF6EA),
+    border: Color(0xFFE0D3B8),
+    borderMid: Color(0xFFD0C09E),
+    nodeBorder: Color(0xFF2B2013),
+    nodeBorderSelected: Color(0xFF3A5A7A),
+    nodeBorderHighlight: Color(0xFF7A4A8A),
+    nodeBorderDuplicate: Color(0xFFB8791E),
+    nodeBorderDelete: Color(0xFFA13A2E),
+    lineColor: Color(0xFF2B2013),
+    lineHighlight: Color(0xFF7A4A8A),
+    acceptState: Color(0xFF4C7A52),
+    rejectState: Color(0xFFA13A2E),
+    edgeDim: Color(0xFFD0C09E),
+    edgeActive: Color(0xFF4C7A52),
+    edgeBright: Color(0xFF6FA377),
+    edgeAlmost: Color(0xFFB8791E),
+    edgeBlocking: Color(0xFF9C4A20),
+    tagIntro: Color(0xFF3A5A7A),
+    tagDfa: Color(0xFF4C7A52),
+    tagNfa: Color(0xFFB8791E),
+    tagPda: Color(0xFF9C4A20),
+    tagTm: Color(0xFF7A4A8A),
+    tagBoss: Color(0xFFA13A2E),
+    tagDefault: Color(0xFF8A7A63),
+    error: Color(0xFFA13A2E),
+    warning: Color(0xFFB8791E),
+    panelHighlight: Color(0xFF7A4A8A),
   );
 
   factory AppThemeData.defaults() => AppThemeData.cyberDark();
 
   Map<String, dynamic> toJson() => {
-    'bg': bg.value,
-    'gridLine': gridLine.value,
-    'accent': accent.value,
-    'accentGreen': accentGreen.value,
-    'textDim': textDim.value,
-    'textMid': textMid.value,
-    'textLight': textLight.value,
-    'surface': surface.value,
-    'border': border.value,
-    'borderMid': borderMid.value,
-    'nodeBorder': nodeBorder.value,
-    'nodeBorderSelected': nodeBorderSelected.value,
-    'nodeBorderHighlight': nodeBorderHighlight.value,
-    'nodeBorderDuplicate': nodeBorderDuplicate.value,
-    'nodeBorderDelete': nodeBorderDelete.value,
-    'lineColor': lineColor.value,
-    'lineHighlight': lineHighlight.value,
-    'acceptState': acceptState.value,
-    'rejectState': rejectState.value,
-    'edgeDim': edgeDim.value,
-    'edgeActive': edgeActive.value,
-    'edgeBright': edgeBright.value,
-    'edgeAlmost': edgeAlmost.value,
-    'edgeBlocking': edgeBlocking.value,
-    'tagIntro': tagIntro.value,
-    'tagDfa': tagDfa.value,
-    'tagNfa': tagNfa.value,
-    'tagPda': tagPda.value,
-    'tagTm': tagTm.value,
-    'tagBoss': tagBoss.value,
-    'tagDefault': tagDefault.value,
-    'error': error.value,
-    'warning': warning.value,
-    'panelHighlight': panelHighlight.value,
+    'bg': bg.toARGB32(),
+    'gridLine': gridLine.toARGB32(),
+    'accent': accent.toARGB32(),
+    'accentGreen': accentGreen.toARGB32(),
+    'textDim': textDim.toARGB32(),
+    'textMid': textMid.toARGB32(),
+    'textLight': textLight.toARGB32(),
+    'surface': surface.toARGB32(),
+    'border': border.toARGB32(),
+    'borderMid': borderMid.toARGB32(),
+    'nodeBorder': nodeBorder.toARGB32(),
+    'nodeBorderSelected': nodeBorderSelected.toARGB32(),
+    'nodeBorderHighlight': nodeBorderHighlight.toARGB32(),
+    'nodeBorderDuplicate': nodeBorderDuplicate.toARGB32(),
+    'nodeBorderDelete': nodeBorderDelete.toARGB32(),
+    'lineColor': lineColor.toARGB32(),
+    'lineHighlight': lineHighlight.toARGB32(),
+    'acceptState': acceptState.toARGB32(),
+    'rejectState': rejectState.toARGB32(),
+    'edgeDim': edgeDim.toARGB32(),
+    'edgeActive': edgeActive.toARGB32(),
+    'edgeBright': edgeBright.toARGB32(),
+    'edgeAlmost': edgeAlmost.toARGB32(),
+    'edgeBlocking': edgeBlocking.toARGB32(),
+    'tagIntro': tagIntro.toARGB32(),
+    'tagDfa': tagDfa.toARGB32(),
+    'tagNfa': tagNfa.toARGB32(),
+    'tagPda': tagPda.toARGB32(),
+    'tagTm': tagTm.toARGB32(),
+    'tagBoss': tagBoss.toARGB32(),
+    'tagDefault': tagDefault.toARGB32(),
+    'error': error.toARGB32(),
+    'warning': warning.toARGB32(),
+    'panelHighlight': panelHighlight.toARGB32(),
   };
 
   factory AppThemeData.fromJson(Map<String, dynamic> json) {
     final base = AppThemeData.defaults();
     Color c(String key, Color fallback) =>
-        Color((json[key] as int?) ?? fallback.value);
+        Color((json[key] as int?) ?? fallback.toARGB32());
     return base.copyWith(
       bg: c('bg', base.bg),
       gridLine: c('gridLine', base.gridLine),
@@ -399,34 +612,82 @@ class AppThemeData {
       );
 
   /// Shifts backgrounds darker/lighter together (amount -1..1).
-  AppThemeData withBackgroundDepth(double amount) {
-    Color shift(Color c, double amt) {
-      final hsl = HSLColor.fromColor(c);
+  AppThemeData withBackgroundDepth(double amount, {AppThemeData? baseTheme}) {
+    final base = baseTheme ?? this;
+    Color shift(Color c, Color baselineColor, double amt) {
+      final hsl = HSLColor.fromColor(baselineColor);
       final l = (hsl.lightness + amt).clamp(0.02, 0.98);
       return hsl.withLightness(l).toColor();
     }
     return copyWith(
-      bg: shift(bg, amount * 0.08),
-      surface: shift(surface, amount * 0.07),
-      gridLine: shift(gridLine, amount * 0.06),
-      border: shift(border, amount * 0.05),
-      borderMid: shift(borderMid, amount * 0.05),
+      bg: shift(bg, base.bg, amount * 0.08),
+      surface: shift(surface, base.surface, amount * 0.07),
+      gridLine: shift(gridLine, base.gridLine, amount * 0.06),
+      border: shift(border, base.border, amount * 0.05),
+      borderMid: shift(borderMid, base.borderMid, amount * 0.05),
     );
   }
 
-  /// Adjust text readability together.
-  AppThemeData withTextContrast(double amount) {
-    Color shift(Color c, double amt) {
-      final hsl = HSLColor.fromColor(c);
-      final l = (hsl.lightness + amt).clamp(0.05, 0.95);
-      return hsl.withLightness(l).toColor();
+  /// Adjust text readability together while keeping contrast readable.
+  AppThemeData withTextContrast(double amount, {AppThemeData? baseTheme}) {
+    final base = baseTheme ?? this;
+    final bg = base.bg;
+
+    Color shift(Color color, Color baselineColor, double amt, {required double minRatio}) {
+      final hsl = HSLColor.fromColor(baselineColor);
+      final targetLightness = (hsl.lightness + amt).clamp(0.02, 0.98);
+      final adjusted = hsl.withLightness(targetLightness).toColor();
+      return _ensureReadableContrast(adjusted, bg, minRatio: minRatio);
     }
-    final delta = amount * 0.12;
+
+    final delta = amount * 0.08;
     return copyWith(
-      textDim: shift(textDim, -delta),
-      textMid: shift(textMid, delta * 0.5),
-      textLight: shift(textLight, delta),
+      textDim: shift(textDim, base.textDim, -delta * 0.8, minRatio: 2.4),
+      textMid: shift(textMid, base.textMid, delta * 0.5, minRatio: 3.2),
+      textLight: shift(textLight, base.textLight, delta, minRatio: 4.4),
     );
+  }
+
+  static Color _ensureReadableContrast(Color color, Color background, {required double minRatio}) {
+    final source = HSLColor.fromColor(color);
+    final bgLum = background.computeLuminance();
+    final targetIsDarker = bgLum > 0.5;
+
+    double lightness = source.lightness;
+    for (var i = 0; i < 80; i++) {
+      final candidate = HSLColor.fromAHSL(
+        source.alpha,
+        source.hue,
+        source.saturation,
+        lightness,
+      ).toColor();
+      if (_contrastRatio(candidate, background) >= minRatio) {
+        return candidate;
+      }
+      lightness = (lightness + (targetIsDarker ? -0.01 : 0.01)).clamp(0.02, 0.98);
+    }
+
+    return HSLColor.fromAHSL(
+      source.alpha,
+      source.hue,
+      source.saturation,
+      targetIsDarker ? 0.02 : 0.98,
+    ).toColor();
+  }
+
+  static double _contrastRatio(Color foreground, Color background) {
+    final fgLum = _relativeLuminance(foreground);
+    final bgLum = _relativeLuminance(background);
+    final lighter = math.max(fgLum, bgLum);
+    final darker = math.min(fgLum, bgLum);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  static double _relativeLuminance(Color color) {
+    final r = color.r <= 0.03928 ? color.r / 12.92 : math.pow((color.r + 0.055) / 1.055, 2.4).toDouble();
+    final g = color.g <= 0.03928 ? color.g / 12.92 : math.pow((color.g + 0.055) / 1.055, 2.4).toDouble();
+    final b = color.b <= 0.03928 ? color.b / 12.92 : math.pow((color.b + 0.055) / 1.055, 2.4).toDouble();
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
   AppThemeData withLinkedHighlights() => copyWith(
@@ -491,18 +752,26 @@ List<({String key, String label, String group})> get kAllColorSlots => [
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppThemeNotifier extends ChangeNotifier {
-  AppThemeNotifier._(this._data, this._prefs, this._presetId);
+  AppThemeNotifier._(this._data, this._prefs, this._presetId, this._flashHighlights);
 
   AppThemeData _data;
   final SharedPreferences _prefs;
   String? _presetId;
+  bool _flashHighlights;
 
   static const _prefsKeyV2 = 'app_theme_v2';
   static const _prefsKeyPreset = 'app_theme_preset_id';
 
+  /// Accessibility: pulse (fade in/out) highlighted colors instead of relying
+  /// on a static color swap, so highlight/duplicate/error states stay
+  /// noticeable for colorblind players or anyone who might just miss a
+  /// static color change. On by default.
+  static const _prefsKeyFlashHighlights = 'app_theme_flash_highlights';
+
   static Future<AppThemeNotifier> load() async {
     final prefs = await SharedPreferences.getInstance();
     final presetId = prefs.getString(_prefsKeyPreset);
+    final flashHighlights = prefs.getBool(_prefsKeyFlashHighlights) ?? true;
     AppThemeData data;
 
     final rawV2 = prefs.getString(_prefsKeyV2);
@@ -525,11 +794,22 @@ class AppThemeNotifier extends ChangeNotifier {
       }
     }
 
-    return AppThemeNotifier._(data, prefs, presetId);
+    return AppThemeNotifier._(data, prefs, presetId, flashHighlights);
   }
 
   AppThemeData get data => _data;
   String? get activePresetId => _presetId;
+
+  /// Whether highlighted/duplicate/error states on the canvas should pulse
+  /// their opacity rather than stay a static color. Persisted independently
+  /// of the color theme itself since it's a behavior toggle, not a color.
+  bool get flashHighlights => _flashHighlights;
+
+  Future<void> setFlashHighlights(bool enabled) async {
+    _flashHighlights = enabled;
+    notifyListeners();
+    await _prefs.setBool(_prefsKeyFlashHighlights, enabled);
+  }
 
   // Core getters (backward compatible)
   Color get bg => _data.bg;
@@ -602,15 +882,15 @@ class AppThemeNotifier extends ChangeNotifier {
     await _persist();
   }
 
-  Future<void> applyBackgroundDepth(double amount) async {
-    _data = _data.withBackgroundDepth(amount);
+  Future<void> applyBackgroundDepth(double amount, {AppThemeData? baseTheme}) async {
+    _data = _data.withBackgroundDepth(amount, baseTheme: baseTheme);
     _presetId = null;
     notifyListeners();
     await _persist();
   }
 
-  Future<void> applyTextContrast(double amount) async {
-    _data = _data.withTextContrast(amount);
+  Future<void> applyTextContrast(double amount, {AppThemeData? baseTheme}) async {
+    _data = _data.withTextContrast(amount, baseTheme: baseTheme);
     _presetId = null;
     notifyListeners();
     await _persist();
@@ -715,9 +995,6 @@ class AppThemeNotifier extends ChangeNotifier {
       context.read<AppThemeNotifier>();
 }
 
-/// @deprecated Use [AppThemeNotifier.tagColor] or [AppThemeData.tagColor].
-Color levelTagColor(String? tag, AppThemeData theme) => theme.tagColor(tag);
-
 // ── Theme presets ───────────────────────────────────────────────────────────
 
 class ThemePreset {
@@ -753,20 +1030,39 @@ final List<ThemePreset> kThemePresets = [
   ThemePreset(
     id: 'midnight',
     name: 'Midnight',
-    description: 'Deep blues with violet highlights',
+    description: 'Indigo night with pink aurora highlights',
     data: AppThemeData.midnight(),
   ),
   ThemePreset(
     id: 'ocean',
     name: 'Ocean',
-    description: 'Cool teal and sea-glass accents',
+    description: 'Deep teal sea with warm gold & coral pops',
     data: AppThemeData.ocean(),
   ),
   ThemePreset(
     id: 'ember',
     name: 'Ember',
-    description: 'Warm amber accents on dark brown',
+    description: 'Firelight amber, rust, and cream on charcoal-brown',
     data: AppThemeData.ember(),
+  ),
+  ThemePreset(
+    id: 'slate',
+    name: 'Slate',
+    description: 'Muted charcoal with dusty steel-blue, no neon',
+    data: AppThemeData.slate(),
+  ),
+  ThemePreset(
+    id: 'phosphor',
+    name: 'Phosphor',
+    description: 'Monochrome green CRT terminal, amber/red alarms only',
+    data: AppThemeData.phosphor(),
+  ),
+  ThemePreset(
+    id: 'parchment',
+    name: 'Parchment',
+    description: 'Warm cream paper with ink-brown text and muted inks',
+    isLight: true,
+    data: AppThemeData.parchment(),
   ),
 ];
 
@@ -837,7 +1133,7 @@ ThemeData buildMaterialTheme(AppThemeData c) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: c.accent.withOpacity(0.12),
+        backgroundColor: c.accent.withValues(alpha: 0.12),
         foregroundColor: c.accent,
         side: BorderSide(color: c.accent, width: 1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -946,6 +1242,7 @@ class AppThemeSettingsSheet extends StatefulWidget {
 
 class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
   late AppThemeData _live;
+  late AppThemeData _baselineTheme;
   bool _advancedOpen = false;
   double _bgDepth = 0;
   double _textContrast = 0;
@@ -955,6 +1252,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
   void initState() {
     super.initState();
     _live = widget.notifier.data;
+    _baselineTheme = _live;
     widget.notifier.addListener(_onNotifierChanged);
   }
 
@@ -1156,7 +1454,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: kThemePresets.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      separatorBuilder: (_, _) => const SizedBox(width: 10),
                       itemBuilder: (_, i) {
                         final p = kThemePresets[i];
                         final selected = widget.notifier.activePresetId == p.id ||
@@ -1217,7 +1515,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     label: _bgDepth == 0 ? 'Default' : (_bgDepth > 0 ? 'Lighter' : 'Darker'),
                     onChanged: (v) {
                       setState(() => _bgDepth = v);
-                      widget.notifier.applyBackgroundDepth(v);
+                      widget.notifier.applyBackgroundDepth(v, baseTheme: _baselineTheme);
                     },
                   ),
 
@@ -1231,7 +1529,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     label: _textContrast == 0 ? 'Balanced' : (_textContrast > 0 ? 'Sharper' : 'Softer'),
                     onChanged: (v) {
                       setState(() => _textContrast = v);
-                      widget.notifier.applyTextContrast(v);
+                      widget.notifier.applyTextContrast(v, baseTheme: _baselineTheme);
                     },
                   ),
 
@@ -1244,11 +1542,27 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                     value: _linkHighlights ||
                         (_live.nodeBorderHighlight == _live.accent &&
                             _live.lineHighlight == _live.accent),
-                    activeColor: accent,
+                    activeThumbColor: accent,
+                    activeTrackColor: accent.withValues(alpha: 0.35),
                     onChanged: (v) {
                       setState(() => _linkHighlights = v);
                       widget.notifier.setLinkHighlightsToAccent(v);
                     },
+                  ),
+
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Flash highlights',
+                        style: GoogleFonts.sourceCodePro(color: textLight, fontSize: 13)),
+                    subtitle: Text(
+                      'Pulse highlighted, duplicate, and error states instead of a '
+                      'static color — helps with color blindness or easy-to-miss cues',
+                      style: GoogleFonts.sourceCodePro(color: textDim, fontSize: 11),
+                    ),
+                    value: widget.notifier.flashHighlights,
+                    activeThumbColor: accent,
+                    activeTrackColor: accent.withValues(alpha: 0.35),
+                    onChanged: (v) => widget.notifier.setFlashHighlights(v),
                   ),
 
                   const SizedBox(height: 8),
@@ -1280,7 +1594,7 @@ class _AppThemeSettingsSheetState extends State<AppThemeSettingsSheet> {
                             child: Text(
                               entry.key.toUpperCase(),
                               style: GoogleFonts.orbitron(
-                                color: accent.withOpacity(0.65),
+                                color: accent.withValues(alpha: 0.65),
                                 fontSize: 8,
                                 letterSpacing: 2,
                               ),
@@ -1322,7 +1636,7 @@ class _SectionTitle extends StatelessWidget {
     return Text(
       label.toUpperCase(),
       style: GoogleFonts.orbitron(
-        color: accent.withOpacity(0.85),
+        color: accent.withValues(alpha: 0.85),
         fontSize: 9,
         fontWeight: FontWeight.w700,
         letterSpacing: 2.5,
@@ -1477,7 +1791,7 @@ class _ColorRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hex =
-        '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+        '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
     return InkWell(
       onTap: () {
@@ -1564,10 +1878,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
   @override
   void initState() {
     super.initState();
-    _r = widget.initial.red.toDouble();
-    _g = widget.initial.green.toDouble();
-    _b = widget.initial.blue.toDouble();
-    _a = widget.initial.alpha.toDouble();
+    _r = (widget.initial.r * 255.0).round().clamp(0, 255).toDouble();
+    _g = (widget.initial.g * 255.0).round().clamp(0, 255).toDouble();
+    _b = (widget.initial.b * 255.0).round().clamp(0, 255).toDouble();
+    _a = (widget.initial.a * 255.0).round().clamp(0, 255).toDouble();
     _hexController = TextEditingController(text: _toHex());
   }
 
@@ -1577,11 +1891,15 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     super.dispose();
   }
 
-  Color get _current =>
-      Color.fromARGB(_a.round(), _r.round(), _g.round(), _b.round());
+  Color get _current => Color.fromARGB(
+        _a.round().clamp(0, 255),
+        _r.round().clamp(0, 255),
+        _g.round().clamp(0, 255),
+        _b.round().clamp(0, 255),
+      );
 
   String _toHex() =>
-      _current.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+      _current.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
 
   void _syncHexField() {
     final hex = _toHex();
@@ -1599,10 +1917,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       if (value != null) {
         final c = Color(value);
         setState(() {
-          _r = c.red.toDouble();
-          _g = c.green.toDouble();
-          _b = c.blue.toDouble();
-          _a = c.alpha.toDouble();
+          _r = (c.r * 255.0).round().clamp(0, 255).toDouble();
+          _g = (c.g * 255.0).round().clamp(0, 255).toDouble();
+          _b = (c.b * 255.0).round().clamp(0, 255).toDouble();
+          _a = (c.a * 255.0).round().clamp(0, 255).toDouble();
           _hexError = false;
         });
         return;
@@ -1757,10 +2075,10 @@ class PaletteFab extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
 
-    final bg   = active ? activeColor.withOpacity(0.14) : theme.surface;
+    final bg   = active ? activeColor.withValues(alpha: 0.14) : theme.surface;
     final fg   = active ? activeColor : theme.textDim;
     final borderColor = active
-        ? activeColor.withOpacity(0.7)
+        ? activeColor.withValues(alpha: 0.7)
         : theme.borderMid;
     final borderWidth = active ? 1.5 : 1.0;
 
@@ -1781,7 +2099,7 @@ class PaletteFab extends StatelessWidget {
           boxShadow: active
               ? [
                   BoxShadow(
-                    color: activeColor.withOpacity(0.3),
+                    color: activeColor.withValues(alpha: 0.3),
                     blurRadius: 12,
                   ),
                 ]
@@ -1796,6 +2114,39 @@ class PaletteFab extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MainMenuButton — small icon button back to the mode-select ("main menu")
+//  screen. Every top-level screen (Sandbox, Game, Study) plants one of these
+//  in a corner so switching between modes never requires signing out or
+//  hunting through a drawer for a mode-specific link. Styled to match the
+//  existing "Appearance" palette IconButton these screens already show, so it
+//  drops in as a natural neighbor rather than a new visual element.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MainMenuButton extends StatelessWidget {
+  const MainMenuButton({
+    super.key,
+    required this.onPressed,
+    this.size = 20,
+  });
+
+  /// Navigates back to [ModeSelectScreen]. The button renders disabled
+  /// (rather than disappearing) when null, so layouts stay stable even if a
+  /// caller hasn't wired it up yet.
+  final VoidCallback? onPressed;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    return IconButton(
+      tooltip: 'Main menu',
+      icon: Icon(Icons.home_rounded, color: theme.textMid, size: size),
+      onPressed: onPressed,
     );
   }
 }

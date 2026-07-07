@@ -31,6 +31,7 @@ import 'game_data.dart';
 import 'game_puzzle.dart';
 import 'tutorial_screen.dart';
 import 'widgets/app_theme.dart';
+import 'widgets/responsive_layout.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Layout constants
@@ -44,7 +45,7 @@ const double _kTopPad = 96.0; // space for the top bar + scroll slider row
 const double _kBotPad = 80.0;
 const double _kLegendH = 58.0; // height reserved at bottom for legend
 const double _kSidePad = 120.0; // left/right canvas padding
-const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
+// minimum vertical padding above/below nodes
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
@@ -54,57 +55,53 @@ const double _kMinRowPad = 20.0; // minimum vertical padding above/below nodes
 //  Position helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
 
-int _colIndex(double x) {
-  if (x < 0.15) return 0;
-  if (x < 0.28) return 1;
-  if (x < 0.42) return 2;
-  if (x < 0.56) return 3;
-  if (x < 0.68) return 4;
-  if (x < 0.78) return 5;
-  if (x < 0.88) return 6;
-  return 7;
-}
 
-Map<String, Offset> _buildPositions(List<GameLevel> levels, double canvasH) {
-  final Map<int, List<GameLevel>> cols = {};
-  for (final l in levels) {
-    final c = _colIndex(l.x);
-    cols.putIfAbsent(c, () => []).add(l);
-  }
-  final Map<String, Offset> result = {};
-  for (final entry in cols.entries) {
-    final colIdx = entry.key;
-    final members = entry.value..sort((a, b) => a.y.compareTo(b.y));
-    final cx = _kSidePad + colIdx * _kColGap;
-    final count = members.length;
-    final minRequired = count * _kNodeH + (count - 1) * _kMinRowPad;
-    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    final totalSpan = minRequired > usableH ? minRequired : usableH;
-    final gap = count > 1 ? totalSpan / (count - 1) : 0.0;
-    final blockH = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = _kTopPad + (usableH - blockH) / 2.0;
-    for (int i = 0; i < count; i++) {
-      final cy = count == 1 ? _kTopPad + usableH / 2.0 : topOffset + i * gap;
-      result[members[i].id] = Offset(cx, cy);
-    }
-  }
-  return result;
-}
 
-double _canvasWidth(List<GameLevel> levels) {
-  int maxCol = 0;
-  for (final l in levels) {
-    final c = _colIndex(l.x);
-    if (c > maxCol) maxCol = c;
-  }
-  return _kSidePad * 2 + maxCol * _kColGap + _kNodeW;
-}
 
 double _canvasHeight(List<GameLevel> levels, double screenH) => screenH;
 
-double _canvasWidthFromPositions(Map<String, Offset> positions) {
+double _canvasWidthFromPositions(
+  Map<String, Offset> positions, {
+  double nodeW = _kNodeW,
+  double sidePad = _kSidePad,
+}) {
   final maxX = positions.values.fold<double>(0.0, (cur, p) => max(cur, p.dx));
-  return maxX + _kNodeW / 2 + _kSidePad;
+  return maxX + nodeW / 2 + sidePad;
+}
+
+class _LevelMapLayout {
+  final double nodeW;
+  final double nodeH;
+  final double colGap;
+  final double rowGap;
+  final double topPad;
+  final double botPad;
+  final double legendH;
+  final double sidePad;
+
+  const _LevelMapLayout({
+    required this.nodeW,
+    required this.nodeH,
+    required this.colGap,
+    required this.rowGap,
+    required this.topPad,
+    required this.botPad,
+    required this.legendH,
+    required this.sidePad,
+  });
+
+  factory _LevelMapLayout.scaled(double scale) {
+    return _LevelMapLayout(
+      nodeW: _kNodeW * scale,
+      nodeH: _kNodeH * scale,
+      colGap: _kColGap * scale,
+      rowGap: _kRowGap * scale,
+      topPad: _kTopPad * scale,
+      botPad: _kBotPad * scale,
+      legendH: _kLegendH * scale,
+      sidePad: _kSidePad * scale,
+    );
+  }
 }
 
 Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
@@ -154,9 +151,13 @@ Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
   return layer;
 }
 
-Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double canvasH) {
+Map<String, Offset> _computePositionsFromDeps(
+  List<GameLevel> levels,
+  double canvasH,
+  _LevelMapLayout layout,
+) {
   final layerById = _computeLayersFromDeps(levels);
-  List<String> _extractLevelDependencies(GameLevel level) {
+  List<String> extractLevelDependencies(GameLevel level) {
   List<String> extract(UnlockRule rule) {
     if (rule is AlwaysUnlocked) return [];
     if (rule is RequireLevel) return [rule.levelId];
@@ -184,7 +185,7 @@ Map<String, Offset> _computePositionsFromDeps(List<GameLevel> levels, double can
 
 members.sort((a, b) {
   double barycenter(GameLevel level) {
-    final deps = _extractLevelDependencies(level);
+    final deps = extractLevelDependencies(level);
 
     if (deps.isEmpty) {
       return level.y;
@@ -206,12 +207,14 @@ members.sort((a, b) {
 
   return barycenter(a).compareTo(barycenter(b));
 });
-    final cx = _kSidePad + colIdx * _kColGap;
+    final cx = layout.sidePad + colIdx * layout.colGap;
     final count = members.length;
-    final usableH = canvasH - _kTopPad - _kBotPad - _kLegendH;
-    final gap = count > 1 ? min(_kRowGap, usableH / (count - 1)) : 0.0;
+    final usableH = canvasH - layout.topPad - layout.botPad - layout.legendH;
+    final gap = count > 1 ? min(layout.rowGap, usableH / (count - 1)) : 0.0;
     final totalSpan = count > 1 ? gap * (count - 1) : 0.0;
-    final topOffset = count > 1 ? _kTopPad + (usableH - totalSpan) / 2.0 : _kTopPad + usableH / 2.0;
+    final topOffset = count > 1
+        ? layout.topPad + (usableH - totalSpan) / 2.0
+        : layout.topPad + usableH / 2.0;
     for (int i = 0; i < count; i++) {
       final cy = topOffset + (count == 1 ? 0.0 : i * gap);
       result[members[i].id] = Offset(cx, cy);
@@ -228,8 +231,15 @@ class LevelSelectScreen extends StatefulWidget {
   final GameProgressStore progressStore;
   final VoidCallback onGoToSandbox;
   final VoidCallback? onGoToStudy;
+  final VoidCallback? onGoToMenu;
 
-  const LevelSelectScreen({super.key, required this.progressStore, required this.onGoToSandbox, this.onGoToStudy});
+  const LevelSelectScreen({
+    super.key,
+    required this.progressStore,
+    required this.onGoToSandbox,
+    this.onGoToStudy,
+    this.onGoToMenu,
+  });
 
   @override
   State<LevelSelectScreen> createState() => _LevelSelectScreenState();
@@ -392,7 +402,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         backgroundColor: const Color(0xFF0A0F1A),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: color.withOpacity(0.5)),
+          side: BorderSide(color: color.withValues(alpha: 0.5)),
         ),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -474,7 +484,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
           ),
         ],
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completedAny);
@@ -531,6 +541,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         ),
       );
     }
+    if (!mounted) return;
     _reload();
   }
 
@@ -544,10 +555,16 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final screenH = MediaQuery.of(context).size.height;
+    final screenSize = MediaQuery.sizeOf(context);
+    final screenH = screenSize.height;
+    final layout = _LevelMapLayout.scaled(levelMapLayoutScale(context));
     final canvasH = _canvasHeight(kAllLevels, screenH);
-    final positions = _computePositionsFromDeps(kAllLevels, canvasH);
-    final canvasW = _canvasWidthFromPositions(positions);
+    final positions = _computePositionsFromDeps(kAllLevels, canvasH, layout);
+    final canvasW = _canvasWidthFromPositions(
+      positions,
+      nodeW: layout.nodeW,
+      sidePad: layout.sidePad,
+    );
     // For the progress bar, count puzzle levels and tutorial levels separately
     final puzzleLevels = kAllLevels.where((l) => !l.isTutorial).toList();
     final completedPuzzles = _completed.intersection(puzzleLevels.map((l) => l.id).toSet()).length;
@@ -603,10 +620,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                       // Node cards (rendered on top of edges)
                       for (final level in kAllLevels)
                         Positioned(
-                          left: positions[level.id]!.dx - _kNodeW / 2,
-                          top: positions[level.id]!.dy - _kNodeH / 2,
+                          left: positions[level.id]!.dx - layout.nodeW / 2,
+                          top: positions[level.id]!.dy - layout.nodeH / 2,
                           child: SizedBox(
-                            width: _kNodeW,
+                            width: layout.nodeW,
                             child: GestureDetector(
                               onTap: () => _onTap(level),
                               child: _NodeCard(
@@ -640,6 +657,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                 total: puzzleLevels.length,
                 onSandbox: widget.onGoToSandbox,
                 onStudy: widget.onGoToStudy,
+                onMenu: widget.onGoToMenu,
                 scrollFraction: _scrollFraction,
                 onScrollChanged: _scrollToFraction,
                 difficulty: _difficulty,
@@ -670,6 +688,7 @@ class _TopBar extends StatelessWidget {
   final int total;
   final VoidCallback onSandbox;
   final VoidCallback? onStudy;
+  final VoidCallback? onMenu;
   final double scrollFraction;
   final ValueChanged<double> onScrollChanged;
   final LevelDifficulty difficulty;
@@ -682,6 +701,7 @@ class _TopBar extends StatelessWidget {
     required this.total,
     required this.onSandbox,
     this.onStudy,
+    this.onMenu,
     required this.scrollFraction,
     required this.onScrollChanged,
     required this.difficulty,
@@ -769,6 +789,7 @@ class _TopBar extends StatelessWidget {
                   icon: Icon(Icons.palette_outlined, color: theme.textMid, size: 20),
                   onPressed: () => showAppThemeSettings(context),
                 ),
+                MainMenuButton(onPressed: onMenu),
                 const SizedBox(width: 4),
                 if (onStudy != null) ...[
                   TextButton(
@@ -813,10 +834,10 @@ class _TopBar extends StatelessWidget {
                       trackHeight: 2,
                       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                      activeTrackColor: theme.accent.withOpacity(0.7),
+                      activeTrackColor: theme.accent.withValues(alpha: 0.7),
                       inactiveTrackColor: theme.gridLine,
                       thumbColor: theme.accent,
-                      overlayColor: theme.accent.withOpacity(0.15),
+                      overlayColor: theme.accent.withValues(alpha: 0.15),
                     ),
                     child: Slider(
                       value: scrollFraction,
@@ -864,7 +885,7 @@ class _NodeCard extends StatelessWidget {
 
     return AnimatedBuilder(
       animation: pulseAnim,
-      builder: (_, __) {
+      builder: (_, _) {
         final glowOpacity = completed
             ? 0.35 + pulseAnim.value * 0.25
             : unlocked
@@ -872,15 +893,15 @@ class _NodeCard extends StatelessWidget {
             : 0.0;
 
         final borderColor = completed
-            ? tagColor.withOpacity(0.85)
+            ? tagColor.withValues(alpha: 0.85)
             : unlocked
-            ? tagColor.withOpacity(0.55)
-            : theme.textMid.withOpacity(0.85);
+            ? tagColor.withValues(alpha: 0.55)
+            : theme.textMid.withValues(alpha: 0.85);
 
         final bgColor = completed
-            ? tagColor.withOpacity(0.10)
+            ? tagColor.withValues(alpha: 0.10)
             : unlocked
-            ? tagColor.withOpacity(0.05)
+            ? tagColor.withValues(alpha: 0.05)
             : theme.border;
 
         return Container(
@@ -891,7 +912,7 @@ class _NodeCard extends StatelessWidget {
             boxShadow: glowOpacity > 0
                 ? [
                     BoxShadow(
-                      color: tagColor.withOpacity(glowOpacity),
+                      color: tagColor.withValues(alpha: glowOpacity),
                       blurRadius: completed ? 22 : 10,
                       spreadRadius: completed ? 2 : 0,
                     ),
@@ -916,7 +937,7 @@ class _NodeCard extends StatelessWidget {
                     else if (unlocked)
                       Icon(
                         level.isTutorial ? Icons.school_outlined : Icons.radio_button_unchecked,
-                        color: tagColor.withOpacity(0.7),
+                        color: tagColor.withValues(alpha: 0.7),
                         size: 11,
                       )
                     else
@@ -925,13 +946,13 @@ class _NodeCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
-                        color: tagColor.withOpacity(unlocked ? 0.15 : 0.06),
+                        color: tagColor.withValues(alpha: unlocked ? 0.15 : 0.06),
                         borderRadius: BorderRadius.circular(3),
                       ),
                       child: Text(
                         (level.tag ?? 'misc').toUpperCase(),
                         style: GoogleFonts.orbitron(
-                          color: unlocked ? tagColor.withOpacity(0.9) : theme.textDim,
+                          color: unlocked ? tagColor.withValues(alpha: 0.9) : theme.textDim,
                           fontSize: 6.5,
                           letterSpacing: 1.2,
                           fontWeight: FontWeight.w700,
@@ -1138,7 +1159,7 @@ class _HardBadgePainter extends CustomPainter {
       r * 0.50,
       Paint()
         ..shader = RadialGradient(
-          colors: [_goldDeep.withOpacity(0.9), _goldDeep.withOpacity(0.65)],
+          colors: [_goldDeep.withValues(alpha: 0.9), _goldDeep.withValues(alpha: 0.65)],
         ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.50)),
     );
 
@@ -1152,13 +1173,17 @@ class _HardBadgePainter extends CustomPainter {
       final sr = i.isEven ? outerR : innerR;
       final x = cx + cos(angle) * sr;
       final y = cy + sin(angle) * sr;
-      if (i == 0) starPath.moveTo(x, y); else starPath.lineTo(x, y);
+      if (i == 0) {
+        starPath.moveTo(x, y);
+      } else {
+        starPath.lineTo(x, y);
+      }
     }
     starPath.close();
     canvas.drawPath(starPath, Paint()..color = _gold..style = PaintingStyle.fill);
 
     // Centre dot
-    canvas.drawCircle(Offset(cx, cy), r * 0.09, Paint()..color = Colors.white.withOpacity(0.9));
+    canvas.drawCircle(Offset(cx, cy), r * 0.09, Paint()..color = Colors.white.withValues(alpha: 0.9));
   }
 
   @override
@@ -1204,7 +1229,7 @@ class _UnlockHint extends StatelessWidget {
       return Text(
         'COMPLETE',
         style: GoogleFonts.sourceCodePro(
-          color: tagColor.withOpacity(0.8),
+          color: tagColor.withValues(alpha: 0.8),
           fontSize: 7.5,
           letterSpacing: 1.5,
           fontWeight: FontWeight.w600,
@@ -1215,11 +1240,11 @@ class _UnlockHint extends StatelessWidget {
     if (unlocked) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(color: tagColor.withOpacity(0.12), borderRadius: BorderRadius.circular(3)),
+        decoration: BoxDecoration(color: tagColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(3)),
         child: Text(
           level.isTutorial ? 'TAP TO READ' : 'TAP TO PLAY',
           style: GoogleFonts.sourceCodePro(
-            color: tagColor.withOpacity(0.9),
+            color: tagColor.withValues(alpha: 0.9),
             fontSize: 7,
             letterSpacing: 1.5,
             fontWeight: FontWeight.w600,
@@ -1233,7 +1258,7 @@ class _UnlockHint extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.borderMid,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: theme.textMid.withOpacity(0.25)),
+        border: Border.all(color: theme.textMid.withValues(alpha: 0.25)),
       ),
       child: Text(
         _shortHint(),
@@ -1295,7 +1320,7 @@ class _LockedSheet extends StatelessWidget {
         color: theme.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: theme.borderMid, width: 1.5),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 24, offset: const Offset(0, -4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 24, offset: const Offset(0, -4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1328,9 +1353,9 @@ class _LockedSheet extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: tagColor.withOpacity(0.12),
+                  color: tagColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: tagColor.withOpacity(0.3)),
+                  border: Border.all(color: tagColor.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   (level.tag ?? 'misc').toUpperCase(),
@@ -1367,7 +1392,7 @@ class _LockedSheet extends StatelessWidget {
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: BoxDecoration(color: tagColor.withOpacity(0.6), shape: BoxShape.circle),
+                      decoration: BoxDecoration(color: tagColor.withValues(alpha: 0.6), shape: BoxShape.circle),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -1386,10 +1411,10 @@ class _LockedSheet extends StatelessWidget {
             child: TextButton(
               onPressed: () => Navigator.pop(context),
               style: TextButton.styleFrom(
-                backgroundColor: tagColor.withOpacity(0.08),
+                backgroundColor: tagColor.withValues(alpha: 0.08),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: tagColor.withOpacity(0.25)),
+                  side: BorderSide(color: tagColor.withValues(alpha: 0.25)),
                 ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
@@ -1440,8 +1465,8 @@ class _Legend extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              d.bg.withOpacity(0),
-              d.bg.withOpacity(0.92),
+              d.bg.withValues(alpha: 0),
+              d.bg.withValues(alpha: 0.92),
             ],
           ),
         ),
@@ -1482,7 +1507,7 @@ class _Legend extends StatelessWidget {
                       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
                     ),
                     label: label,
-                    color: color.withOpacity(0.85),
+                    color: color.withValues(alpha: 0.85),
                   ),
 
                 Container(width: 1, height: 14, color: theme.borderMid),
@@ -1736,12 +1761,12 @@ class _EdgePainter extends CustomPainter {
       bool blockingDash; // extra-visible dashes for the "missing prereq" state
 
       if (srcCompleted && destCompleted) {
-        edgeColor = theme.edgeBright.withOpacity(0.90);
+        edgeColor = theme.edgeBright.withValues(alpha: 0.90);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
       } else if (srcCompleted && destUnlocked) {
-        edgeColor = theme.edgeActive.withOpacity(0.95);
+        edgeColor = theme.edgeActive.withValues(alpha: 0.95);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
@@ -1751,12 +1776,12 @@ class _EdgePainter extends CustomPainter {
         drawGlow = true;
         blockingDash = false;
       } else if (!srcCompleted && isAlmostUnlocked) {
-        edgeColor = theme.edgeBlocking.withOpacity(0.55 + pulseValue * 0.45);
+        edgeColor = theme.edgeBlocking.withValues(alpha: 0.55 + pulseValue * 0.45);
         strokeW = 4.0;
         drawGlow = true;
         blockingDash = true;
       } else {
-        edgeColor = theme.edgeDim.withOpacity(0.95);
+        edgeColor = theme.edgeDim.withValues(alpha: 0.95);
         strokeW = 3.5;
         drawGlow = false;
         blockingDash = false;
@@ -1775,7 +1800,7 @@ class _EdgePainter extends CustomPainter {
         canvas.drawPath(
           pathData.path,
           Paint()
-            ..color = edgeColor.withOpacity(0.22)
+            ..color = edgeColor.withValues(alpha: 0.22)
             ..strokeWidth = strokeW + 18
             ..style = PaintingStyle.stroke
             ..strokeCap = StrokeCap.round
@@ -1821,7 +1846,7 @@ class _EdgePainter extends CustomPainter {
       if (pathData.isSimple && entryValue >= 1.0 && (srcCompleted && destUnlocked || srcCompleted && destCompleted)) {
         final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
         final pt = _cubicPoint(src, pathData.ctrl1!, pathData.ctrl2!, dst, t);
-        canvas.drawCircle(pt, destCompleted ? 3.5 : 3.0, Paint()..color = edgeColor.withOpacity(0.95));
+        canvas.drawCircle(pt, destCompleted ? 3.5 : 3.0, Paint()..color = edgeColor.withValues(alpha: 0.95));
       }
 
       // ── Arrowhead ───────────────────────────────────────────────────────
@@ -1860,7 +1885,7 @@ class _EdgePainter extends CustomPainter {
 
     // ── Bezier sampler ──────────────────────────────────────────────────────
     // Approximate a cubic bezier with [steps] sample points.
-    List<Offset> _sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
+    List<Offset> sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
       final pts = <Offset>[];
       for (int i = 0; i <= steps; i++) {
         final t = i / steps;
@@ -1949,8 +1974,8 @@ for (final y in candidateYs) {
       final c3 = Offset(midX + 60, y);
       final c4 = arrowFrom;
 
-      final seg1 = _sampleCubic(src, c1, c2, Offset(midX, y));
-      final seg2 = _sampleCubic(Offset(midX, y), c3, c4, dst);
+      final seg1 = sampleCubic(src, c1, c2, Offset(midX, y));
+      final seg2 = sampleCubic(Offset(midX, y), c3, c4, dst);
 
       if (!samplesHitNodes([...seg1, ...seg2])) {
         return _PathData(

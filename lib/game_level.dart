@@ -1,4 +1,3 @@
-import 'widgets/app_theme.dart';
 import 'dialogs/equivalence_dialog.dart' show RequiredAutomatonType;
 import 'tutorial_screen.dart' show TutorialSlide, TutorialIllustration;
 
@@ -32,7 +31,6 @@ import 'tutorial_screen.dart' show TutorialSlide, TutorialIllustration;
 //    0.84–0.97  TM   (Turing Machines)  — columns 20–25
 // ─────────────────────────────────────────────────────────────────────────────
 
-import 'package:flutter/material.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2216,6 +2214,11 @@ const List<GameLevel> kAllLevels = [
     x: 0.93,
     y: 0.75,
     tag: 'pda',
+    // Paired with level_2 in the same unlock layer (both require
+    // pda_an_b2n) — flagged as a boss too so the pair satisfies the
+    // "boss layer may only contain boss levels" rule (up to 2 allowed)
+    // instead of violating "boss can't mix with a regular level".
+    isBoss: true,
   ),
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2643,16 +2646,37 @@ const List<GameLevel> kAllLevels = [
         illustrationType: TutorialIllustration.none,
       ),
       TutorialSlide(
-        headline: 'Tips: DFA → Regex',
-        body: 'To derive a regex from a DFA, try **state elimination**:\n\n'
-            '1. Add a super-start → original start and all accept states → super-accept '
-            'with ε-transitions.\n'
-            '2. Remove inner states one by one, merging their transitions into '
-            'regex labels on the remaining edges.\n'
-            '3. The final label on the super-start → super-accept edge is your regex.\n\n'
-            'In practice, pattern recognition is often faster: '
-            'spot self-loops (→ *), linear paths (→ concat), branches (→ +).',
-        illustrationType: TutorialIllustration.none,
+        headline: 'DFA → Regex: Add Super States',
+        body: 'To turn a DFA into a regex, first convert it into a **GNFA** '
+            '(generalised NFA) by adding two new states:\n\n'
+            '• A **super-start** S, with a single ε-edge into the original '
+            'start state.\n'
+            '• A **super-accept** F, with an ε-edge in from every original '
+            'accept state (if there\'s more than one, they all point to the '
+            'same F).\n\n'
+            'From this point on, only S and F count as start/accept — that '
+            'frees every other state, including the old accept state(s), to '
+            'be eliminated in the next step.',
+        illustrationType: TutorialIllustration.addSuperStates,
+      ),
+      TutorialSlide(
+        headline: 'DFA → Regex: Eliminate States',
+        body: 'Now eliminate the remaining states one at a time until only '
+            'S and F are left. To remove a state B sitting between '
+            'neighbours A and C:\n\n'
+            '1. **Star** its self-loop, if it has one — label b becomes b*.\n'
+            '2. **Sandwich** that between the edge going in and the edge '
+            'going out: a · b* · c.\n'
+            '3. **Union** (+) that with whatever edge, if any, already ran '
+            'directly from A to C.\n\n'
+            'Example: A -a→ B (self-loop b) -c→ C collapses to one edge '
+            'A → C labelled **ab*c**.\n\n'
+            'Repeat for every remaining state. Whatever label ends up on '
+            'the final S → F edge is your answer.\n\n'
+            'Shortcut: pattern recognition is often faster than working it '
+            'out by hand — spot self-loops (→ *), linear paths (→ concat), '
+            'branches (→ +).',
+        illustrationType: TutorialIllustration.stateElimination,
       ),
     ],
   ),
@@ -3121,16 +3145,12 @@ final Map<String, GameLevel> kLevelById = {
 //  Layer Constraint Validator
 //
 //  Enforces three layout rules for kAllLevels.  Call [validate] (or use the
-//  [kLayerConstraintErrors] shortcut) in an assert at app startup — e.g. in
-//  main():
+//  [kLayerConstraintErrors] shortcut) at app startup — e.g. in main():
 //
-//    assert(() {
-//      final errors = LayerConstraintValidator.validate(kAllLevels);
-//      if (errors.isNotEmpty) {
-//        throw StateError('Layer constraint violations:\n${errors.join('\n')}');
-//      }
-//      return true;
-//    }());
+//    final errors = kLayerConstraintErrors;
+//    if (errors.isNotEmpty) {
+//      throw StateError('Layer constraint violations:\n${errors.join('\n')}');
+//    }
 //
 //  RULES
 //  ─────
@@ -3210,12 +3230,12 @@ abstract final class LayerConstraintValidator {
   // ── Internal: same topological-sort as level_select_screen.dart ─────────────
 
   static Map<String, int> _computeLayers(List<GameLevel> levels) {
-    List<String> _depsOf(UnlockRule rule) {
+    List<String> depsOf(UnlockRule rule) {
       if (rule is AlwaysUnlocked) return [];
       if (rule is RequireLevel) return [rule.levelId];
       if (rule is RequireAll) return rule.levelIds;
       if (rule is RequireAny) return rule.levelIds;
-      if (rule is RequireExpression) return rule.children.expand(_depsOf).toList();
+      if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
       return [];
     }
 
@@ -3223,7 +3243,7 @@ abstract final class LayerConstraintValidator {
     final Map<String, int> indeg = {for (final l in levels) l.id: 0};
 
     for (final l in levels) {
-      for (final d in _depsOf(l.unlockRule)) {
+      for (final d in depsOf(l.unlockRule)) {
         if (!adj.containsKey(d)) continue;
         adj[d] = [...adj[d]!, l.id];
         indeg[l.id] = indeg[l.id]! + 1;
@@ -3261,10 +3281,3 @@ abstract final class LayerConstraintValidator {
 /// Use in an assert at startup — empty list means all constraints pass.
 List<String> get kLayerConstraintErrors =>
     LayerConstraintValidator.validate(kAllLevels);
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Tag colour palette used by the neural-network level map
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Default tag colors when no [AppThemeNotifier] is available.
-Color levelTagColor(String? tag) => AppThemeData.defaults().tagColor(tag);

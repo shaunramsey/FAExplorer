@@ -16,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'widgets/app_theme.dart';
+import 'widgets/responsive_layout.dart';
 
 import 'game_level.dart';
 // LevelDifficulty and PuzzleVariant are declared in game_level.dart.
@@ -30,10 +31,7 @@ import 'dialogs/equivalence_dialog.dart'
         EquivalenceResult,
         EquivalenceStatus,
         AutomatonTypeChecker,
-        RequiredAutomatonType,
-        AutomatonTypeResult,
-        AutomatonViolation,
-        ViolationSeverity;
+        RequiredAutomatonType;
 import 'simulator.dart';
 import 'models.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
@@ -125,7 +123,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         widget.level.dsl.isNotEmpty) {
       try {
         _dfaGs = DslCodec.importFromDsl(widget.level.dsl);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to parse level DSL for dfaToRegex: $e');
+      }
     }
 
     _loadSavedDsl();
@@ -168,8 +168,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             _lineCounter = _lines.length;
           });
         }
-      } catch (_) {
-        // Corrupted save — fall through and try the scaffold seed instead.
+      } catch (e) {
+        debugPrint('Corrupted saved DSL for level ${widget.level.id}: $e');
+        // Fall through and try the scaffold seed instead.
         _tryApplyEasyScaffold();
       }
     } else if (widget.difficulty == LevelDifficulty.easy) {
@@ -236,8 +237,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _lineCounter = 0;
         });
       }
-    } catch (_) {
-      // DSL parse failed — leave canvas blank rather than crash.
+    } catch (e) {
+      debugPrint('Failed to seed easy scaffold from level DSL: $e');
     }
   }
 
@@ -261,8 +262,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         ),
       );
       await widget.progressStore.saveLevelDsl(widget.level.id, dsl, widget.difficulty);
-    } catch (_) {
-      // Non-fatal — best-effort save.
+    } catch (e) {
+      debugPrint('Failed to save level progress: $e');
     }
   }
 
@@ -345,24 +346,31 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       return;
     }
 
+    if (_lineMode) {
+      final node = _nodeAt(pos);
+      if (node != null && _canStartLineFrom(node.id)) {
+        _lineSourceNodeId = node.id;
+      }
+      return;
+    }
+
+    // Lines take priority over nodes so transitions can be curved near states.
+    final l = _lineAt(pos);
+    if (l != null) {
+      _draggingLineId = l.id;
+      return;
+    }
+
+    if (_hitStartArrow(pos)) {
+      _draggingStartArrow = true;
+      return;
+    }
+
     final node = _nodeAt(pos);
     if (node != null) {
-      if (_lineMode) {
-        if (_canStartLineFrom(node.id)) _lineSourceNodeId = node.id;
-      } else {
-        _draggingNodeId = node.id;
-      }
+      _draggingNodeId = node.id;
     } else {
-      if (_hitStartArrow(pos)) {
-        _draggingStartArrow = true;
-      } else {
-        final l = _lineAt(pos);
-        if (l != null) {
-          _draggingLineId = l.id;
-        } else if (!_lineMode) {
-          _isPanningCanvas = true;
-        }
-      }
+      _isPanningCanvas = true;
     }
   }
 
@@ -525,6 +533,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _isCorrect = true;
           _checkResult = '✓ Correct! Your regex describes exactly the same language as the DFA.';
           await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
+          if (!mounted) return;
           widget.onCompleted?.call();
           _successCtrl.forward(from: 0);
           _showSuccessDialog();
@@ -602,11 +611,11 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         }
         try {
           target = DslCodec.importFromSvg(svgText);
-        } catch (_) {
+        } catch (e) {
           setState(() {
             _checking = false;
             _checkResult =
-                '⚠ Could not parse target SVG.\nCheck the embedded automata-data script block.';
+                '⚠ Could not parse target SVG.\n$e';
           });
           return;
         }
@@ -629,20 +638,18 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         );
 
         if (!typeResult.isCorrectType) {
-          // Build a player-facing message.  Hard errors first, then warnings.
-          final errors = typeResult.violations
-              .where((v) => v.severity == ViolationSeverity.error)
-              .map((v) => '  ✗ ${v.message}')
-              .join('\n');
-          final warnings = typeResult.violations
-              .where((v) => v.severity == ViolationSeverity.warning)
-              .map((v) => '  ⚠ ${v.message}')
-              .join('\n');
-          final detail = [errors, warnings].where((s) => s.isNotEmpty).join('\n');
+          // Build a player-facing message. Hard errors first, then warnings —
+          // shared with game_data.dart so the formatting stays consistent
+          // wherever a type-check result needs to be displayed.
+          final msg = buildTypeErrorMessage(typeResult)!;
+          final detail = [
+            ...msg.errors.map((e) => '  ✗ $e'),
+            ...msg.warnings.map((w) => '  ⚠ $w'),
+          ].join('\n');
 
           setState(() {
             _checking = false;
-            _checkResult = '${typeResult.primaryMessage}'
+            _checkResult = '${msg.headline}'
                 '${detail.isNotEmpty ? '\n\n$detail' : ''}';
           });
           return; // block progression — don't run equivalence check
@@ -651,8 +658,6 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
       // 3. Run the appropriate equivalence check based on the level's assigned
       // automata mode.
-      //    NFA/DFA: exact BFS-based check.
-      //    PDA / TM: bounded simulation (heuristic; detects many bugs).
       //    NFA/DFA: exact BFS-based check.
       //    PDA / TM: bounded simulation (heuristic; detects many bugs).
       final levelMode = widget.level.automataMode;
@@ -704,6 +709,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           _checkResult = '✓ Correct! Your automaton is equivalent to the target.';
           await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
           await _saveNow(); // persist the winning solution immediately
+          if (!mounted) return;
           widget.onCompleted?.call();
           _successCtrl.forward(from: 0);
           _showSuccessDialog();
@@ -731,6 +737,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 'passed the full bounded test suite — level complete!';
             await widget.progressStore.markCompleted(widget.level.id, widget.difficulty);
             await _saveNow();
+            if (!mounted) return;
             widget.onCompleted?.call();
             _successCtrl.forward(from: 0);
             _showSuccessDialog();
@@ -782,25 +789,37 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       );
     }
     final theme = context.watch<AppThemeNotifier>();
+    final compact = isCompactLayout(context);
     return Scaffold(
       backgroundColor: theme.bg,
+      // dfaToRegex levels keep a persistent text field docked under a
+      // pannable read-only canvas. Letting the Scaffold shrink for the
+      // keyboard (the default) resizes that canvas's viewport mid-read,
+      // which makes InteractiveViewer re-clamp the current pan position —
+      // felt as an unexpected "snap". Other puzzle variants don't have this
+      // canvas+persistent-field combo, so they keep the default behaviour.
+      resizeToAvoidBottomInset:
+          widget.level.puzzleVariant != PuzzleVariant.dfaToRegex,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(widget.level.title,
-                style: GoogleFonts.orbitron(fontWeight: FontWeight.w700)),
-            Text(
-              widget.difficulty.displayName.toUpperCase(),
-              style: GoogleFonts.orbitron(
-                fontSize: 9,
-                letterSpacing: 3,
-                color: widget.difficulty.isHard
-                    ? const Color(0xFFFFB300)
-                    : const Color(0xFF4CAF50),
+                style: GoogleFonts.orbitron(
+                    fontWeight: FontWeight.w700,
+                    fontSize: compact ? 14 : null)),
+            if (!compact)
+              Text(
+                widget.difficulty.displayName.toUpperCase(),
+                style: GoogleFonts.orbitron(
+                  fontSize: 9,
+                  letterSpacing: 3,
+                  color: widget.difficulty.isHard
+                      ? const Color(0xFFFFB300)
+                      : const Color(0xFF4CAF50),
+                ),
               ),
-            ),
           ],
         ),
         leading: BackButton(
@@ -816,7 +835,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          else
+          else if (!compact)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: FilledButton.icon(
@@ -832,6 +851,13 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                   foregroundColor: theme.bg,
                 ),
               ),
+            )
+          else
+            IconButton(
+              tooltip: 'Check answer',
+              onPressed: _checkAnswer,
+              icon: Icon(Icons.check_circle_outline,
+                  color: _isCorrect ? theme.accentGreen : theme.accent),
             ),
         ],
       ),
@@ -843,6 +869,27 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       floatingActionButton: widget.level.puzzleVariant == PuzzleVariant.dfaToRegex
           ? null // no FAB needed — canvas is read-only
           : _buildFab(context, theme),
+      bottomNavigationBar: compact &&
+              widget.level.puzzleVariant != PuzzleVariant.dfaToRegex
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: FilledButton.icon(
+                  onPressed: _checking ? null : _checkAnswer,
+                  icon: const Icon(Icons.check_circle_outline, size: 18),
+                  label: Text('Check Answer',
+                      style: GoogleFonts.orbitron(
+                          fontWeight: FontWeight.w700, fontSize: 12)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        _isCorrect ? theme.accentGreen : theme.accent,
+                    foregroundColor: theme.bg,
+                    minimumSize: const Size.fromHeight(44),
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
   }
 
@@ -862,11 +909,18 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   Widget _buildDfaToRegexBody(AppThemeNotifier theme) {
     final gs = _dfaGs;
+    final compact = isCompactLayout(context);
+    // The Scaffold no longer resizes for the keyboard on this puzzle variant
+    // (see resizeToAvoidBottomInset above), so the regex field has to lift
+    // itself above the keyboard manually — the DFA canvas above it is
+    // otherwise unaffected and keeps a stable viewport while typing.
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
-    return Column(
-      children: [
-        // Goal banner (no alphabet chip — irrelevant for regex input)
-        _GoalBanner(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = !compact && constraints.maxWidth > 500;
+
+        final goalBanner = _GoalBanner(
           description: widget.level.description,
           tagColor: theme.tagColor(widget.level.tag),
           automataMode: widget.level.automataMode,
@@ -875,25 +929,54 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           checkResult: _checkResult,
           isCorrect: _isCorrect,
           puzzleVariant: widget.level.puzzleVariant,
-        ),
+        );
 
-        // ── Read-only DFA canvas (upper half) ────────────────────────
-        Expanded(
-          flex: 3,
-          child: gs == null
-              ? Center(
-                  child: Text('Could not load DFA.',
-                      style: TextStyle(color: theme.textMid)))
-              : _ReadOnlyDfaCanvas(gs: gs, theme: theme),
-        ),
+        final dfaPreview = gs == null
+            ? Center(
+                child: Text('Could not load DFA.',
+                    style: TextStyle(color: theme.textMid)))
+            : _ReadOnlyDfaCanvas(gs: gs, theme: theme);
 
-        // ── Regex input panel (lower section) ────────────────────────
-        _RegexInputPanel(
+        final regexPanel = _RegexInputPanel(
           controller: _regexInputCtrl,
           theme: theme,
           isCorrect: _isCorrect,
-        ),
-      ],
+        );
+
+        if (wide) {
+          return Column(
+            children: [
+              goalBanner,
+              Expanded(
+                flex: 3,
+                child: dfaPreview,
+              ),
+              Padding(
+                padding: EdgeInsets.only(bottom: bottomInset),
+                child: regexPanel,
+              ),
+            ],
+          );
+        }
+
+        return Column(
+          children: [
+            goalBanner,
+            // The regex panel only needs its natural (content) height — it's
+            // a label, a single text field, and a hint line. Forcing it into
+            // an Expanded flex slot (as before) claimed roughly a third of
+            // the screen on narrow/mobile layouts that it never actually
+            // used, starving the DFA diagram of the room it needs to be
+            // readable. Give it just what it needs and let the diagram have
+            // everything else.
+            Expanded(child: dfaPreview),
+            Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: regexPanel,
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1313,7 +1396,7 @@ class _GoalBanner extends StatelessWidget {
                     'Regex:  ',
                     style: GoogleFonts.sourceCodePro(
                       fontSize: 12,
-                      color: const Color(0xFF00E5FF).withOpacity(0.7),
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.7),
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -1340,7 +1423,7 @@ class _GoalBanner extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: isCorrect
-                  ? theme.accentGreen.withOpacity(0.12)
+                  ? theme.accentGreen.withValues(alpha: 0.12)
                   : const Color(0xFF1F0D0D),
               child: Text(
                 checkResult!,
@@ -1383,14 +1466,14 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        border: Border.all(color: color.withOpacity(0.35)),
+        color: color.withValues(alpha: 0.10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: color.withOpacity(0.85)),
+          Icon(icon, size: 13, color: color.withValues(alpha: 0.85)),
           const SizedBox(width: 5),
           Text(
             label,
@@ -1450,7 +1533,7 @@ class _SuccessDialogState extends State<_SuccessDialog>
       backgroundColor: theme.bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: tagColor.withOpacity(0.8), width: 2),
+        side: BorderSide(color: tagColor.withValues(alpha: 0.8), width: 2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1465,10 +1548,10 @@ class _SuccessDialogState extends State<_SuccessDialog>
                 height: 72,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: tagColor.withOpacity(0.15),
+                  color: tagColor.withValues(alpha: 0.15),
                   boxShadow: [
                     BoxShadow(
-                      color: tagColor.withOpacity(0.6),
+                      color: tagColor.withValues(alpha: 0.6),
                       blurRadius: 24,
                       spreadRadius: 4,
                     ),
@@ -1533,84 +1616,355 @@ class _SuccessDialogState extends State<_SuccessDialog>
 //  can read it while typing their regex answer.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ReadOnlyDfaCanvas extends StatelessWidget {
+class _ReadOnlyDfaCanvas extends StatefulWidget {
   final GraphState gs;
   final AppThemeNotifier theme;
 
   const _ReadOnlyDfaCanvas({required this.gs, required this.theme});
 
   @override
+  State<_ReadOnlyDfaCanvas> createState() => _ReadOnlyDfaCanvasState();
+}
+
+class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
+  static const double _contentPadding = 90;
+  static const double _minScale = 0.15;
+  static const double _maxScale = 3.0;
+
+  // Desired pan headroom in *screen* pixels, kept roughly constant across
+  // zoom levels.
+  //
+  // boundaryMargin has to do more than just "add some space": if the
+  // (scaled) content is smaller than the viewport along an axis —
+  // routine, since _fitToView scales uniformly and most diagrams don't
+  // match the screen's aspect ratio — InteractiveViewer's boundary math
+  // degenerates for that axis and pins the content to one edge instead of
+  // centering/panning normally. That's what made horizontal panning feel
+  // "forced to the left" while vertical (the axis that actually filled the
+  // viewport after fitting) panned fine. _boundaryMargin below computes
+  // each axis independently and pads enough to cover that axis's slack,
+  // not just a flat guess.
+  static const double _screenMarginPx = 300;
+
+  final TransformationController _transformCtrl = TransformationController();
+  bool _didAutoFit = false;
+  Size _lastViewportSize = Size.zero;
+
+  EdgeInsets get _boundaryMargin {
+    final scale = _transformCtrl.value.getMaxScaleOnAxis();
+    final safeScale = scale > 0 ? scale : _minScale;
+    final base = _screenMarginPx / safeScale;
+
+    final bounds = _computeNodeBounds();
+    final contentWidth = bounds.right + _contentPadding;
+    final contentHeight = bounds.bottom + _contentPadding;
+
+    double marginFor(double viewportExtent, double contentExtent) {
+      if (viewportExtent <= 0) return base;
+      // How much (screen-space) empty space is left after the scaled
+      // content is placed in the viewport along this axis.
+      final slack = viewportExtent - contentExtent * safeScale;
+      if (slack <= 0) return base; // content already fills/exceeds viewport
+      return base + slack / (2 * safeScale);
+    }
+
+    return EdgeInsets.symmetric(
+      horizontal: marginFor(_lastViewportSize.width, contentWidth),
+      vertical: marginFor(_lastViewportSize.height, contentHeight),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReadOnlyDfaCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A different puzzle's DFA was loaded (e.g. navigating between levels
+    // re-uses this widget) — re-fit to the new graph instead of keeping the
+    // old pan/zoom position, which would likely show the wrong region.
+    if (oldWidget.gs != widget.gs) {
+      _didAutoFit = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _transformCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Tight bounding box around every node's footprint, in the DFA's own
+  /// (DSL-authored) coordinate space. Node positions are top-left corners;
+  /// black-box nodes are wider (140px) than normal circular states (100px).
+  Rect _computeNodeBounds() {
+    final nodes = widget.gs.nodes.values;
+    if (nodes.isEmpty) return const Rect.fromLTWH(0, 0, 200, 200);
+
+    double left = double.infinity;
+    double top = double.infinity;
+    double right = double.negativeInfinity;
+    double bottom = double.negativeInfinity;
+
+    for (final node in nodes) {
+      final w = node.isBlackBox ? 140.0 : 100.0;
+      const h = 100.0;
+      left = min(left, node.position.dx);
+      top = min(top, node.position.dy);
+      right = max(right, node.position.dx + w);
+      bottom = max(bottom, node.position.dy + h);
+    }
+    // Node positions are authored non-negative (placed via onDoubleTapDown
+    // localPosition in the level editor), but guard against stray negatives
+    // so the content box below never has a negative origin.
+    left = min(left, 0);
+    top = min(top, 0);
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  /// Scales and centers the whole diagram inside [viewportSize] so it's
+  /// fully visible without any manual zooming — the actual fix for levels
+  /// where nodes were being authored well outside the small preview box.
+  void _fitToView(Size viewportSize) {
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) return;
+    final bounds = _computeNodeBounds();
+    final contentWidth = bounds.right + _contentPadding;
+    final contentHeight = bounds.bottom + _contentPadding;
+
+    final scale = min(
+      viewportSize.width / contentWidth,
+      viewportSize.height / contentHeight,
+    ).clamp(_minScale, 1.0);
+
+    final graphCenter = bounds.center;
+    final dx = viewportSize.width / 2 - graphCenter.dx * scale;
+    final dy = viewportSize.height / 2 - graphCenter.dy * scale;
+
+    setState(() {
+      _transformCtrl.value = Matrix4.identity()
+        ..translateByDouble(dx, dy, 0.0, 1.0)
+        ..scaleByDouble(scale, scale, 1.0, 1.0);
+    });
+  }
+
+  void _zoomBy(double factor) {
+    if (_lastViewportSize == Size.zero) return;
+    final currentScale = _transformCtrl.value.getMaxScaleOnAxis();
+    final targetScale = (currentScale * factor).clamp(_minScale, _maxScale);
+    final adjust = targetScale / currentScale;
+    if (adjust == 1.0) return;
+
+    // Zoom around the viewport's center point rather than the origin.
+    final center = Offset(
+      _lastViewportSize.width / 2,
+      _lastViewportSize.height / 2,
+    );
+    final focal = _transformCtrl.toScene(center);
+    setState(() {
+      _transformCtrl.value = _transformCtrl.value.clone()
+        ..translateByDouble(focal.dx, focal.dy, 0.0, 1.0)
+        ..scaleByDouble(adjust, adjust, 1.0, 1.0)
+        ..translateByDouble(-focal.dx, -focal.dy, 0.0, 1.0);
+    });
+  }
+
+  void _resetView() {
+    if (_lastViewportSize != Size.zero) _fitToView(_lastViewportSize);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final gs = widget.gs;
+    final bounds = _computeNodeBounds();
+    final contentWidth = bounds.right + _contentPadding;
+    final contentHeight = bounds.bottom + _contentPadding;
+
     return Container(
       color: theme.bg,
-      child: Stack(
-        clipBehavior: Clip.none,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+          _lastViewportSize = viewportSize;
+
+          if (!_didAutoFit) {
+            _didAutoFit = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _fitToView(viewportSize);
+            });
+          }
+
+          return Stack(
+            children: [
+              GestureDetector(
+                onDoubleTap: _resetView,
+                child: InteractiveViewer(
+                  transformationController: _transformCtrl,
+                  constrained: false,
+                  boundaryMargin: _boundaryMargin,
+                  minScale: _minScale,
+                  maxScale: _maxScale,
+                  // Rebuild after each gesture so _boundaryMargin picks up
+                  // the scale that gesture ended at, ready for the next
+                  // pan/zoom — without recalculating on every drag frame.
+                  onInteractionEnd: (_) => setState(() {}),
+                  child: SizedBox(
+                    width: contentWidth,
+                    height: contentHeight,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        // Start arrow
+                        if (gs.startArrow != null &&
+                            gs.nodes.containsKey(gs.startArrow!.nodeId))
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: StartArrowWidget(
+                                data: gs.startArrow!,
+                                nodeCenter: gs.nodes[gs.startArrow!.nodeId]!.center,
+                                deleteMode: false,
+                                onDelete: () {},
+                              ),
+                            ),
+                          ),
+
+                        // Transition lines
+                        ...gs.lines.values.map((line) {
+                          final a = gs.nodes[line.nodeAId];
+                          final b = gs.nodes[line.nodeBId];
+                          if (a == null || b == null) return const SizedBox.shrink();
+                          return Positioned.fill(
+                            child: IgnorePointer(
+                              child: LineWidget(
+                                data: line,
+                                centerA: a.center,
+                                centerB: b.center,
+                                deleteMode: false,
+                                highlighted: false,
+                                onLabelChanged: (_) {}, // read-only, never fires
+                              ),
+                            ),
+                          );
+                        }),
+
+                        // State nodes — non-interactive (interactionLocked: true
+                        // handles this; do NOT wrap in IgnorePointer here — Node
+                        // positions itself with an internal Positioned widget and
+                        // must be a direct Stack child).
+                        ...gs.nodes.values.map(
+                          (node) => Node(
+                            key: ValueKey('ro_${node.id}'),
+                            data: node,
+                            lineMode: false,
+                            interactionLocked: true,
+                            deleteMode: false,
+                            highlighted: false,
+                            isLabelTaken: (_, _) => false,
+                            onLabelChanged: (_) {},
+                            onLineModeSelect: () {},
+                            onDoubleTap: () {},
+                            onDelete: () {},
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Watermark label — pinned to the viewport, not the pannable
+              // content, so it stays put regardless of pan/zoom.
+              Positioned(
+                bottom: 8,
+                right: 12,
+                child: IgnorePointer(
+                  child: Text(
+                    'read-only',
+                    style: GoogleFonts.sourceCodePro(
+                      fontSize: 10,
+                      color: theme.textDim.withValues(alpha: 0.4),
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Zoom / recenter controls.
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _CanvasZoomControls(
+                  theme: theme,
+                  onZoomIn: () => _zoomBy(1.25),
+                  onZoomOut: () => _zoomBy(0.8),
+                  onFit: _resetView,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Small floating zoom/fit control cluster for _ReadOnlyDfaCanvas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CanvasZoomControls extends StatelessWidget {
+  final AppThemeNotifier theme;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onFit;
+
+  const _CanvasZoomControls({
+    required this.theme,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onFit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.borderMid),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Start arrow
-          if (gs.startArrow != null && gs.nodes.containsKey(gs.startArrow!.nodeId))
-            Positioned.fill(
-              child: IgnorePointer(
-                child: StartArrowWidget(
-                  data: gs.startArrow!,
-                  nodeCenter: gs.nodes[gs.startArrow!.nodeId]!.center,
-                  deleteMode: false,
-                  onDelete: () {},
-                ),
-              ),
-            ),
-
-          // Transition lines
-          ...gs.lines.values.map((line) {
-            final a = gs.nodes[line.nodeAId];
-            final b = gs.nodes[line.nodeBId];
-            if (a == null || b == null) return const SizedBox.shrink();
-            return Positioned.fill(
-              child: IgnorePointer(
-                child: LineWidget(
-                  data: line,
-                  centerA: a.center,
-                  centerB: b.center,
-                  deleteMode: false,
-                  highlighted: false,
-                  onLabelChanged: (_) {}, // read-only, never fires
-                ),
-              ),
-            );
-          }),
-
-          // State nodes — non-interactive (interactionLocked: true handles this;
-          // do NOT wrap in IgnorePointer here — Node positions itself with an
-          // internal Positioned widget and must be a direct Stack child).
-          ...gs.nodes.values.map(
-            (node) => Node(
-              key: ValueKey('ro_${node.id}'),
-              data: node,
-              lineMode: false,
-              interactionLocked: true,
-              deleteMode: false,
-              highlighted: false,
-              isLabelTaken: (_, __) => false,
-              onLabelChanged: (_) {},
-              onLineModeSelect: () {},
-              onDoubleTap: () {},
-              onDelete: () {},
-            ),
-          ),
-
-          // Watermark label
-          Positioned(
-            bottom: 8,
-            right: 12,
-            child: Text(
-              'read-only',
-              style: GoogleFonts.sourceCodePro(
-                fontSize: 10,
-                color: theme.textDim.withOpacity(0.4),
-                letterSpacing: 1,
-              ),
-            ),
-          ),
+          _CanvasZoomButton(icon: Icons.remove, tooltip: 'Zoom out', onTap: onZoomOut, theme: theme),
+          _CanvasZoomButton(icon: Icons.fit_screen, tooltip: 'Fit to view', onTap: onFit, theme: theme),
+          _CanvasZoomButton(icon: Icons.add, tooltip: 'Zoom in', onTap: onZoomIn, theme: theme),
         ],
+      ),
+    );
+  }
+}
+
+class _CanvasZoomButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final AppThemeNotifier theme;
+
+  const _CanvasZoomButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 18, color: theme.textMid),
+        ),
       ),
     );
   }
@@ -1669,7 +2023,7 @@ class _RegexInputPanel extends StatelessWidget {
               border: Border.all(
                 color: isCorrect
                     ? const Color(0xFF1FD99A)
-                    : accentRegex.withOpacity(0.5),
+                    : accentRegex.withValues(alpha: 0.5),
               ),
               borderRadius: BorderRadius.circular(6),
             ),
@@ -1689,7 +2043,7 @@ class _RegexInputPanel extends StatelessWidget {
                 hintText: 'e.g.  (a+b)*b',
                 hintStyle: GoogleFonts.courierPrime(
                   fontSize: 18,
-                  color: theme.textDim.withOpacity(0.5),
+                  color: theme.textDim.withValues(alpha: 0.5),
                 ),
                 isDense: true,
               ),
