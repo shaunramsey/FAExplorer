@@ -2012,25 +2012,15 @@ class _ChallengeCard extends StatelessWidget {
               ),
             ],
           ] else ...[
-            // DFA→REGEX: no description shown — alphabet is the only hint
-            if (!compact) ...[
-              Text(
-                'ALPHABET',
-                style: GoogleFonts.orbitron(
-                  color: theme.textDim,
-                  fontSize: 8,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
+            // DFA→REGEX: the alphabet already appears in the header row
+            // above (Σ = {...}), so this just restates it as a small inline
+            // chip instead of a large standalone block — that was taking up
+            // card height that the DFA preview below could use instead.
             Container(
-              padding: compact
-                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
-                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: theme.accentGreen.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
                 border:
                     Border.all(color: theme.accentGreen.withValues(alpha: 0.20)),
               ),
@@ -2038,7 +2028,7 @@ class _ChallengeCard extends StatelessWidget {
                 'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
                 style: GoogleFonts.courierPrime(
                   color: theme.accentGreen,
-                  fontSize: compact ? 15 : 20,
+                  fontSize: compact ? 12 : 14,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                 ),
@@ -2239,16 +2229,14 @@ class _RegexInputArea extends StatelessWidget {
         : correct
             ? const Color(0xFF4CAF50)
             : theme.error;
-    final compact = isCompactLayout(context);
-    final previewFlex = compact ? 2 : 3;
-    final inputFlex = compact ? 1 : 1;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Read-only DFA preview (so player can actually see the machine)
+        // Read-only DFA preview — takes all the room left over once the
+        // regex box below claims only what it needs. This way the diagram
+        // gets as much space as possible without ever squeezing the input
+        // box down to the point where it's hard to read or type into.
         Expanded(
-          flex: previewFlex,
           child: Container(
             decoration: BoxDecoration(
               color: theme.surface,
@@ -2284,75 +2272,73 @@ class _RegexInputArea extends StatelessWidget {
 
         const SizedBox(height: 12),
 
-        // Regex text field
-        Expanded(
-          flex: inputFlex,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: theme.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: borderColor, width: 1.5),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'YOUR REGEX',
-                  style: GoogleFonts.orbitron(
-                    color: theme.textDim,
-                    fontSize: 8,
-                    letterSpacing: 2,
+        // Regex text field — sized to fit its own content (label + one
+        // line of input + operator hints), not squeezed to a flex share,
+        // so it stays a fixed, comfortable size to read and type into no
+        // matter how large the DFA preview above grows.
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: theme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: 1.5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'YOUR REGEX',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                focusNode: focusNode,
+                readOnly: submitted && correct, // lock on correct answer
+                style: GoogleFonts.courierPrime(
+                  color: !submitted
+                      ? theme.textLight
+                      : correct
+                          ? const Color(0xFF4CAF50)
+                          : theme.error,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'e.g.  a*(ba+b)*',
+                  hintStyle: GoogleFonts.courierPrime(
+                    color: theme.textDim.withValues(alpha: 0.5),
+                    fontSize: 18,
                   ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  isDense: true,
                 ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    readOnly:
-                        submitted && correct, // lock on correct answer
-                    style: GoogleFonts.courierPrime(
-                      color: !submitted
-                          ? theme.textLight
-                          : correct
-                              ? const Color(0xFF4CAF50)
-                              : theme.error,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'e.g.  a*(ba+b)*',
-                      hintStyle: GoogleFonts.courierPrime(
-                        color: theme.textDim.withValues(alpha: 0.5),
-                        fontSize: 18,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      isDense: true,
-                    ),
-                    onSubmitted: (_) {
-                      // pressing Enter submits
-                    },
-                  ),
-                ),
-                // Operator quick-reference
-                Row(
-                  children: [
-                    _OpHint(op: '*', label: 'star', theme: theme),
-                    const SizedBox(width: 10),
-                    _OpHint(op: '+', label: 'or', theme: theme),
-                    const SizedBox(width: 10),
-                    _OpHint(op: '~', label: '~', theme: theme),
-                    const SizedBox(width: 10),
-                    _OpHint(op: '()', label: 'group', theme: theme),
-                  ],
-                ),
-              ],
-            ),
+                onSubmitted: (_) {
+                  // pressing Enter submits
+                },
+              ),
+              const SizedBox(height: 10),
+              // Operator quick-reference
+              Row(
+                children: [
+                  _OpHint(op: '*', label: 'star', theme: theme),
+                  const SizedBox(width: 10),
+                  _OpHint(op: '+', label: 'or', theme: theme),
+                  const SizedBox(width: 10),
+                  _OpHint(op: '~', label: '~', theme: theme),
+                  const SizedBox(width: 10),
+                  _OpHint(op: '()', label: 'group', theme: theme),
+                ],
+              ),
+            ],
           ),
         ),
       ],
