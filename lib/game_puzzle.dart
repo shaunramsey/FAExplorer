@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  Game Puzzle Screen
 //
 //  Wraps the full AutomataScreen canvas but:
@@ -544,7 +544,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           final by = result.acceptedByMachine;
           final yourSide   = by == 1 ? 'your regex' : 'the target DFA';
           final otherSide  = by == 1 ? 'the target DFA' : 'your regex';
-          final inputDesc  = witness.isEmpty ? 'ε (empty string)' : '"$witness"';
+          final inputDesc  = witness.isEmpty ? '~ (empty string)' : '"$witness"';
           _checkResult = '✗ Not equivalent.\n\n'
               'Distinguishing witness: $inputDesc\n'
               '$yourSide accepts it but $otherSide does not.';

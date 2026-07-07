@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app_theme.dart';
@@ -148,7 +148,7 @@ class _HelpOverlayState extends State<HelpOverlay> {
                             const SizedBox(height: 6),
                             _CodeLine('read,pop|push', theme: theme),
                             _NoteLine(
-                              '~ or blank = none/epsilon · push multiple '
+                              '~ or blank = none/tilda · push multiple '
                               'space-separated, left-most ends on top',
                               theme: theme,
                             ),

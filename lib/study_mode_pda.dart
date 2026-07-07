@@ -1,4 +1,4 @@
-// PDA practice challenges and widgets for study mode.
+﻿// PDA practice challenges and widgets for study mode.
 
 import 'dart:math';
 
@@ -77,7 +77,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 0 }\n\n'
         'Accept strings with an equal number of "$a"s followed by "$b"s.\n'
-        'The empty string ε (n=0) is accepted.',
+        'The empty string ~ (n=0) is accepted.',
     hint: 'Push a stack symbol for each "$a", pop one for each "$b". '
         'Accept when the stack is empty at the end.',
     alphabet: {a, b},
@@ -91,7 +91,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$a$b', false),
       StudyPdaTestCase('$b$a', false),
     ],
-    acceptExamples: ['ε', '$a$b', '$a$a$b$b'],
+    acceptExamples: ['~', '$a$b', '$a$a$b$b'],
     rejectExamples: [a, b, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b),
   ));
@@ -100,7 +100,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 1 }\n\n'
         'Accept non-empty strings with equal "$a" and "$b" counts.',
-    hint: 'Push for each "$a", pop for each "$b". Reject ε.',
+    hint: 'Push for each "$a", pop for each "$b". Reject ~.',
     alphabet: {a, b},
     difficulty: StudyPdaDifficulty.easy,
     testCases: [
@@ -111,7 +111,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$a$b', false),
     ],
     acceptExamples: ['$a$b', '$a$a$b$b'],
-    rejectExamples: ['ε', a, '$a$a$b'],
+    rejectExamples: ['~', a, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b, acceptEmpty: false),
   ));
 
@@ -143,7 +143,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$s1$s3$s2$s4', false),
       StudyPdaTestCase('$s1$s2$s3', false),
     ],
-    acceptExamples: ['ε', '$s1$s3', '$s1$s2$s3$s4'],
+    acceptExamples: ['~', '$s1$s3', '$s1$s2$s3$s4'],
     rejectExamples: ['$s1$s2$s3', '$s1$s3$s2$s4'],
     solutionSpec: PdaSolutionSpec.interleaved4(s1, s2, s3, s4),
   ));
@@ -163,7 +163,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase(frame, false),
       StudyPdaTestCase('$outer$mid$mid', false),
     ],
-    acceptExamples: ['ε', mid, '$outer$frame', '$outer$mid$frame'],
+    acceptExamples: ['~', mid, '$outer$frame', '$outer$mid$frame'],
     rejectExamples: [frame, '$outer$mid$mid'],
     solutionSpec: PdaSolutionSpec.outerFrame(outer, mid, frame),
   ));
@@ -180,7 +180,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$b$a', true),
       StudyPdaTestCase('$a$b', false),
     ],
-    acceptExamples: ['ε', a, '$a$a', '$a$b$a'],
+    acceptExamples: ['~', a, '$a$a', '$a$b$a'],
     rejectExamples: ['$a$b', '$b$a'],
     solutionSpec: PdaSolutionSpec.palindrome(a, b),
   ));
@@ -198,7 +198,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$b', false),
     ],
     acceptExamples: [b, '$a$b$a', '$a$a$b$a$a'],
-    rejectExamples: ['ε', '$a$b'],
+    rejectExamples: ['~', '$a$b'],
     solutionSpec: PdaSolutionSpec.markedPalindrome(a, b),
   ));
 
@@ -226,7 +226,7 @@ StudyPdaChallenge _ratioChallenge(
       StudyPdaTestCase(_rep(a, k) + _rep(b, j + 1), false),
       StudyPdaTestCase(_rep(b, j) + _rep(a, k), false),
     ],
-    acceptExamples: ['ε', '"${_rep(a, k)}${_rep(b, j)}"'],
+    acceptExamples: ['~', '"${_rep(a, k)}${_rep(b, j)}"'],
     rejectExamples: ['"${_rep(a, k)}"', '"${_rep(b, j)}"'],
     solutionSpec: PdaSolutionSpec.ratio(a, b, k, j),
   );
@@ -265,7 +265,7 @@ StudyPdaChallenge _comparisonChallenge(String a, String b, _CompRelation rel) {
         ? StudyPdaDifficulty.easy
         : StudyPdaDifficulty.medium,
     testCases: testCases,
-    acceptExamples: const ['ε'],
+    acceptExamples: const ['~'],
     rejectExamples: ['"$b$a"'],
     solutionSpec: PdaSolutionSpec.comp(a, b, _pdaComp(rel)),
   );
@@ -427,7 +427,7 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget chip(String s, bool accept) {
-      final label = s.isEmpty ? 'ε' : s;
+      final label = s.isEmpty ? '~' : s;
       final color =
           accept ? const Color(0xFF1FD99A) : const Color(0xFFFF1744);
       return Container(
@@ -465,7 +465,7 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
 
 String studyPdaFailureMessage(StudyPdaTestCase tc) {
   final inputDisplay =
-      tc.input.isEmpty ? 'ε (empty string)' : '"${tc.input}"';
+      tc.input.isEmpty ? '~ (empty string)' : '"${tc.input}"';
   final expected = tc.expected ? 'ACCEPT' : 'REJECT';
   final got = tc.expected ? 'REJECT' : 'ACCEPT';
   return 'Input $inputDisplay: expected $expected but got $got';

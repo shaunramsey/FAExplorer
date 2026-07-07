@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  sim_panels.dart
 //
 //  Floating panels shown only while a simulation is active. Merged from the
@@ -115,7 +115,7 @@ class PdaStackPanel extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        'Stopped: ε-closure stack became too large '
+                        'Stopped: ~-closure stack became too large '
                         '(typical unbounded free-push like ~,~|X). '
                         'If you want to drain a loop, use ~,symbol|~.',
                         style: GoogleFonts.courierPrime(
@@ -203,7 +203,7 @@ class _ConfigCard extends StatelessWidget {
           const SizedBox(height: 4),
           _RowLabel(
             label: 'input',
-            value: remaining.isEmpty ? 'ε' : remaining,
+            value: remaining.isEmpty ? '~' : remaining,
             muted: remaining.isEmpty,
           ),
           const SizedBox(height: 8),
@@ -314,7 +314,7 @@ class _StackCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final display = symbol.isEmpty ? 'ε' : symbol;
+    final display = symbol.isEmpty ? '~' : symbol;
     final isBottomMarker = symbol == kStackBottom;
 
     return Container(

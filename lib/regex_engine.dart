@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  regex_engine.dart
 //
 //  Parses a simple regular expression where:
@@ -13,11 +13,11 @@
 //  Parentheses group sub-expressions.
 //
 //  All other characters are treated as literal single-character symbols.
-//  ε (epsilon) self-loops are represented internally by the empty string ''.
+//  ~ (tilda) self-loops are represented internally by the empty string ''.
 //
 //  The converter produces:
-//    • An NFA (NodeData + LineData) with ε-transitions (Thompson construction)
-//    • OR a minimal DFA (NodeData + LineData, no ε-transitions, each symbol on
+//    • An NFA (NodeData + LineData) with ~-transitions (Thompson construction)
+//    • OR a minimal DFA (NodeData + LineData, no ~-transitions, each symbol on
 //      its own line) — subset construction followed by DFA minimization via
 //      Moore's partition-refinement algorithm (see the note above
 //      _minimizeDfa() for why this isn't Hopcroft's algorithm despite an
@@ -49,9 +49,9 @@ class RegexConversionResult {
   bool get isError => error != null;
 }
 
-/// Converts a simple regex string to an NFA graph (with ε-transitions).
-/// Uses Thompson construction followed by ε-pass-through elimination,
-/// Converts a simple regex string to a minimal DFA graph (no ε, one symbol per line).
+/// Converts a simple regex string to an NFA graph (with ~-transitions).
+/// Uses Thompson construction followed by ~-pass-through elimination,
+/// Converts a simple regex string to a minimal DFA graph (no ~, one symbol per line).
 RegexConversionResult regexToDfa(String pattern) {
   try {
     final parser = _RegexParser(pattern);
@@ -190,7 +190,7 @@ class _RegexParser {
       _skipWhitespace();
     }
     if (node == null) {
-      // Empty concat in a context like "()" — treat as epsilon
+      // Empty concat in a context like "()" — treat as tilda
       return _Epsilon();
     }
     return node;
@@ -233,7 +233,7 @@ class _RegexParser {
 
 // ─── Thompson NFA construction ────────────────────────────────────────────────
 
-const String _kEpsilon = ''; // ε label
+const String _kEpsilon = ''; // ~ label
 
 /// An NFA fragment: two state ids (start, accept).
 class _Fragment {
@@ -275,7 +275,7 @@ class _NfaBuilder {
     if (node is _Concat) {
       final left = build(node.left);
       final right = build(node.right);
-      // Merge left.accept with right.start via ε
+      // Merge left.accept with right.start via ~
       _addTransition(left.accept, _kEpsilon, right.start);
       return _Fragment(left.start, right.accept);
     }
@@ -304,17 +304,17 @@ class _NfaBuilder {
   }
 }
 
-// ─── NFA → Graph (with ε-transitions for NFA export) ────────────────────────
+// ─── NFA → Graph (with ~-transitions for NFA export) ────────────────────────
 //
 // Thompson construction creates O(|regex|) states, many of which are pure
-// ε-pass-throughs with exactly one incoming and one outgoing ε-edge.
+// ~-pass-throughs with exactly one incoming and one outgoing ~-edge.
 // We eliminate those before emitting the graph so the displayed NFA is
 // compact (matches hand-drawn style) while still being equivalent.
 //
 // A state is a "pass-through" if it is NOT the start state, NOT the accept
-// state, has NO outgoing non-ε transitions, and has exactly one outgoing
-// ε-edge. We short-circuit it by redirecting every edge that pointed TO it
-// directly to its ε-successor, then drop the state.  We repeat until stable.
+// state, has NO outgoing non-~ transitions, and has exactly one outgoing
+// ~-edge. We short-circuit it by redirecting every edge that pointed TO it
+// directly to its ~-successor, then drop the state.  We repeat until stable.
 
 
 /// For every pair of lines (A→B) and (B→A), offset them in opposite
@@ -376,7 +376,7 @@ class _NfaTable {
     required this.alphabet,
   });
 
-  /// Compute ε-closure of a set of NFA states.
+  /// Compute ~-closure of a set of NFA states.
   Set<int> epsilonClosure(Set<int> states) {
     final result = <int>{...states};
     final worklist = [...states];

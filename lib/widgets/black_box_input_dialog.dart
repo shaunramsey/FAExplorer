@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
@@ -22,7 +22,7 @@ import 'app_theme.dart';
 //     the right kind of machine.
 //
 //  3. Quick-insert bar — a row of small chips for common TM label tokens
-//     (∅, ~, R, L, S, ε) inserted at the cursor position.  Saves typing
+//     (∅, ~, R, L, S, ~) inserted at the cursor position.  Saves typing
 //     special characters on mobile.
 //
 //  4. Tap-to-open-tape-routing shortcut — a "Tape routing →" link at the
@@ -534,11 +534,11 @@ class _QuickInsertBar extends StatelessWidget {
 
   static const _tokens = [
     ('∅', 'blank'),
-    ('~',  'ε-jump'),
+    ('~',  '~-jump'),
     ('R',  'right'),
     ('L',  'left'),
     ('S',  'stay'),
-    ('ε',  'epsilon'),
+    ('~',  'tilda'),
     ('1:', 'tape 1'),
     ('2:', 'tape 2'),
     ('b1', 'cross-write'),

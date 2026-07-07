@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════════════════
 //  import_export.dart
 //
 //  Combined module — merges the following originals into one file so their
@@ -965,7 +965,7 @@ class DslCodec {
 //    (comma-/newline-separated in the DSL).
 //  • Curved lines (perpendicularPart ≠ 0) use  edge [bend left=N] or
 //    edge [bend right=N].  N is clamped to [5, 80] degrees.
-//  • Unicode symbols (ε, ∅, λ …) are wrapped in $…$ math mode.
+//  • Unicode symbols (~, ∅, λ …) are wrapped in $…$ math mode.
 //  • Position: we convert canvas px → pt  by dividing by 2.
 //    On import we multiply pt × 2 to recover approximate canvas coordinates.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -989,7 +989,7 @@ const _latexEscapes = {
 
 // Known unicode symbols → LaTeX math equivalents.
 const _unicodeToLatex = {
-  'ε': r'\varepsilon',
+  '~': r'\varepsilon',
   'λ': r'\lambda',
   '∅': r'\emptyset',
   '∈': r'\in',
@@ -1135,8 +1135,8 @@ String _labelToLatex(String token) {
 String _latexLabelToDsl(String tex) {
   tex = tex.trim();
 
-  // Full epsilon shortcuts.
-  if (tex == r'$\varepsilon$' || tex == r'$\epsilon$' || tex == r'\varepsilon' || tex == r'\epsilon') {
+  // Full tilda shortcuts.
+  if (tex == r'$\varepsilon$' || tex == r'$\tilda$' || tex == r'\varepsilon' || tex == r'\tilda') {
     return '~';
   }
 
@@ -1833,7 +1833,7 @@ Future<void> _copyToClipboard(BuildContext context, String text) async {
 //  throughout so that simplification is structural rather than string-based.
 //
 //  Notation used in the output string:
-//    ~       epsilon (empty string)
+//    ~       tilda (empty string)
 //    +       alternation  (a + b  means  a | b)
 //    (...)   grouping
 //    *       Kleene star (postfix)
@@ -1915,10 +1915,10 @@ FaToRegexResult faToRegex({
     gnfa[from]![to] = _union(gnfa[from]![to], edgeRe);
   }
 
-  // Super-start → original start via ε.
+  // Super-start → original start via ~.
   gnfa[superStart]![startArrow.nodeId] = const _Eps();
 
-  // All accept states → super-accept via ε.
+  // All accept states → super-accept via ~.
   for (final aId in acceptIds) {
     gnfa[aId]![superAccept] = _union(gnfa[aId]![superAccept], const _Eps());
   }
@@ -2016,7 +2016,7 @@ class _Empty extends _RE {
   const _Empty();
 }
 
-/// Epsilon ~ — matches the empty string.
+/// tilda ~ — matches the empty string.
 class _Eps extends _RE {
   const _Eps();
 }
@@ -2068,7 +2068,7 @@ _RE _unionNN(_RE a, _RE b) {
   if (b is _Star && _eq(a, b.child)) return b;
   if (a is _Star && _eq(b, a.child)) return a;
 
-  // r* + ~ → r*  and  ~ + r* → r*  (star already includes epsilon)
+  // r* + ~ → r*  and  ~ + r* → r*  (star already includes tilda)
   if (a is _Star && b is _Eps) return a;
   if (b is _Star && a is _Eps) return b;
 
@@ -2124,7 +2124,7 @@ _RE? _seq(_RE? a, _RE? b) {
 _RE _seqNN(_RE a, _RE b) {
   // ∅ annihilates
   if (a is _Empty || b is _Empty) return const _Empty();
-  // ε identity
+  // ~ identity
   if (a is _Eps) return b;
   if (b is _Eps) return a;
   return _Cat(a, b);
@@ -2132,10 +2132,10 @@ _RE _seqNN(_RE a, _RE b) {
 
 /// Kleene star.
 _RE _star(_RE r) {
-  if (r is _Empty) return const _Eps(); // ∅* = ε
-  if (r is _Eps)   return const _Eps(); // ε* = ε
+  if (r is _Empty) return const _Eps(); // ∅* = ~
+  if (r is _Eps)   return const _Eps(); // ~* = ~
   if (r is _Star)  return r;            // (r*)* = r*
-  // (r+ε)* → r*   (adding ε inside a star is redundant)
+  // (r+~)* → r*   (adding ~ inside a star is redundant)
   if (r is _Union) {
     final withoutEps = _removeEpsFromUnion(r);
     if (withoutEps != null && !_eq(withoutEps, r)) return _star(withoutEps);
@@ -2143,7 +2143,7 @@ _RE _star(_RE r) {
   return _Star(r);
 }
 
-/// Remove ε arms from a union; returns null if the whole union collapses.
+/// Remove ~ arms from a union; returns null if the whole union collapses.
 _RE? _removeEpsFromUnion(_RE r) {
   if (r is _Eps) return null;
   if (r is _Union) {
@@ -2717,7 +2717,7 @@ class _FaToRegexDialogState extends State<_FaToRegexDialog> {
                       'Uses the state-elimination (GNFA) algorithm to derive '
                       'an equivalent regular expression from the current automaton. '
                       'The output uses the same syntax as the Regex Panel '
-                      '(* = Kleene star,  + = union,  ~ = ε).',
+                      '(* = Kleene star,  + = union,  ~ = ~).',
                       style: GoogleFonts.courierPrime(
                         fontSize: 12,
                         color: theme.textMid,

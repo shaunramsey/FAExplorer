@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  study_mode_screen.dart
 //
 //  Interactive practice mode — generates unlimited regex↔DFA challenges
@@ -274,7 +274,7 @@ const List<_DescTemplate> _kDescTemplates = [
   _dSecondIsSymbol,
   // Accepts strings of length at most 3
   _dLengthAtMost3,
-  // Accepts strings that are a palindrome of length ≤ 2 (ε, a, b, aa, bb)
+  // Accepts strings that are a palindrome of length ≤ 2 (~, a, b, aa, bb)
   _dShortPalindrome,
 
   // ── Hard ──────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ const List<_DescTemplate> _kDescTemplates = [
 
 ({String description, String regex, _Difficulty difficulty})
     _dOnlyEmpty(String a, String b, Random rng) => (
-          description: 'Build an FA that accepts only the empty string (ε) '
+          description: 'Build an FA that accepts only the empty string (~) '
               'and rejects every non-empty string.',
           regex: '~',
           difficulty: _Difficulty.easy,
@@ -339,7 +339,7 @@ const List<_DescTemplate> _kDescTemplates = [
   final sym = rng.nextBool() ? a : b;
   return (
     description: 'Build an FA that accepts strings made up of zero or more '
-        'copies of "$sym" (including ε), and rejects any string that '
+        'copies of "$sym" (including ~), and rejects any string that '
         'contains "${ sym == a ? b : a }".',
     regex: '$sym*',
     difficulty: _Difficulty.easy,
@@ -482,7 +482,7 @@ const List<_DescTemplate> _kDescTemplates = [
     _dShortPalindrome(String a, String b, Random rng) => (
           description: 'Build an FA that accepts only strings of length ≤ 2 '
               'that read the same forwards and backwards: '
-              'ε, "$a", "$b", "$a$a", and "$b$b".',
+              '~, "$a", "$b", "$a$a", and "$b$b".',
           regex: '~+$a+$b+$a$a+$b$b',
           difficulty: _Difficulty.medium,
         );
@@ -2346,7 +2346,7 @@ class _RegexInputArea extends StatelessWidget {
                     const SizedBox(width: 10),
                     _OpHint(op: '+', label: 'or', theme: theme),
                     const SizedBox(width: 10),
-                    _OpHint(op: '~', label: 'ε', theme: theme),
+                    _OpHint(op: '~', label: '~', theme: theme),
                     const SizedBox(width: 10),
                     _OpHint(op: '()', label: 'group', theme: theme),
                   ],
@@ -2531,7 +2531,7 @@ class _FeedbackBanner extends StatelessWidget {
 
     // Wrong — show counterexample and either tries-remaining or the answer.
     final ce = result.counterexample ?? '';
-    final ceDisplay = ce.isEmpty ? 'ε (empty string)' : '"$ce"';
+    final ceDisplay = ce.isEmpty ? '~ (empty string)' : '"$ce"';
     final triesLeft = maxTries - wrongAttempts;
 
     if (answerRevealed) {

@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  Tutorial Screen
 //
 //  Displays a series of animated slides for tutorial (non-puzzle) levels.
@@ -747,7 +747,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     );
   }
 
-  // ── epsilonTransition: ε-transition (free jump) ────────────────────────────
+  // ── epsilonTransition: ~-transition (free jump) ────────────────────────────
   void _paintEpsilon(Canvas canvas, Size size, double cx, double cy) {
     final left = Offset(cx - 70, cy);
     final right = Offset(cx + 70, cy);
@@ -755,7 +755,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     _drawNode(canvas, left, 24, dimColor, bgColor, 'A');
     _drawNode(canvas, right, 24, accentColor, bgColor, 'B', doubleRing: true);
 
-    // Dashed arc for ε
+    // Dashed arc for ~
     final path = Path()
       ..moveTo(left.dx + 24, cy)
       ..cubicTo(cx, cy - 50, cx, cy - 50, right.dx - 24, cy);
@@ -769,7 +769,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     final dashOffset = progress * 20;
     _drawDashedPath(canvas, path, dashPaint, dashLen: 8, gapLen: 5, offset: dashOffset);
 
-    _drawLabel(canvas, Offset(cx, cy - 42), 'ε  (free jump)', color: accentColor);
+    _drawLabel(canvas, Offset(cx, cy - 42), '~  (free jump)', color: accentColor);
 
     _drawLabel(
       canvas,
@@ -988,8 +988,8 @@ class _TutorialIllustrationPainter extends CustomPainter {
   // ── addSuperStates: super-start & super-accept fade in around a DFA ───────
   //
   //  Illustrates step 1 of DFA→regex state elimination: before removing any
-  //  state you first wrap the automaton with a fresh super-start S (ε into
-  //  the old start) and a fresh super-accept F (ε out of the old accept
+  //  state you first wrap the automaton with a fresh super-start S (~ into
+  //  the old start) and a fresh super-accept F (~ out of the old accept
   //  state). Only S and F keep their start/accept status from then on, which
   //  frees every other state — including the old accept state — to be
   //  eliminated in step 2.
@@ -1059,7 +1059,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
         _drawLabel(
           canvas,
           Offset((superStart.dx + q0.dx) / 2, superStart.dy - 16),
-          'ε',
+          '~',
           color: accentColor.withValues(alpha: startT),
         );
       }
@@ -1092,7 +1092,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
         _drawLabel(
           canvas,
           Offset((q1.dx + superAccept.dx) / 2, superAccept.dy - 16),
-          'ε',
+          '~',
           color: accentColor.withValues(alpha: acceptT),
         );
       }
@@ -1101,7 +1101,7 @@ class _TutorialIllustrationPainter extends CustomPainter {
     _drawLabel(
       canvas,
       Offset(cx, cy + 55),
-      'Add a super-start S and super-accept F, linked by ε-edges',
+      'Add a super-start S and super-accept F, linked by ~-edges',
       fontSize: 10,
       color: dimColor.withValues(alpha: 0.85),
     );

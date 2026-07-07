@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  game_data.dart
 //
 //  Non-visual game logic, in one place:
@@ -228,7 +228,7 @@ class TypeCheckDisplayMessage {
   /// requires a DFA."
   final String headline;
 
-  /// Each item is one bullet explaining a hard error (ε-transition, duplicate
+  /// Each item is one bullet explaining a hard error (~-transition, duplicate
   /// transition for a symbol, multiple start states).
   final List<String> errors;
 
