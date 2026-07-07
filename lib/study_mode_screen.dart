@@ -149,7 +149,6 @@ String _tStarA(String a, String b, Random rng)       => '$a*';
 String _tStarUnion(String a, String b, Random rng)   => '($a+$b)*';
 String _tABStar(String a, String b, Random rng)      => '$a$b*';
 String _tStarAB(String a, String b, Random rng)      => '$a*$b';
-String _tOptional(String a, String b, Random rng)    => rng.nextBool() ? '$a?' : '$b?';
 String _tExactThree(String a, String b, Random rng)  {
   final s = [a, b, a];
   if (rng.nextBool()) s[1] = a;
@@ -1655,12 +1654,12 @@ class _ChallengeBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = isCompactLayout(context);
     final hPad = responsiveHorizontalPadding(context);
-    final vGap = compact ? 10.0 : 16.0;
+    final vGap = compact ? 6.0 : 12.0;
 
     return SafeArea(
       top: false,
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: compact ? 4 : 8),
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: compact ? 2 : 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1672,11 +1671,13 @@ class _ChallengeBody extends StatelessWidget {
 
             SizedBox(height: vGap),
 
-            // Challenge card — scrollable on compact screens when content is tall.
+            // Challenge card — scrollable and height-capped so it can never
+            // crowd out the drawing/input area below, which is what the
+            // player actually needs room to see and work in.
             if (compact)
               ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.28,
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.18,
                 ),
                 child: SingleChildScrollView(
                   child: _ChallengeCard(
@@ -1725,7 +1726,7 @@ class _ChallengeBody extends StatelessWidget {
                       ),
           ),
 
-          const SizedBox(height: 14),
+          SizedBox(height: compact ? 8 : 14),
 
           // Feedback banner (shown after submission)
           if (gradeResult != null)
@@ -1739,7 +1740,7 @@ class _ChallengeBody extends StatelessWidget {
               theme: theme,
             ),
 
-          if (gradeResult != null) SizedBox(height: compact ? 8 : 12),
+          if (gradeResult != null) SizedBox(height: compact ? 6 : 12),
 
           // Action row
           _ActionRow(
@@ -1751,9 +1752,10 @@ class _ChallengeBody extends StatelessWidget {
             onSubmit: onSubmit,
             onSkip: onSkip,
             theme: theme,
+            compact: compact,
           ),
 
-          SizedBox(height: compact ? 8 : 16),
+          SizedBox(height: compact ? 4 : 12),
         ],
       ),
     ),
@@ -1840,6 +1842,7 @@ class _ChallengeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompactLayout(context);
     final accentColor = mode == _PracticeMode.regexToDfa
         ? theme.accent
         : mode == _PracticeMode.describeToFa
@@ -1849,18 +1852,22 @@ class _ChallengeCard extends StatelessWidget {
                 : theme.accentGreen;
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: compact
+          ? const EdgeInsets.symmetric(horizontal: 14, vertical: 10)
+          : const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: theme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(compact ? 12 : 16),
         border: Border.all(color: accentColor.withValues(alpha: 0.35), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: accentColor.withValues(alpha: 0.07),
-            blurRadius: 24,
-            spreadRadius: 4,
-          ),
-        ],
+        boxShadow: compact
+            ? null
+            : [
+                BoxShadow(
+                  color: accentColor.withValues(alpha: 0.07),
+                  blurRadius: 24,
+                  spreadRadius: 4,
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1885,29 +1892,32 @@ class _ChallengeCard extends StatelessWidget {
                 'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
                 style: GoogleFonts.courierPrime(
                   color: theme.textDim,
-                  fontSize: 12,
+                  fontSize: compact ? 11 : 12,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 16),
+          SizedBox(height: compact ? 8 : 16),
 
           // The regex (shown large and prominent)
           if (mode == _PracticeMode.regexToDfa) ...[
-            Text(
-              'REGULAR EXPRESSION',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'REGULAR EXPRESSION',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: theme.accent.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
@@ -1917,7 +1927,7 @@ class _ChallengeCard extends StatelessWidget {
                 challenge.regex,
                 style: GoogleFonts.courierPrime(
                   color: theme.accent,
-                  fontSize: 26,
+                  fontSize: compact ? 18 : 26,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                 ),
@@ -1925,18 +1935,21 @@ class _ChallengeCard extends StatelessWidget {
             ),
           ] else if (mode == _PracticeMode.describeToFa) ...[
             // DESCRIBE → FA: show the plain-language description
-            Text(
-              'LANGUAGE DESCRIPTION',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'LANGUAGE DESCRIPTION',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFFB47FFF).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
@@ -1947,24 +1960,29 @@ class _ChallengeCard extends StatelessWidget {
                 challenge.description ?? '',
                 style: GoogleFonts.sourceCodePro(
                   color: const Color(0xFFD4AAFF),
-                  fontSize: 14,
-                  height: 1.55,
+                  fontSize: compact ? 12 : 14,
+                  height: compact ? 1.3 : 1.55,
                 ),
+                maxLines: compact ? 3 : null,
+                overflow: compact ? TextOverflow.ellipsis : TextOverflow.clip,
               ),
             ),
           ] else if (mode == _PracticeMode.pdaToDraw) ...[
-            Text(
-              'CONTEXT-FREE LANGUAGE',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'CONTEXT-FREE LANGUAGE',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFF26C6DA).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
@@ -1975,12 +1993,14 @@ class _ChallengeCard extends StatelessWidget {
                 challenge.description ?? '',
                 style: GoogleFonts.sourceCodePro(
                   color: const Color(0xFF80DEEA),
-                  fontSize: 14,
-                  height: 1.55,
+                  fontSize: compact ? 12 : 14,
+                  height: compact ? 1.3 : 1.55,
                 ),
+                maxLines: compact ? 3 : null,
+                overflow: compact ? TextOverflow.ellipsis : TextOverflow.clip,
               ),
             ),
-            if (challenge.hint != null) ...[
+            if (challenge.hint != null && !compact) ...[
               const SizedBox(height: 10),
               Text(
                 challenge.hint!,
@@ -1993,18 +2013,21 @@ class _ChallengeCard extends StatelessWidget {
             ],
           ] else ...[
             // DFA→REGEX: no description shown — alphabet is the only hint
-            Text(
-              'ALPHABET',
-              style: GoogleFonts.orbitron(
-                color: theme.textDim,
-                fontSize: 8,
-                letterSpacing: 2,
+            if (!compact) ...[
+              Text(
+                'ALPHABET',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: compact
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: theme.accentGreen.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
@@ -2015,7 +2038,7 @@ class _ChallengeCard extends StatelessWidget {
                 'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
                 style: GoogleFonts.courierPrime(
                   color: theme.accentGreen,
-                  fontSize: 20,
+                  fontSize: compact ? 15 : 20,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                 ),
@@ -2023,37 +2046,40 @@ class _ChallengeCard extends StatelessWidget {
             ),
           ],
 
-          const SizedBox(height: 14),
-
-          // Task instruction
-          Row(
-            children: [
-              Icon(
-                mode == _PracticeMode.dfaToRegex
-                    ? Icons.keyboard_outlined
-                    : Icons.edit_outlined,
-                color: theme.textDim,
-                size: 14,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  mode == _PracticeMode.regexToDfa
-                      ? 'Draw a DFA on the canvas below whose language equals this regex.'
-                      : mode == _PracticeMode.describeToFa
-                          ? 'Draw a DFA on the canvas below whose language matches the description above.'
-                          : mode == _PracticeMode.pdaToDraw
-                              ? 'Draw a PDA on the canvas below that accepts exactly this language.'
-                              : 'Type a regular expression below that describes exactly this language.',
-                  style: GoogleFonts.sourceCodePro(
-                    color: theme.textDim,
-                    fontSize: 11,
-                    height: 1.5,
+          // Task instruction — on compact screens this is capped to one
+          // line so it can never push the card past its height budget;
+          // the full multi-line version only shows where there's room.
+          if (!compact) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Icon(
+                  mode == _PracticeMode.dfaToRegex
+                      ? Icons.keyboard_outlined
+                      : Icons.edit_outlined,
+                  color: theme.textDim,
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    mode == _PracticeMode.regexToDfa
+                        ? 'Draw a DFA on the canvas below whose language equals this regex.'
+                        : mode == _PracticeMode.describeToFa
+                            ? 'Draw a DFA on the canvas below whose language matches the description above.'
+                            : mode == _PracticeMode.pdaToDraw
+                                ? 'Draw a PDA on the canvas below that accepts exactly this language.'
+                                : 'Type a regular expression below that describes exactly this language.',
+                    style: GoogleFonts.sourceCodePro(
+                      color: theme.textDim,
+                      fontSize: 11,
+                      height: 1.5,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -2627,6 +2653,7 @@ class _ActionRow extends StatelessWidget {
   final VoidCallback onSubmit;
   final VoidCallback onSkip;
   final AppThemeNotifier theme;
+  final bool compact;
 
   const _ActionRow({
     required this.submitted,
@@ -2637,10 +2664,13 @@ class _ActionRow extends StatelessWidget {
     required this.onSubmit,
     required this.onSkip,
     required this.theme,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final gap = compact ? 8.0 : 12.0;
+
     // Parse error → "Try Again" + Skip
     if (submitted && gradeResult?.error != null) {
       return Row(
@@ -2650,15 +2680,17 @@ class _ActionRow extends StatelessWidget {
               label: 'TRY AGAIN',
               icon: Icons.refresh_rounded,
               color: theme.accent,
+              compact: compact,
               onTap: onSubmit,
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: gap),
           _Btn(
             label: 'SKIP',
             icon: Icons.skip_next_rounded,
             color: theme.textDim,
             small: true,
+            compact: compact,
             onTap: onSkip,
           ),
         ],
@@ -2671,6 +2703,7 @@ class _ActionRow extends StatelessWidget {
         label: 'NEXT CHALLENGE',
         icon: Icons.arrow_forward_rounded,
         color: const Color(0xFF4CAF50),
+        compact: compact,
         onTap: onSubmit, // onSubmit is wired to _nextChallenge at this point
       );
     }
@@ -2681,6 +2714,7 @@ class _ActionRow extends StatelessWidget {
         label: 'NEXT CHALLENGE',
         icon: Icons.arrow_forward_rounded,
         color: const Color(0xFFFFB300),
+        compact: compact,
         onTap: onSubmit,
       );
     }
@@ -2695,15 +2729,17 @@ class _ActionRow extends StatelessWidget {
               label: 'TRY AGAIN  ($triesLeft left)',
               icon: Icons.refresh_rounded,
               color: theme.error,
+              compact: compact,
               onTap: onSubmit,
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: gap),
           _Btn(
             label: 'SKIP',
             icon: Icons.skip_next_rounded,
             color: theme.textDim,
             small: true,
+            compact: compact,
             onTap: onSkip,
           ),
         ],
@@ -2718,15 +2754,17 @@ class _ActionRow extends StatelessWidget {
             label: 'CHECK',
             icon: Icons.check_rounded,
             color: theme.accent,
+            compact: compact,
             onTap: onSubmit,
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         _Btn(
           label: 'SKIP',
           icon: Icons.skip_next_rounded,
           color: theme.textDim,
           small: true,
+          compact: compact,
           onTap: onSkip,
         ),
       ],
@@ -2740,6 +2778,7 @@ class _Btn extends StatefulWidget {
   final Color color;
   final VoidCallback onTap;
   final bool small;
+  final bool compact;
 
   const _Btn({
     required this.label,
@@ -2747,6 +2786,7 @@ class _Btn extends StatefulWidget {
     required this.color,
     required this.onTap,
     this.small = false,
+    this.compact = false,
   });
 
   @override
@@ -2768,7 +2808,7 @@ class _BtnState extends State<_Btn> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
         padding: EdgeInsets.symmetric(
-          vertical: widget.small ? 10 : 14,
+          vertical: widget.small ? (widget.compact ? 7 : 10) : (widget.compact ? 9 : 14),
           horizontal: widget.small ? 16 : 20,
         ),
         decoration: BoxDecoration(
