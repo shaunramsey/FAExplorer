@@ -495,7 +495,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
     try {
       // Compile the player's regex to an NFA.
-      final compiled = regexToNfa(pattern);
+      final compiled = regexToDfa(pattern);
       if (compiled.isError) {
         setState(() {
           _checking = false;

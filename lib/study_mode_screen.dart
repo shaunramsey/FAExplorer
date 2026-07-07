@@ -922,7 +922,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     }
 
     // Build player NFA from their typed regex.
-    final playerResult = regexToNfa(raw);
+    final playerResult = regexToDfa(raw);
     if (playerResult.isError) {
       return _GradeResult.parseError('Parse error: ${playerResult.error}');
     }
