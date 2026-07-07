@@ -1117,6 +1117,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                           }
                         },
                         onDoubleTap: () {
+                          // In line mode, double-tap is repurposed: instead
+                          // of toggling accept state, it drops the start
+                          // arrow on whichever node was double-clicked.
+                          if (_lineMode) {
+                            setState(() => _startArrow = StartArrowData(nodeId: node.id));
+                            _scheduleSave();
+                            return;
+                          }
+
                           if (!node.canToggleNormalAccept) return;
                           setState(() => node.isAccept = !node.isAccept);
                           _scheduleSave();

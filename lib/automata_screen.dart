@@ -1182,6 +1182,19 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
                   },
 
                   onDoubleTap: () {
+                    // In line mode, double-tap is repurposed: instead of
+                    // toggling accept state, it drops the start arrow on
+                    // whichever node was double-clicked. This lets you set
+                    // the start state without leaving line mode to hunt for
+                    // the toolbar's "Set start state" button.
+                    if (_lineMode) {
+                      setState(() {
+                        _startArrow = StartArrowData(nodeId: node.id);
+                      });
+                      _refreshSimulation();
+                      return;
+                    }
+
                     if (!node.canToggleNormalAccept) return;
                     setState(() {
                       node.isAccept = !node.isAccept;

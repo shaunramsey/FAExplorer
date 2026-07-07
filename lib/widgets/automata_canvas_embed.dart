@@ -461,6 +461,16 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
                 }
               },
               onNodeDoubleTap: (id) {
+                // In line mode, double-tap is repurposed: instead of
+                // toggling accept state, it drops the start arrow on
+                // whichever node was double-clicked.
+                if (_lineMode) {
+                  if (_nodes[id] == null) return;
+                  setState(() => _startArrow = StartArrowData(nodeId: id));
+                  _notify();
+                  return;
+                }
+
                 final node = _nodes[id];
                 if (node == null || !node.canToggleNormalAccept) return;
                 setState(() => node.isAccept = !node.isAccept);
