@@ -322,7 +322,9 @@ class _StackCell extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 1),
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
       decoration: BoxDecoration(
-        color: isTop ? const Color(0xFF0A1929) : const Color(0xFF080D14),
+        color: isTop
+            ? Color.alphaBlend(theme.accent.withValues(alpha: 0.14), theme.bg)
+            : theme.bg,
         borderRadius: BorderRadius.vertical(
           top: isTop ? const Radius.circular(6) : Radius.zero,
           bottom: isBottom ? const Radius.circular(6) : Radius.zero,
@@ -634,7 +636,7 @@ class _TmConfigCard extends StatelessWidget {
     final bgColor = isAccepted
         ? theme.accentGreen.withValues(alpha: 0.08)
         : isRejected
-            ? const Color(0xFF1A0005)
+            ? const Color(0xFFFF1744).withValues(alpha: 0.08)
             : theme.bg;
 
     final stateTextColor = isAccepted
@@ -1787,7 +1789,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                 vertical: 7,
                               ),
                               filled: true,
-                              fillColor: const Color(0xFF080D14),
+                              fillColor: theme.bg,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                                 borderSide: BorderSide(color: theme.borderMid),
@@ -1981,7 +1983,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                               vertical: 7,
                             ),
                             filled: true,
-                            fillColor: const Color(0xFF080D14),
+                            fillColor: theme.bg,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(6),
                               borderSide: BorderSide(color: theme.borderMid),

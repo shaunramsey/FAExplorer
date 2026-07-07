@@ -2709,7 +2709,7 @@ class _FaToRegexDialogState extends State<_FaToRegexDialog> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF080D14),
+                      color: theme.bg,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: theme.borderMid),
                     ),
@@ -2828,25 +2828,28 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
+    const errorColor = Color(0xFFFF1744);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A0005),
+        // Light red tint over the current theme's background, rather than a
+        // fixed near-black — keeps this legible in light themes too.
+        color: Color.alphaBlend(errorColor.withValues(alpha: 0.12), theme.bg),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFF1744), width: 1.5),
+        border: Border.all(color: errorColor, width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_outlined,
-              color: Color(0xFFFF1744), size: 22),
+          const Icon(Icons.warning_amber_outlined, color: errorColor, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
               style: GoogleFonts.courierPrime(
                 fontSize: 13,
-                color: const Color(0xFFFF6666),
+                color: theme.textLight,
               ),
             ),
           ),

@@ -1090,7 +1090,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
     switch (r.status) {
       case EquivalenceStatus.equivalent:
         return _Banner(
-          color: const Color(0xFF051A10),
           borderColor: const Color(0xFF1FD99A),
           icon: Icons.check_circle_outline,
           iconColor: const Color(0xFF1FD99A),
@@ -1104,7 +1103,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
         final other = r.acceptedByMachine == 1 ? 'B' : 'A';
         final accepted = r.acceptedByMachine == 1 ? 'A' : 'B';
         return _Banner(
-          color: const Color(0xFF1A0D00),
           borderColor: const Color(0xFFFF6D00),
           icon: Icons.highlight_off,
           iconColor: const Color(0xFFFF9E40),
@@ -1115,7 +1113,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.unknownCapReached:
         return _Banner(
-          color: const Color(0xFF051A10),
           borderColor: const Color(0xFF1FD99A),
           icon: Icons.check,
           iconColor: const Color(0xFF1FD99A),
@@ -1127,7 +1124,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.noStartState:
         return _Banner(
-          color: const Color(0xFF1A0005),
           borderColor: const Color(0xFFFF1744),
           icon: Icons.warning_amber_outlined,
           iconColor: const Color(0xFFFF1744),
@@ -1185,7 +1181,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF080D14),
+                        color: theme.bg,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: theme.borderMid),
                       ),
@@ -1263,7 +1259,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Banner extends StatelessWidget {
-  final Color color;
   final Color borderColor;
   final IconData icon;
   final Color iconColor;
@@ -1271,7 +1266,6 @@ class _Banner extends StatelessWidget {
   final String body;
 
   const _Banner({
-    required this.color,
     required this.borderColor,
     required this.icon,
     required this.iconColor,
@@ -1281,10 +1275,14 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color,
+        // A light tint of the semantic color over the current theme's
+        // background, rather than a fixed near-black — so body text (which
+        // uses theme.textMid below) stays readable in light themes too.
+        color: Color.alphaBlend(borderColor.withValues(alpha: 0.12), theme.bg),
         border: Border.all(color: borderColor, width: 1.5),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -1310,7 +1308,7 @@ class _Banner extends StatelessWidget {
                   body,
                   style: GoogleFonts.courierPrime(
                     fontSize: 13,
-                    color: context.watch<AppThemeNotifier>().textMid,
+                    color: theme.textMid,
                   ),
                 ),
               ],
