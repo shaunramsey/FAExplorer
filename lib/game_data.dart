@@ -138,6 +138,15 @@ class GameProgressStore {
       isCompleted(levelId, LevelDifficulty.hard) ||
       isCompleted(levelId, LevelDifficulty.easy);
 
+  /// Returns the union of completed level IDs across both difficulties.
+  ///
+  /// Use this (rather than [loadCompletedLevels], which is scoped to a
+  /// single difficulty and defaults to Hard) for any player-facing count —
+  /// e.g. "N levels completed" on the mode-select screen — so Easy-only
+  /// progress isn't invisible. This mirrors the union [isUnlocked] already
+  /// uses for unlock-rule evaluation.
+  Set<String> loadCompletedLevelsAnyDifficulty() => _completedOnAnyDifficulty();
+
   bool isUnlocked(GameLevel level) =>
       level.unlockRule.isSatisfied(_completedOnAnyDifficulty());
 

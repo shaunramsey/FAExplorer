@@ -3165,14 +3165,74 @@ final Map<String, GameLevel> kLevelById = {
 //  4. NORMAL CAP — a regular (non-tutorial, non-boss) layer may contain
 //     AT MOST 4 levels.
 //
-//  "Layer" is determined by the same topological-sort logic used by
-//  [_computeLayersFromDeps] in level_select_screen.dart.
+//  "Layer" is determined by [computeLevelLayers] below — the single,
+//  shared topological-sort implementation. level_select_screen.dart calls
+//  this same function for its on-screen layout, so the startup validator
+//  and the rendered map can never disagree about what a "layer" is.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Assigns each level a layer index via a topological sort (Kahn's
+/// algorithm) over the unlock-dependency graph: a level's layer is the
+/// longest path (in steps of 2) from any root (always-unlocked) level.
+/// Levels involved in an unlock cycle — which should never happen in a
+/// well-formed level list — are pushed past the max assigned layer rather
+/// than left unassigned, so a malformed graph still produces a usable
+/// (if flagged-elsewhere) layout instead of crashing.
+///
+/// Shared by [LayerConstraintValidator] (startup validation) and
+/// level_select_screen.dart (actual rendered layout) so the two can never
+/// silently diverge.
+Map<String, int> computeLevelLayers(List<GameLevel> levels) {
+  List<String> depsOf(UnlockRule rule) {
+    if (rule is AlwaysUnlocked) return [];
+    if (rule is RequireLevel) return [rule.levelId];
+    if (rule is RequireAll) return rule.levelIds;
+    if (rule is RequireAny) return rule.levelIds;
+    if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
+    return [];
+  }
+
+  final Map<String, List<String>> adj = {for (final l in levels) l.id: []};
+  final Map<String, int> indeg = {for (final l in levels) l.id: 0};
+
+  for (final l in levels) {
+    for (final d in depsOf(l.unlockRule)) {
+      if (!adj.containsKey(d)) continue;
+      adj[d] = [...adj[d]!, l.id];
+      indeg[l.id] = indeg[l.id]! + 1;
+    }
+  }
+
+  final List<String> q = [];
+  final Map<String, int> layer = {for (final l in levels) l.id: 0};
+  for (final id in indeg.keys) {
+    if (indeg[id] == 0) q.add(id);
+  }
+
+  while (q.isNotEmpty) {
+    final cur = q.removeAt(0);
+    for (final next in adj[cur]!) {
+      final candidate = layer[cur]! + 2;
+      if (candidate > layer[next]!) layer[next] = candidate;
+      indeg[next] = indeg[next]! - 1;
+      if (indeg[next] == 0) q.add(next);
+    }
+  }
+
+  int maxAssigned = layer.values.fold(0, (a, b) => a > b ? a : b);
+  for (final id in indeg.keys) {
+    if (indeg[id]! > 0) {
+      maxAssigned += 1;
+      layer[id] = maxAssigned;
+    }
+  }
+  return layer;
+}
 
 abstract final class LayerConstraintValidator {
   /// Returns a list of human-readable error strings.  Empty means all good.
   static List<String> validate(List<GameLevel> levels) {
-    final layerById = _computeLayers(levels);
+    final layerById = computeLevelLayers(levels);
     final Map<int, List<GameLevel>> byLayer = {};
     for (final l in levels) {
       byLayer.putIfAbsent(layerById[l.id]!, () => []).add(l);
@@ -3225,55 +3285,6 @@ abstract final class LayerConstraintValidator {
     }
 
     return errors;
-  }
-
-  // ── Internal: same topological-sort as level_select_screen.dart ─────────────
-
-  static Map<String, int> _computeLayers(List<GameLevel> levels) {
-    List<String> depsOf(UnlockRule rule) {
-      if (rule is AlwaysUnlocked) return [];
-      if (rule is RequireLevel) return [rule.levelId];
-      if (rule is RequireAll) return rule.levelIds;
-      if (rule is RequireAny) return rule.levelIds;
-      if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
-      return [];
-    }
-
-    final Map<String, List<String>> adj = {for (final l in levels) l.id: []};
-    final Map<String, int> indeg = {for (final l in levels) l.id: 0};
-
-    for (final l in levels) {
-      for (final d in depsOf(l.unlockRule)) {
-        if (!adj.containsKey(d)) continue;
-        adj[d] = [...adj[d]!, l.id];
-        indeg[l.id] = indeg[l.id]! + 1;
-      }
-    }
-
-    final List<String> q = [];
-    final Map<String, int> layer = {for (final l in levels) l.id: 0};
-    for (final id in indeg.keys) {
-      if (indeg[id] == 0) q.add(id);
-    }
-
-    while (q.isNotEmpty) {
-      final cur = q.removeAt(0);
-      for (final next in adj[cur]!) {
-        final candidate = layer[cur]! + 2;
-        if (candidate > layer[next]!) layer[next] = candidate;
-        indeg[next] = indeg[next]! - 1;
-        if (indeg[next] == 0) q.add(next);
-      }
-    }
-
-    int maxAssigned = layer.values.fold(0, (a, b) => a > b ? a : b);
-    for (final id in indeg.keys) {
-      if (indeg[id]! > 0) {
-        maxAssigned += 1;
-        layer[id] = maxAssigned;
-      }
-    }
-    return layer;
   }
 }
 

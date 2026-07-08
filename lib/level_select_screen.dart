@@ -104,59 +104,15 @@ class _LevelMapLayout {
   }
 }
 
-Map<String, int> _computeLayersFromDeps(List<GameLevel> levels) {
-  final Map<String, List<String>> adj = {for (var l in levels) l.id: []};
-  final Map<String, int> indeg = {for (var l in levels) l.id: 0};
-
-  List<String> depsOf(UnlockRule rule) {
-    if (rule is AlwaysUnlocked) return [];
-    if (rule is RequireLevel) return [rule.levelId];
-    if (rule is RequireAll) return rule.levelIds;
-    if (rule is RequireAny) return rule.levelIds;
-    if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
-    return [];
-  }
-
-  for (final l in levels) {
-    final deps = depsOf(l.unlockRule);
-    for (final d in deps) {
-      if (!adj.containsKey(d)) continue;
-      adj[d] = [...adj[d]!, l.id];
-      indeg[l.id] = indeg[l.id]! + 1;
-    }
-  }
-
-  final List<String> q = [];
-  final Map<String, int> layer = {for (var l in levels) l.id: 0};
-  for (final id in indeg.keys) {
-    if (indeg[id] == 0) q.add(id);
-  }
-
-  while (q.isNotEmpty) {
-    final cur = q.removeAt(0);
-    for (final next in adj[cur]!) {
-      layer[next] = max(layer[next]!, layer[cur]! + 2);
-      indeg[next] = indeg[next]! - 1;
-      if (indeg[next] == 0) q.add(next);
-    }
-  }
-
-  int maxAssigned = layer.values.fold(0, (a, b) => a > b ? a : b);
-  for (final id in indeg.keys) {
-    if (indeg[id]! > 0) {
-      maxAssigned += 1;
-      layer[id] = maxAssigned;
-    }
-  }
-  return layer;
-}
-
 Map<String, Offset> _computePositionsFromDeps(
   List<GameLevel> levels,
   double canvasH,
   _LevelMapLayout layout,
 ) {
-  final layerById = _computeLayersFromDeps(levels);
+  // Shared with LayerConstraintValidator in game_level.dart, so the layout
+  // rendered here and the startup validation can never disagree about what
+  // a "layer" is.
+  final layerById = computeLevelLayers(levels);
   List<String> extractLevelDependencies(GameLevel level) {
   List<String> extract(UnlockRule rule) {
     if (rule is AlwaysUnlocked) return [];
