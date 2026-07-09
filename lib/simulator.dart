@@ -1426,7 +1426,15 @@ class TmCompoundTransition {
 /// so they can use any format that function already understands (shorthand
 /// `1:aXR`, long `1:a,X,R`, tape-prefixed, ~, etc.).
 TmCompoundTransition parseTmCompoundLabel(String raw) {
-  final parts = raw.trim().split(',');
+  // Normalize the literal `\0` escape to the real blank glyph (∅) *before*
+  // any rune-count-based detection below. Without this, a label typed with
+  // `\0` (2 characters) has a different rune count than the visually
+  // identical label typed with `∅` (1 character) — which throws off the
+  // compact multi-tape triple-count check further down and makes `\0`
+  // silently NOT equivalent to `∅`, even though single-tape parseTmLabel
+  // already treats the two as the same symbol.
+  final normalized = raw.replaceAll('\\0', kBlank);
+  final parts = normalized.trim().split(',');
 
   // Scan for a `b1` / `b2` marker that has at least one part before it and
   // at least one part after it.  We require the primary raw to have at least
@@ -1473,8 +1481,8 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
   //
   // Only triggered when the string has no commas and no tape prefix (both of
   // which are handled by the bN path and parseTmLabel above).
-  final compactRunes = raw.trim().runes.toList();
-  if (compactRunes.length >= 6 && compactRunes.length % 3 == 0 && !raw.contains(':')) {
+  final compactRunes = normalized.trim().runes.toList();
+  if (compactRunes.length >= 6 && compactRunes.length % 3 == 0 && !normalized.contains(':')) {
     final tapeCount = compactRunes.length ~/ 3;
     bool allDirsValid = true;
     for (int i = 0; i < tapeCount; i++) {
@@ -1514,7 +1522,7 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
   }
 
   // No bN marker found → plain single-tape transition (fully backward-compatible).
-  return TmCompoundTransition(primary: parseTmLabel(raw));
+  return TmCompoundTransition(primary: parseTmLabel(normalized));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2610,9 +2618,16 @@ class TmSimulator {
         for (final altRaw in line.label.split('\n')) {
           final compound = parseTmCompoundLabel(altRaw);
           final t = compound.primary;
-          if (t.isEpsilon) return true;
+
+          // Only a genuinely single-tape all-tilde label is an unconditional
+          // jump. Inside a multi-tape compound (e.g. compact shorthand
+          // `~~~∅1R`), an all-tilde triple just marks ITS tape as sitting
+          // out — short-circuiting here would skip checking the other
+          // tape(s)' read requirements entirely.
+          if (t.isEpsilon && !compound.isMultiTape) return true;
+
           if (t.tapeIndex < 1 || t.tapeIndex > effectiveConfig.tapes.length) continue;
-          if (!t.isWildcard) {
+          if (!t.isWildcard && !t.isEpsilon) {
             final headSym = effectiveConfig.tapes[t.tapeIndex - 1]
                 .read(effectiveConfig.headPositions[t.tapeIndex - 1]);
             final cellSym = headSym.isEmpty ? kBlank : headSym;
@@ -2623,12 +2638,12 @@ class TmSimulator {
           // For b2 (parallelRead): the secondary tape must also match.
           if (compound.isMultiTape &&
               compound.behavior == TmMultiBehavior.parallelRead) {
-            // N-tape path: check all non-wildcard reads.
+            // N-tape path: check all non-wildcard, non-epsilon reads.
             if (compound.transitions != null) {
               bool allMatch = true;
               for (int i = 1; i < compound.transitions!.length; i++) {
                 final s = compound.transitions![i];
-                if (s.isWildcard || s.tapeIndex < 1 || s.tapeIndex > effectiveConfig.tapes.length) continue;
+                if (s.isWildcard || s.isEpsilon || s.tapeIndex < 1 || s.tapeIndex > effectiveConfig.tapes.length) continue;
                 final sHead = effectiveConfig.headPositions[s.tapeIndex - 1];
                 final sSym  = effectiveConfig.tapes[s.tapeIndex - 1].read(sHead);
                 final sCell = sSym.isEmpty ? kBlank : sSym;
@@ -2642,7 +2657,7 @@ class TmSimulator {
                   s.tapeIndex > effectiveConfig.tapes.length) {
                 continue;
               }
-              if (!s.isWildcard) {
+              if (!s.isWildcard && !s.isEpsilon) {
                 final sHead = effectiveConfig.headPositions[s.tapeIndex - 1];
                 final sSym  = effectiveConfig.tapes[s.tapeIndex - 1].read(sHead);
                 final sCell = sSym.isEmpty ? kBlank : sSym;
@@ -2768,14 +2783,19 @@ class TmSimulator {
           final t = compound.primary;
 
           final TmConfig next;
-          if (t.isEpsilon) {
-            // tilda (~) transitions: leave every tape and head as-is.
-            next = effectiveConfig.retarget(nodeId: line.nodeBId, usedLineId: line.id);
-          } else if (compound.isMultiTape) {
-            // ── Multi-tape conjunctive transition (b1 / b2) ──────────────
+          if (compound.isMultiTape) {
+            // ── Multi-tape conjunctive transition (b1 / b2 / compact shorthand) ──
+            // Checked before the plain-epsilon branch below: inside a
+            // multi-tape label, an all-tilde triple (e.g. the `~~~` in
+            // `~~~∅1R`) means "this tape sits out," not "the whole line is
+            // an unconditional jump." _applyCompoundTm / _applyNTapeTransition
+            // already know how to skip just that one tape's read/write/move.
             final result = _applyCompoundTm(compound, effectiveConfig, line.nodeBId, line.id);
             if (result == null) continue;
             next = result;
+          } else if (t.isEpsilon) {
+            // tilda (~) transitions: leave every tape and head as-is.
+            next = effectiveConfig.retarget(nodeId: line.nodeBId, usedLineId: line.id);
           } else {
             if (t.tapeIndex < 1 || t.tapeIndex > effectiveConfig.tapes.length) continue;
             final tapeIdx = t.tapeIndex - 1;
@@ -2886,13 +2906,13 @@ class TmSimulator {
     final pHead = config.headPositions[pIdx];
     final pSym  = pTape.read(pHead);
     final pCell = pSym.isEmpty ? kBlank : pSym;
-    if (!t.isWildcard) {
+    if (!t.isWildcard && !t.isEpsilon) {
       final pRead = t.read.isEmpty ? kBlank : t.read;
       if (pRead != pCell) return null;
     }
 
     // ── For b2 (parallelRead): also check secondary read ───────────────
-    if (compound.behavior == TmMultiBehavior.parallelRead && !s.isWildcard) {
+    if (compound.behavior == TmMultiBehavior.parallelRead && !s.isWildcard && !s.isEpsilon) {
       final sIdx  = s.tapeIndex - 1;
       final sTape = config.tapes[sIdx];
       final sHead = config.headPositions[sIdx];
@@ -2902,50 +2922,59 @@ class TmSimulator {
       if (sRead != sCell) return null;
     }
 
-    // ── Apply primary write + move ──────────────────────────────────────
-    final pWrite  = t.write.isEmpty ? kBlank : t.write;
-    var newPTape  = pTape.write(pHead, pWrite);
-    final pShift  = newPTape.headOffset - pTape.headOffset;
-    int newPHead  = pHead + pShift;
-    switch (t.direction) {
-      case TmDirection.right: newPHead += 1; break;
-      case TmDirection.left:  newPHead -= 1; break;
-      case TmDirection.stay:  break;
-    }
-    final pExt    = newPTape.extendToInclude(newPHead);
-    newPTape      = pExt.tape;
-    final adjPHead = newPHead  + pExt.shift;
-    final adjPRead = (pHead + pShift) + pExt.shift;
+    // ── Apply primary write + move (skip entirely if this side is an
+    //    epsilon/no-op tape — leave it untouched rather than force-writing
+    //    blank over whatever the cell already held) ───────────────────────
+    var next = config;
+    if (!t.isEpsilon) {
+      final pWrite  = t.write.isEmpty ? kBlank : t.write;
+      var newPTape  = pTape.write(pHead, pWrite);
+      final pShift  = newPTape.headOffset - pTape.headOffset;
+      int newPHead  = pHead + pShift;
+      switch (t.direction) {
+        case TmDirection.right: newPHead += 1; break;
+        case TmDirection.left:  newPHead -= 1; break;
+        case TmDirection.stay:  break;
+      }
+      final pExt    = newPTape.extendToInclude(newPHead);
+      newPTape      = pExt.tape;
+      final adjPHead = newPHead  + pExt.shift;
+      final adjPRead = (pHead + pShift) + pExt.shift;
 
-    // ── Apply secondary write + move ────────────────────────────────────
-    final sIdx    = s.tapeIndex - 1;
-    final sTapeOrig = config.tapes[sIdx];
-    final sHead   = config.headPositions[sIdx];
-    final sWrite  = s.write.isEmpty ? kBlank : s.write;
-    var newSTape  = sTapeOrig.write(sHead, sWrite);
-    final sShift  = newSTape.headOffset - sTapeOrig.headOffset;
-    int newSHead  = sHead + sShift;
-    switch (s.direction) {
-      case TmDirection.right: newSHead += 1; break;
-      case TmDirection.left:  newSHead -= 1; break;
-      case TmDirection.stay:  break;
+      next = next.withTape(
+        t.tapeIndex, newPTape,
+        headPos: adjPHead, readHeadPos: adjPRead,
+        usedLineId: lineId, nodeId: targetNodeId,
+      );
+    } else {
+      next = next.retarget(nodeId: targetNodeId, usedLineId: lineId);
     }
-    final sExt    = newSTape.extendToInclude(newSHead);
-    newSTape      = sExt.tape;
-    final adjSHead = newSHead  + sExt.shift;
-    final adjSRead = (sHead + sShift) + sExt.shift;
 
-    // ── Build the new config ────────────────────────────────────────────
-    var next = config.withTape(
-      t.tapeIndex, newPTape,
-      headPos: adjPHead, readHeadPos: adjPRead,
-      usedLineId: lineId, nodeId: targetNodeId,
-    );
-    next = next.withTape(
-      s.tapeIndex, newSTape,
-      headPos: adjSHead, readHeadPos: adjSRead,
-      usedLineId: lineId,
-    );
+    // ── Apply secondary write + move (same epsilon skip as above) ────────
+    if (!s.isEpsilon) {
+      final sIdx    = s.tapeIndex - 1;
+      final sTapeOrig = config.tapes[sIdx];
+      final sHead   = config.headPositions[sIdx];
+      final sWrite  = s.write.isEmpty ? kBlank : s.write;
+      var newSTape  = sTapeOrig.write(sHead, sWrite);
+      final sShift  = newSTape.headOffset - sTapeOrig.headOffset;
+      int newSHead  = sHead + sShift;
+      switch (s.direction) {
+        case TmDirection.right: newSHead += 1; break;
+        case TmDirection.left:  newSHead -= 1; break;
+        case TmDirection.stay:  break;
+      }
+      final sExt    = newSTape.extendToInclude(newSHead);
+      newSTape      = sExt.tape;
+      final adjSHead = newSHead  + sExt.shift;
+      final adjSRead = (sHead + sShift) + sExt.shift;
+
+      next = next.withTape(
+        s.tapeIndex, newSTape,
+        headPos: adjSHead, readHeadPos: adjSRead,
+        usedLineId: lineId,
+      );
+    }
     return next;
   }
 
