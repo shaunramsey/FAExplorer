@@ -1,4 +1,4 @@
-// Builds canonical reference PDAs for study-mode PDA challenges.
+﻿// Builds canonical reference PDAs for study-mode PDA challenges.
 //
 // Each challenge carries a [PdaSolutionSpec] describing its language family.
 // [buildStudyPdaSolution] turns that spec into a [GraphState] for display after
@@ -228,7 +228,7 @@ GraphState _graph({
 
 // PDA label helpers  — format: read,pop|push
 //
-// The simulator normalises ~ and ε to "" (no-op) but treats ∅ as the
+// The simulator normalises ~ and ~ to "" (no-op) but treats ∅ as the
 // literal stack-bottom sentinel kStackBottom.  Using ∅ in the push
 // position would therefore *push* the sentinel instead of pushing nothing.
 // We must use ~ (not ∅) wherever we want "push nothing" or "pop nothing".
@@ -236,7 +236,7 @@ GraphState _graph({
 //   _push  : read a symbol, don't pop anything, push a marker
 //   _pop   : read a symbol, pop a marker,       push nothing  (~ = no push)
 //   _read  : read a symbol, don't touch stack at all           (~ = no pop/push)
-//   _eps   : epsilon move, don't touch stack at all            (~ = no pop/push)
+//   _eps   : tilda move, don't touch stack at all            (~ = no pop/push)
 //   _pushSym: read a symbol, push that same symbol (used for palindromes)
 String _push(String read, [String marker = _m]) => '$read,~|$marker';
 String _pop(String read, [String marker = _m]) => '$read,$marker|~';
@@ -253,7 +253,7 @@ String _pushSym(String sym) => '$sym,~|$sym';
 // only some of the b's/c's have been popped, or none at all — because
 // leftover markers on the stack are simply never inspected.
 //
-// _epsWhenEmpty() closes that hole: it's still a true epsilon move (fires
+// _epsWhenEmpty() closes that hole: it's still a true tilda move (fires
 // at any point, doesn't consume input) but additionally requires popping
 // the implicit stack-bottom sentinel ∅, which only succeeds once the stack
 // is genuinely empty of real markers. Use this (instead of _eps()) for any

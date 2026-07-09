@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  equivalence_dialog.dart
 //
 //  Everything related to validating a player/user's automaton against
@@ -60,7 +60,7 @@ class EquivalenceResult {
 
   /// Non-null iff [status] == [EquivalenceStatus.notEquivalent].
   /// The string accepted by exactly one of the two machines.
-  /// An empty string means ε is the witness (one machine accepts ε, the
+  /// An empty string means ~ is the witness (one machine accepts ~, the
   /// other does not).
   final String? witness;
 
@@ -117,7 +117,7 @@ EquivalenceResult checkEquivalence({
   nfa1.alphabet = alphabet;
   nfa2.alphabet = alphabet;
 
-  // Initial powerset states after ε-closure of each start node.
+  // Initial powerset states after ~-closure of each start node.
   final init1 = nfa1.epsilonClosure({startArrow1.nodeId});
   final init2 = nfa2.epsilonClosure({startArrow2.nodeId});
 
@@ -148,7 +148,7 @@ EquivalenceResult _bfs(
     (s1: init1, s2: init2, path: const []),
   ];
 
-  // Check starting pair immediately (handles ε-only acceptance).
+  // Check starting pair immediately (handles ~-only acceptance).
   final initCheck = _checkAcceptance(nfa1, nfa2, init1, init2, const []);
   if (initCheck != null) return initCheck;
 
@@ -480,7 +480,7 @@ class _NfaAdapter {
     return s;
   }
 
-  /// ε-transitions: label normalises to empty or '~'.
+  /// ~-transitions: label normalises to empty or '~'.
   bool _isEpsilon(String raw) {
     final n = _normalise(raw);
     return n.isEmpty || n == '~';
@@ -530,7 +530,7 @@ class _NfaAdapter {
     return false;
   }
 
-  /// ε-closure plus end-of-input null jumps (`?`, `\0`) of a set of NFA states.
+  /// ~-closure plus end-of-input null jumps (`?`, `\0`) of a set of NFA states.
   ///
   /// The BFS only calls this after the entire current witness prefix has been
   /// consumed, which is exactly when null jumps are allowed in the simulator.
@@ -553,7 +553,7 @@ class _NfaAdapter {
     return closure;
   }
 
-  /// States reachable from [states] by consuming [symbol] (before ε-closure).
+  /// States reachable from [states] by consuming [symbol] (before ~-closure).
   ///
   /// An empty result means the machine fell off — the BFS visits the empty
   /// powerset node, which correctly rejects any remaining input.
@@ -592,8 +592,8 @@ class _NfaAdapter {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Map<String, String> kTokenReplacements = {
-  'EPSILON': 'ε',
-  'EPS': 'ε',
+  'tilda': '~',
+  'EPS': '~',
   'LAMBDA': 'λ',
   'EMPTY': '∅',
   'EMPTYSET': '∅',
@@ -620,7 +620,7 @@ const Map<String, String> kTokenReplacements = {
 /// Which automaton type a puzzle requires.
 enum RequiredAutomatonType {
   /// Every state must have exactly one transition per alphabet symbol,
-  /// no epsilon (ε / ~) transitions, and exactly one start state.
+  /// no tilda (~ / ~) transitions, and exactly one start state.
   dfa,
 
   /// Any nondeterministic finite automaton is acceptable (includes DFAs,
@@ -701,14 +701,14 @@ class AutomatonTypeResult {
 class AutomatonTypeChecker {
   AutomatonTypeChecker._();
 
-  // ── Epsilon label detection ────────────────────────────────────────────────
+  // ── tilda label detection ────────────────────────────────────────────────
 
   // Labels are split on commas OR newlines.
   // The simulator stores the literal two-character sequence `\n` in DSL strings
   // (not a real newline), so we match both real newlines AND the escaped form.
   static final _labelSplitter = RegExp(r'[,\n]|\\n');
 
-  /// Returns true if [raw] encodes an epsilon (ε / ~ / empty) transition.
+  /// Returns true if [raw] encodes an tilda (~ / ~ / empty) transition.
   /// Mirrors the logic in AutomataSimulator._isEpsilonLabel.
   ///
   /// NOTE: `?` and `\0` are "null-jump" epsilons that fire only at end-of-input
@@ -716,7 +716,7 @@ class AutomatonTypeChecker {
   /// free-jump counts as an NFA feature.
   static bool _isEpsilonSymbol(String raw) {
     final s = raw.trim();
-    return s.isEmpty || s == '~' || s == 'ε' || s == '?' || s == r'\0';
+    return s.isEmpty || s == '~' || s == '~' || s == '?' || s == r'\0';
   }
 
   /// Splits a compound label (e.g. "a,b" or "a\nb") into individual symbols.
@@ -773,7 +773,7 @@ class AutomatonTypeChecker {
                 severity: ViolationSeverity.error,
                 message:
                     'Your automaton is deterministic (a DFA). This puzzle '
-                    'requires nondeterminism — add an ε-transition or give a '
+                    'requires nondeterminism — add an ~-transition or give a '
                     'state more than one transition for the same symbol.',
               ),
             ],
@@ -822,7 +822,7 @@ class AutomatonTypeChecker {
 
       for (final symbol in _splitLabel(line.label)) {
         if (_isEpsilonSymbol(symbol)) {
-          // ── 2. Epsilon transitions ───────────────────────────────────────
+          // ── 2. tilda transitions ───────────────────────────────────────
           epsilonTargets.putIfAbsent(from, () => []).add(to);
         } else {
           transitionMap
@@ -833,17 +833,17 @@ class AutomatonTypeChecker {
       }
     }
 
-    // Report epsilon transitions — one violation per source state.
+    // Report tilda transitions — one violation per source state.
     epsilonTargets.forEach((stateId, targets) {
       final uniqueTargets = targets.toSet();
       violations.add(AutomatonViolation(
         severity: ViolationSeverity.error,
         affectedStateId: stateId,
         message:
-            'State ${_stateNameById(stateId, nodes)} has an ε-transition '
-            '(epsilon / empty-string transition) to '
+            'State ${_stateNameById(stateId, nodes)} has an ~-transition '
+            '(tilda / empty-string transition) to '
             '${uniqueTargets.map((t) => _stateNameById(t, nodes)).join(', ')}. '
-            'DFAs do not allow ε-transitions — every transition must consume '
+            'DFAs do not allow ~-transitions — every transition must consume '
             'exactly one input symbol.',
       ));
     });
@@ -1090,7 +1090,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
     switch (r.status) {
       case EquivalenceStatus.equivalent:
         return _Banner(
-          color: const Color(0xFF051A10),
           borderColor: const Color(0xFF1FD99A),
           icon: Icons.check_circle_outline,
           iconColor: const Color(0xFF1FD99A),
@@ -1104,7 +1103,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
         final other = r.acceptedByMachine == 1 ? 'B' : 'A';
         final accepted = r.acceptedByMachine == 1 ? 'A' : 'B';
         return _Banner(
-          color: const Color(0xFF1A0D00),
           borderColor: const Color(0xFFFF6D00),
           icon: Icons.highlight_off,
           iconColor: const Color(0xFFFF9E40),
@@ -1115,7 +1113,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.unknownCapReached:
         return _Banner(
-          color: const Color(0xFF051A10),
           borderColor: const Color(0xFF1FD99A),
           icon: Icons.check,
           iconColor: const Color(0xFF1FD99A),
@@ -1127,7 +1124,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 
       case EquivalenceStatus.noStartState:
         return _Banner(
-          color: const Color(0xFF1A0005),
           borderColor: const Color(0xFFFF1744),
           icon: Icons.warning_amber_outlined,
           iconColor: const Color(0xFFFF1744),
@@ -1185,7 +1181,7 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF080D14),
+                        color: theme.bg,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: theme.borderMid),
                       ),
@@ -1263,7 +1259,6 @@ class _EquivalenceDialogState extends State<_EquivalenceDialog>
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Banner extends StatelessWidget {
-  final Color color;
   final Color borderColor;
   final IconData icon;
   final Color iconColor;
@@ -1271,7 +1266,6 @@ class _Banner extends StatelessWidget {
   final String body;
 
   const _Banner({
-    required this.color,
     required this.borderColor,
     required this.icon,
     required this.iconColor,
@@ -1281,10 +1275,14 @@ class _Banner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.watch<AppThemeNotifier>();
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color,
+        // A light tint of the semantic color over the current theme's
+        // background, rather than a fixed near-black — so body text (which
+        // uses theme.textMid below) stays readable in light themes too.
+        color: Color.alphaBlend(borderColor.withValues(alpha: 0.12), theme.bg),
         border: Border.all(color: borderColor, width: 1.5),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -1310,7 +1308,7 @@ class _Banner extends StatelessWidget {
                   body,
                   style: GoogleFonts.courierPrime(
                     fontSize: 13,
-                    color: context.watch<AppThemeNotifier>().textMid,
+                    color: theme.textMid,
                   ),
                 ),
               ],

@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  simulator.dart
 //
 //  Step-by-step simulation engines for DFA/NFA, PDA, and TM automata:
@@ -28,7 +28,7 @@ export 'regex_engine.dart';
 
 enum SimResult { accept, reject }
 
-/// Wildcard label — matches any single input token (but not epsilon).
+/// Wildcard label — matches any single input token (but not tilda).
 const String kWildcard = '.';
 
 /// Parses a negated-wildcard label of the form ".-X" or ".-XY" into the
@@ -171,7 +171,7 @@ class AutomataSimulator {
 
   Set<String> get activeLines {
     // idx mirrors activeNodes: step=-1 -> idx=0, which is the initial
-    // epsilon closure computed before any input is consumed. That closure
+    // tilda closure computed before any input is consumed. That closure
     // can include free ~ jumps, and their lines belong in usedLines[0] just
     // like their destination nodes belong in states[0] — so this must not
     // special-case step < 0 to empty, or those free-jump lines never
@@ -237,7 +237,7 @@ class AutomataSimulator {
   bool _isEpsilonLabel(String label, bool atEndOfInput, bool nullWasExplicitlyTyped) {
     final normalized = _normalizeSimToken(label);
     if (normalized.isEmpty || normalized == '~') return true;
-    // Both `?` and `\0` on a transition label mean "null jump" (epsilon at end-of-input).
+    // Both `?` and `\0` on a transition label mean "null jump" (tilda at end-of-input).
     if ((normalized == '?' || normalized == r'\0') && atEndOfInput && !nullWasExplicitlyTyped) {
       return true;
     }
@@ -439,7 +439,7 @@ class AutomataSimulator {
         final result = _runBlackBox(currentNode, current.tokens, current.inputPos);
         if (!result.accepted) {
           // If inner machine rejected, keep the original config so we can
-          // still explore epsilon/null transitions from the black-box node.
+          // still explore tilda/null transitions from the black-box node.
           effective = current;
         } else {
           effective = _SimConfig(
@@ -472,7 +472,7 @@ class AutomataSimulator {
 
           if (normalized.isEmpty || normalized == '~') isNormalEpsilon = true;
           // Both `?` and `\0` on a transition label act as null jumps
-          // (epsilon transitions that fire only when input is exhausted).
+          // (tilda transitions that fire only when input is exhausted).
           if ((normalized == '?' || normalized == r'\0') &&
               atEndOfInput &&
               (!nullWasExplicitlyTyped || currentNode.isBlackBox)) {
@@ -554,9 +554,9 @@ class AutomataSimulator {
         // cannot fire a normal consuming transition — but it CAN take outgoing
         // transitions (treated as unconditional hops) because the black box
         // itself did the consumption.  Follow every outgoing line from the
-        // black-box node as an epsilon hop so chaining works without requiring
+        // black-box node as an tilda hop so chaining works without requiring
         // ~ labels after the black box.  Also add the effective config itself
-        // so _epsilonClosure can pick up any null/epsilon transitions on the
+        // so _epsilonClosure can pick up any null/tilda transitions on the
         // black-box node.
         if (effective.inputPos >= effective.tokens.length) {
           if (node.isBlackBox) {
@@ -571,7 +571,7 @@ class AutomataSimulator {
               ));
               stepLines.add(line.id);
             }
-            // Also add the effective config itself so epsilon/null transitions
+            // Also add the effective config itself so tilda/null transitions
             // on the BB node are picked up by _epsilonClosure.
             nextConfigs.add(effective);
           }
@@ -591,7 +591,7 @@ class AutomataSimulator {
             // excluded set after the dash.
             final altTrimmed = alt.trim();
             if (altTrimmed == kWildcard) {
-              // Plain wildcard: matches exactly one token (not epsilon).
+              // Plain wildcard: matches exactly one token (not tilda).
               consumedAny = true;
               nextConfigs.add(_SimConfig(
                 nodeId: line.nodeBId,
@@ -683,8 +683,8 @@ class AutomataSimulator {
 //  PDA Transition label parsing
 //
 //  Standard notation:  read , pop | push
-//    read  — input symbol consumed, or ~ / ε for epsilon
-//    pop   — stack symbol popped, or ~ / ε for no pop
+//    read  — input symbol consumed, or ~ / ~ for tilda
+//    pop   — stack symbol popped, or ~ / ~ for no pop
 //    push  — stack symbol(s) pushed; space-separated, left-most ends on top
 //            or ~ for push nothing
 //
@@ -694,13 +694,13 @@ class AutomataSimulator {
 //
 //  Examples:
 //    a,x|y       read a, pop x, push y
-//    ~,~/~       epsilon, no stack change
+//    ~,~/~       tilda, no stack change
 //    b,x|~       read b, pop x, push nothing
 //    a,∅|A ∅    read a, pop bottom marker ∅, push A then ∅
 // ─────────────────────────────────────────────────────────────────────────────
 
 class PdaTransition {
-  /// Input symbol to consume.  Empty string = epsilon.
+  /// Input symbol to consume.  Empty string = tilda.
   final String read;
 
   /// Stack symbol to pop.  Empty string = don't pop.
@@ -794,7 +794,7 @@ List<String> _parsePushString(String raw) {
 
 String _normalize(String s) {
   final t = s.trim();
-  if (t == '~' || t == 'ε') return '';
+  if (t == '~' || t == '~') return '';
   return t;
 }
 
@@ -878,7 +878,7 @@ class PdaSimulator {
   /// growth loop is detected) — there is no padding past that point.
   int get maxStep => steps.isEmpty ? -1 : steps.length - 2;
 
-  /// Set when ε-transitions can grow the stack without bound (e.g. `~,~|A` in a cycle).
+  /// Set when ~-transitions can grow the stack without bound (e.g. `~,~|A` in a cycle).
   bool stackGrowthLoopDetected = false;
 
   Set<String> get activeNodes {
@@ -888,7 +888,7 @@ class PdaSimulator {
   }
 
   Set<String> get activeLines {
-    // idx mirrors activeNodes: step=-1 -> idx=0, the initial epsilon
+    // idx mirrors activeNodes: step=-1 -> idx=0, the initial tilda
     // closure computed before any input is consumed. Free ~ jumps taken in
     // that closure belong here just as their destination nodes belong in
     // steps[0].activeNodeIds — don't special-case step < 0 to empty.
@@ -938,7 +938,7 @@ class PdaSimulator {
 
   PdaSimResult finalResult() {
     if (steps.isEmpty) return PdaSimResult.reject;
-    // An unbounded ε-closure stack growth is not a genuine accept, even if
+    // An unbounded ~-closure stack growth is not a genuine accept, even if
     // the last recorded round happens to contain an accept state — the
     // machine never actually reached a settled halting configuration.
     // (Previously this fell out as a side effect of padding the steps list
@@ -969,7 +969,7 @@ class PdaSimulator {
 
   String _normalizeSym(String s) {
     final resolved = parseTokenText(s.trim());
-    if (resolved == '~' || resolved == 'ε') return '';
+    if (resolved == '~' || resolved == '~') return '';
     return resolved;
   }
 
@@ -1095,7 +1095,7 @@ class PdaSimulator {
     final queue = Queue<PdaConfig>.from(start);
 
     // Mirror the string simulator's "null jump" rule:
-    // treat input-read symbol `∅` as epsilon *only* when at end-of-input,
+    // treat input-read symbol `∅` as tilda *only* when at end-of-input,
     // and only if the input did not explicitly contain `∅`.
     final nullWasExplicitlyTyped = tokens.any((t) => _normalizeSym(t) == kStackBottom);
 
@@ -1250,7 +1250,7 @@ TmTransition parseTmLabel(String raw) {
     return TmTransition(read: kBlank, write: kBlank, direction: TmDirection.stay);
   }
 
-  // All-tilde label → unconditional epsilon jump (no read/write/move).
+  // All-tilde label → unconditional tilda jump (no read/write/move).
   if (s.isNotEmpty && s.runes.every((r) => r == '~'.codeUnitAt(0))) {
     return TmTransition(
       read: '', write: '', direction: TmDirection.stay, isEpsilon: true,
@@ -1278,7 +1278,7 @@ TmTransition parseTmLabel(String raw) {
   }
 
   // After stripping a tape prefix, an all-tilde remainder is still an
-  // unconditional epsilon jump (tape index is irrelevant in that case).
+  // unconditional tilda jump (tape index is irrelevant in that case).
   if (s.runes.every((r) => r == '~'.codeUnitAt(0))) {
     return TmTransition(
       read: '', write: '', direction: TmDirection.stay, isEpsilon: true,
@@ -1314,10 +1314,10 @@ TmTransition parseTmLabel(String raw) {
 }
 
 /// Normalize a tape symbol.
-/// `~`, `ε`, `∅`, or empty → blank (represented as empty string internally).
+/// `~`, `~`, `∅`, or empty → blank (represented as empty string internally).
 String _normSym(String s) {
   final t = parseTokenText(s.trim());
-  if (t == '~' || t == 'ε' || t == kBlank || t.isEmpty) return '';
+  if (t == '~' || t == '~' || t == kBlank || t.isEmpty) return '';
   return t;
 }
 
@@ -1424,7 +1424,7 @@ class TmCompoundTransition {
 ///
 /// The primary and secondary raw strings are each forwarded to [parseTmLabel],
 /// so they can use any format that function already understands (shorthand
-/// `1:aXR`, long `1:a,X,R`, tape-prefixed, ε, etc.).
+/// `1:aXR`, long `1:a,X,R`, tape-prefixed, ~, etc.).
 TmCompoundTransition parseTmCompoundLabel(String raw) {
   final parts = raw.trim().split(',');
 
@@ -1540,7 +1540,7 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
 //    2. After stripping whitespace it is exactly 3*N runes (N ≥ 1).
 //    3. The last rune of each triple is a valid direction (R/L/S/~).
 //
-//  If detection fails the alternative is treated as epsilon (no-op transition).
+//  If detection fails the alternative is treated as tilda (no-op transition).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// One per-tape operation parsed from a blackbox-direct label.
@@ -1979,7 +1979,7 @@ class TmConfig {
   }
 
   /// Returns a copy of this config with a new [nodeId] / [usedLineId] but the
-  /// same tapes and head positions (used for epsilon transitions and
+  /// same tapes and head positions (used for tilda transitions and
   /// black-box hops, which don't move any head).
   TmConfig retarget({required String nodeId, required String usedLineId}) {
     return TmConfig(
@@ -2075,7 +2075,7 @@ class TmSimulator {
   }
 
   Set<String> get activeLines {
-    // idx mirrors activeNodes: step=-1 -> idx=0, the initial epsilon
+    // idx mirrors activeNodes: step=-1 -> idx=0, the initial tilda
     // closure computed before any input is consumed. Free ~ jumps taken in
     // that closure belong here just as their destination nodes belong in
     // snap.activeNodeIds — don't special-case step < 0 to empty.
@@ -2582,12 +2582,12 @@ class TmSimulator {
         // _applyBlackBox ran the inner DSL and rewrote the tapes.  Outgoing
         // lines from a blackbox use BbDirectTransition labels to guard which
         // post-DSL tape state enables each hop.  Parse and check each
-        // alternative; a blank label (epsilon) fires unconditionally.
+        // alternative; a blank label (tilda) fires unconditionally.
         if (node.isBlackBox) {
           final label = line.label.trim();
-          if (label.isEmpty) return true; // unconditional epsilon hop
+          if (label.isEmpty) return true; // unconditional tilda hop
           for (final alt in splitBbDirectAlternatives(label)) {
-            if (alt.isEmpty || alt == '~') return true; // epsilon alt
+            if (alt.isEmpty || alt == '~') return true; // tilda alt
             final bb = parseBbDirectLabel(alt, effectiveConfig.tapes.length, node.blackBoxActiveTapes);
             if (bb == null) continue; // malformed label — not a fireable transition
             // Check non-wildcard reads.
@@ -2705,12 +2705,12 @@ class TmSimulator {
         // enables each hop AND apply per-tape writes/moves after the inner
         // machine finishes.
         //
-        // An empty label (or a lone `~`) is an unconditional epsilon hop so
+        // An empty label (or a lone `~`) is an unconditional tilda hop so
         // users can still route with unlabelled arrows.
         if (node.isBlackBox) {
           final label = line.label.trim();
           if (label.isEmpty || label == '~') {
-            // Unconditional epsilon hop — no read/write/move, just retarget.
+            // Unconditional tilda hop — no read/write/move, just retarget.
             final hopped = effectiveConfig.retarget(
               nodeId: line.nodeBId,
               usedLineId: line.id,
@@ -2724,7 +2724,7 @@ class TmSimulator {
             // Parse and evaluate each alternative independently (NTM branching).
             for (final alt in splitBbDirectAlternatives(label)) {
               if (alt.isEmpty || alt == '~') {
-                // Epsilon alternative — unconditional hop.
+                // tilda alternative — unconditional hop.
                 final hopped = effectiveConfig.retarget(
                   nodeId: line.nodeBId,
                   usedLineId: line.id,
@@ -2769,7 +2769,7 @@ class TmSimulator {
 
           final TmConfig next;
           if (t.isEpsilon) {
-            // Epsilon (~) transitions: leave every tape and head as-is.
+            // tilda (~) transitions: leave every tape and head as-is.
             next = effectiveConfig.retarget(nodeId: line.nodeBId, usedLineId: line.id);
           } else if (compound.isMultiTape) {
             // ── Multi-tape conjunctive transition (b1 / b2) ──────────────

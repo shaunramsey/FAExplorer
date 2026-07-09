@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  Game Puzzle Screen
 //
 //  Wraps the full AutomataScreen canvas but:
@@ -495,7 +495,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
     try {
       // Compile the player's regex to an NFA.
-      final compiled = regexToNfa(pattern);
+      final compiled = regexToDfa(pattern);
       if (compiled.isError) {
         setState(() {
           _checking = false;
@@ -544,7 +544,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           final by = result.acceptedByMachine;
           final yourSide   = by == 1 ? 'your regex' : 'the target DFA';
           final otherSide  = by == 1 ? 'the target DFA' : 'your regex';
-          final inputDesc  = witness.isEmpty ? 'ε (empty string)' : '"$witness"';
+          final inputDesc  = witness.isEmpty ? '~ (empty string)' : '"$witness"';
           _checkResult = '✗ Not equivalent.\n\n'
               'Distinguishing witness: $inputDesc\n'
               '$yourSide accepts it but $otherSide does not.';
@@ -1117,6 +1117,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                           }
                         },
                         onDoubleTap: () {
+                          // In line mode, double-tap is repurposed: instead
+                          // of toggling accept state, it drops the start
+                          // arrow on whichever node was double-clicked.
+                          if (_lineMode) {
+                            setState(() => _startArrow = StartArrowData(nodeId: node.id));
+                            _scheduleSave();
+                            return;
+                          }
+
                           if (!node.canToggleNormalAccept) return;
                           setState(() => node.isAccept = !node.isAccept);
                           _scheduleSave();

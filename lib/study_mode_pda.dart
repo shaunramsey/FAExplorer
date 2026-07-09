@@ -1,4 +1,4 @@
-// PDA practice challenges and widgets for study mode.
+﻿// PDA practice challenges and widgets for study mode.
 
 import 'dart:math';
 
@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'models.dart';
 import 'simulator.dart';
 import 'pda_study_solutions.dart';
+import 'study_mode_layout.dart';
 import 'study_mode_symbols.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/automata_canvas_embed.dart';
@@ -77,7 +78,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 0 }\n\n'
         'Accept strings with an equal number of "$a"s followed by "$b"s.\n'
-        'The empty string ε (n=0) is accepted.',
+        'The empty string ~ (n=0) is accepted.',
     hint: 'Push a stack symbol for each "$a", pop one for each "$b". '
         'Accept when the stack is empty at the end.',
     alphabet: {a, b},
@@ -91,7 +92,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$a$b', false),
       StudyPdaTestCase('$b$a', false),
     ],
-    acceptExamples: ['ε', '$a$b', '$a$a$b$b'],
+    acceptExamples: ['~', '$a$b', '$a$a$b$b'],
     rejectExamples: [a, b, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b),
   ));
@@ -100,7 +101,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
   challenges.add(StudyPdaChallenge(
     description: 'L = { $a^n $b^n | n ≥ 1 }\n\n'
         'Accept non-empty strings with equal "$a" and "$b" counts.',
-    hint: 'Push for each "$a", pop for each "$b". Reject ε.',
+    hint: 'Push for each "$a", pop for each "$b". Reject ~.',
     alphabet: {a, b},
     difficulty: StudyPdaDifficulty.easy,
     testCases: [
@@ -111,7 +112,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$a$b', false),
     ],
     acceptExamples: ['$a$b', '$a$a$b$b'],
-    rejectExamples: ['ε', a, '$a$a$b'],
+    rejectExamples: ['~', a, '$a$a$b'],
     solutionSpec: PdaSolutionSpec.anbn(a, b, acceptEmpty: false),
   ));
 
@@ -143,7 +144,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$s1$s3$s2$s4', false),
       StudyPdaTestCase('$s1$s2$s3', false),
     ],
-    acceptExamples: ['ε', '$s1$s3', '$s1$s2$s3$s4'],
+    acceptExamples: ['~', '$s1$s3', '$s1$s2$s3$s4'],
     rejectExamples: ['$s1$s2$s3', '$s1$s3$s2$s4'],
     solutionSpec: PdaSolutionSpec.interleaved4(s1, s2, s3, s4),
   ));
@@ -163,7 +164,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase(frame, false),
       StudyPdaTestCase('$outer$mid$mid', false),
     ],
-    acceptExamples: ['ε', mid, '$outer$frame', '$outer$mid$frame'],
+    acceptExamples: ['~', mid, '$outer$frame', '$outer$mid$frame'],
     rejectExamples: [frame, '$outer$mid$mid'],
     solutionSpec: PdaSolutionSpec.outerFrame(outer, mid, frame),
   ));
@@ -180,7 +181,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$b$a', true),
       StudyPdaTestCase('$a$b', false),
     ],
-    acceptExamples: ['ε', a, '$a$a', '$a$b$a'],
+    acceptExamples: ['~', a, '$a$a', '$a$b$a'],
     rejectExamples: ['$a$b', '$b$a'],
     solutionSpec: PdaSolutionSpec.palindrome(a, b),
   ));
@@ -198,7 +199,7 @@ List<StudyPdaChallenge> _buildAllStudyPdaChallenges(Random rng) {
       StudyPdaTestCase('$a$b', false),
     ],
     acceptExamples: [b, '$a$b$a', '$a$a$b$a$a'],
-    rejectExamples: ['ε', '$a$b'],
+    rejectExamples: ['~', '$a$b'],
     solutionSpec: PdaSolutionSpec.markedPalindrome(a, b),
   ));
 
@@ -226,7 +227,7 @@ StudyPdaChallenge _ratioChallenge(
       StudyPdaTestCase(_rep(a, k) + _rep(b, j + 1), false),
       StudyPdaTestCase(_rep(b, j) + _rep(a, k), false),
     ],
-    acceptExamples: ['ε', '"${_rep(a, k)}${_rep(b, j)}"'],
+    acceptExamples: ['~', '"${_rep(a, k)}${_rep(b, j)}"'],
     rejectExamples: ['"${_rep(a, k)}"', '"${_rep(b, j)}"'],
     solutionSpec: PdaSolutionSpec.ratio(a, b, k, j),
   );
@@ -265,7 +266,7 @@ StudyPdaChallenge _comparisonChallenge(String a, String b, _CompRelation rel) {
         ? StudyPdaDifficulty.easy
         : StudyPdaDifficulty.medium,
     testCases: testCases,
-    acceptExamples: const ['ε'],
+    acceptExamples: const ['~'],
     rejectExamples: ['"$b$a"'],
     solutionSpec: PdaSolutionSpec.comp(a, b, _pdaComp(rel)),
   );
@@ -332,7 +333,7 @@ class _StudyPdaDrawingAreaState extends State<StudyPdaDrawingArea> {
     final theme = widget.theme;
     if (widget.answerRevealed) {
       final graph = buildStudyPdaSolution(widget.challenge.solutionSpec);
-      _applyStudyModeLayout(graph.nodes, graph.lines);
+      applyStudyModeLayout(graph.nodes, graph.lines);
       return Container(
         decoration: BoxDecoration(
           color: theme.surface,
@@ -427,7 +428,7 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget chip(String s, bool accept) {
-      final label = s.isEmpty ? 'ε' : s;
+      final label = s.isEmpty ? '~' : s;
       final color =
           accept ? const Color(0xFF1FD99A) : const Color(0xFFFF1744);
       return Container(
@@ -465,280 +466,8 @@ class StudyPdaTestCaseStrip extends StatelessWidget {
 
 String studyPdaFailureMessage(StudyPdaTestCase tc) {
   final inputDisplay =
-      tc.input.isEmpty ? 'ε (empty string)' : '"${tc.input}"';
+      tc.input.isEmpty ? '~ (empty string)' : '"${tc.input}"';
   final expected = tc.expected ? 'ACCEPT' : 'REJECT';
   final got = tc.expected ? 'REJECT' : 'ACCEPT';
   return 'Input $inputDisplay: expected $expected but got $got';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Study-mode layout post-processor
-//
-//  Applied to the solution graph after it is built from a PDA spec, before
-//  rendering it read-only.  Three passes:
-//
-//  1. Set a default perpendicularPart of 30 on every non-self-loop line.
-//
-//  2+3. For every node N and every line L that does not touch N, run two
-//     sub-checks inside a single convergence loop so both can react to each
-//     other rather than fighting across two separate loops:
-//
-//     2. CHORD CLEARANCE — closest point on the straight chord through the two
-//        endpoint centres.  If within clearance, push N perpendicularly away.
-//
-//     3. TEXTBOX CLEARANCE — axis-aligned bounding rect of the line's label
-//        (computed by LineData.getTextBoxLocation).  If the node circle
-//        overlaps the rect, push N away from the nearest edge.
-//
-//     Repeat until stable (max iterations).
-// ─────────────────────────────────────────────────────────────────────────────
-
-void _applyStudyModeLayout(
-  Map<String, NodeData> nodes,
-  Map<String, LineData> lines,
-) {
-  // ── Pass 1: default perpendicularPart on all non-self-loop lines ───────────
-  for (final line in lines.values) {
-    if (line.nodeAId != line.nodeBId) {
-      line.perpendicularPart = 30.0;
-    }
-  }
-
-  // ── Shared constants ───────────────────────────────────────────────────────
-  const double nodeRadius     = 50.0;               // visual radius of a state circle
-  const double nodeDiameter   = nodeRadius * 2;
-  const double minNodeGap     = nodeDiameter + 40.0; // minimum centre-to-centre distance
-  const double clearance      = nodeRadius + 30.0;   // min dist: node centre ↔ chord
-  const double textBuffer     = 14.0;                // extra padding around textbox rect
-  const double boxWidth       = kLabelBoxWidth;       // must match LineWidget — see models.dart
-  const double lineHeight     = kLabelLineHeight;      // single-line height in LineWidget — see models.dart
-  const double selfLoopRadius = kSelfLoopRadius;       // loop circle radius — see models.dart
-  const double selfLoopCenterDist = kSelfLoopCenterDistance; // centre offset for loop — see models.dart
-  const int    iterations     = 30;                  // convergence passes
-
-  // Helper: push node away from an axis-aligned rect.
-  // Returns true if a push was applied.
-  bool pushNodeFromRect(
-    NodeData node,
-    double rLeft,
-    double rTop,
-    double rRight,
-    double rBottom,
-  ) {
-    final nc = node.center;
-    final closestX = nc.dx.clamp(rLeft, rRight);
-    final closestY = nc.dy.clamp(rTop, rBottom);
-    final dxFromBox = nc.dx - closestX;
-    final dyFromBox = nc.dy - closestY;
-    final distFromBox = sqrt(dxFromBox * dxFromBox + dyFromBox * dyFromBox);
-
-    if (distFromBox < nodeRadius) {
-      final push = nodeRadius - distFromBox + 2.0; // +2 px safety margin
-
-      final Offset pushDir;
-      if (distFromBox < 0.5) {
-        final rcx = (rLeft + rRight) / 2;
-        final rcy = (rTop + rBottom) / 2;
-        final awayDx = nc.dx - rcx;
-        final awayDy = nc.dy - rcy;
-        final awayLen = sqrt(awayDx * awayDx + awayDy * awayDy);
-        pushDir = awayLen < 0.5
-            ? const Offset(0, 1)
-            : Offset(awayDx / awayLen, awayDy / awayLen);
-      } else {
-        pushDir = Offset(dxFromBox / distFromBox, dyFromBox / distFromBox);
-      }
-
-      node.position = Offset(
-        node.position.dx + pushDir.dx * push,
-        node.position.dy + pushDir.dy * push,
-      );
-      return true;
-    }
-    return false;
-  }
-
-  // ── Convergence loop ───────────────────────────────────────────────────────
-  for (int iter = 0; iter < iterations; iter++) {
-    bool anyMoved = false;
-    final nodeList = nodes.values.toList();
-
-    // ── Check A: node-node minimum distance ─────────────────────────────────
-    for (int i = 0; i < nodeList.length; i++) {
-      final na = nodeList[i];
-      if (na.isBlackBox) continue;
-      for (int j = i + 1; j < nodeList.length; j++) {
-        final nb = nodeList[j];
-        if (nb.isBlackBox) continue;
-
-        final cA = na.center;
-        final cB = nb.center;
-        final dx = cB.dx - cA.dx;
-        final dy = cB.dy - cA.dy;
-        final dist = sqrt(dx * dx + dy * dy);
-
-        if (dist < minNodeGap && dist > 0.1) {
-          final overlap = (minNodeGap - dist) / 2.0 + 2.0;
-          final ux = dx / dist;
-          final uy = dy / dist;
-          // Push both nodes apart equally.
-          na.position = Offset(na.position.dx - ux * overlap, na.position.dy - uy * overlap);
-          nb.position = Offset(nb.position.dx + ux * overlap, nb.position.dy + uy * overlap);
-          anyMoved = true;
-        }
-      }
-    }
-
-    // ── Checks B+C+D: per-line clearance for every node ─────────────────────
-    for (final node in nodeList) {
-      if (node.isBlackBox) continue;
-
-      for (final line in lines.values) {
-        final isSelfLoop = line.nodeAId == line.nodeBId;
-
-        if (isSelfLoop) {
-          // ── Check D: self-loop textbox must not overlap OTHER nodes ─────
-          // The loop belongs to its own node; we only care if it overlaps a
-          // *different* node's circle.
-          if (line.nodeAId == node.id) continue;
-
-          final ownerNode = nodes[line.nodeAId];
-          if (ownerNode == null) continue;
-
-          // Compute self-loop textbox centre (mirrors LineData.getTextBoxLocation).
-          final oc = ownerNode.center;
-          final angle = line.selfLoopAngle; // default: -π/2 (straight up)
-          final outward = Offset(cos(angle), sin(angle));
-          final loopCenter = Offset(
-            oc.dx + outward.dx * selfLoopCenterDist,
-            oc.dy + outward.dy * selfLoopCenterDist,
-          );
-          const textDistance = kSelfLoopTextDistance;
-          final textCenter = Offset(
-            loopCenter.dx + outward.dx * (selfLoopRadius + textDistance),
-            loopCenter.dy + outward.dy * (selfLoopRadius + textDistance),
-          );
-
-          if (line.label.isNotEmpty) {
-            final lineCount = '\n'.allMatches(line.label).length + 1;
-            final boxHeight = lineHeight * lineCount;
-            final tLeft   = textCenter.dx - boxWidth / 2 - textBuffer;
-            final tTop    = textCenter.dy - boxHeight / 2 - textBuffer;
-            final tRight  = textCenter.dx + boxWidth / 2 + textBuffer;
-            final tBottom = textCenter.dy + boxHeight / 2 + textBuffer;
-
-            if (pushNodeFromRect(node, tLeft, tTop, tRight, tBottom)) {
-              anyMoved = true;
-            }
-          }
-
-          // Also keep OTHER nodes away from the loop circle itself.
-          final nc = node.center;
-          final dxLoop = nc.dx - loopCenter.dx;
-          final dyLoop = nc.dy - loopCenter.dy;
-          final distLoop = sqrt(dxLoop * dxLoop + dyLoop * dyLoop);
-          final minDist = nodeRadius + selfLoopRadius + 10.0;
-          if (distLoop < minDist && distLoop > 0.1) {
-            final push = minDist - distLoop + 2.0;
-            final ux = dxLoop / distLoop;
-            final uy = dyLoop / distLoop;
-            node.position = Offset(
-              node.position.dx + ux * push,
-              node.position.dy + uy * push,
-            );
-            anyMoved = true;
-          }
-          continue;
-        }
-
-        // Non-self-loop: skip if this line directly touches the node.
-        if (line.nodeAId == node.id || line.nodeBId == node.id) continue;
-
-        final nodeA = nodes[line.nodeAId];
-        final nodeB = nodes[line.nodeBId];
-        if (nodeA == null || nodeB == null) continue;
-
-        final cA = nodeA.center;
-        final cB = nodeB.center;
-
-        // ── Check B: chord clearance ────────────────────────────────────
-        {
-          final nc = node.center;
-          final abx = cB.dx - cA.dx;
-          final aby = cB.dy - cA.dy;
-          final abLen = sqrt(abx * abx + aby * aby);
-
-          if (abLen >= 1) {
-            final t = ((nc.dx - cA.dx) * abx + (nc.dy - cA.dy) * aby) /
-                (abLen * abLen);
-            if (t >= -0.05 && t <= 1.05) {
-              final closestX = cA.dx + t * abx;
-              final closestY = cA.dy + t * aby;
-              final dxFromChord = nc.dx - closestX;
-              final dyFromChord = nc.dy - closestY;
-              final distFromChord =
-                  sqrt(dxFromChord * dxFromChord + dyFromChord * dyFromChord);
-
-              if (distFromChord < clearance) {
-                final push = clearance - distFromChord + 2.0;
-                final Offset perp;
-                if (distFromChord < 0.5) {
-                  perp = Offset(aby / abLen, -abx / abLen);
-                } else {
-                  perp = Offset(
-                      dxFromChord / distFromChord, dyFromChord / distFromChord);
-                }
-                node.position = Offset(
-                  node.position.dx + perp.dx * push,
-                  node.position.dy + perp.dy * push,
-                );
-                anyMoved = true;
-              }
-            }
-          }
-        }
-
-        // ── Check C: non-self-loop textbox clearance ────────────────────
-        if (line.label.isNotEmpty) {
-// re-read after chord push
-          final lineCount = '\n'.allMatches(line.label).length + 1;
-          final double boxHeight = lineHeight * lineCount;
-
-          final Offset topLeft = line.getTextBoxLocation(
-              cA, cB, boxWidth, boxHeight, line.label);
-
-          final rLeft   = topLeft.dx - textBuffer;
-          final rTop    = topLeft.dy - textBuffer;
-          final rRight  = topLeft.dx + boxWidth  + textBuffer;
-          final rBottom = topLeft.dy + boxHeight + textBuffer;
-
-          if (pushNodeFromRect(node, rLeft, rTop, rRight, rBottom)) {
-            anyMoved = true;
-          }
-        }
-      }
-    }
-
-    // ── Check E: self-loop textbox spacing between nodes on same node ────────
-    // When a node has multiple self-loops (shouldn't happen after merge, but
-    // guard anyway) or its own self-loop label would overlap itself, adjust
-    // selfLoopAngle to spread them out.
-    final selfLoopsByNode = <String, List<LineData>>{};
-    for (final line in lines.values) {
-      if (line.nodeAId == line.nodeBId) {
-        selfLoopsByNode.putIfAbsent(line.nodeAId, () => []).add(line);
-      }
-    }
-    for (final entry in selfLoopsByNode.entries) {
-      final loopsOnNode = entry.value;
-      if (loopsOnNode.length <= 1) continue;
-      // Spread multiple self-loops evenly around the node.
-      final angleStep = (2 * pi) / loopsOnNode.length;
-      for (int i = 0; i < loopsOnNode.length; i++) {
-        loopsOnNode[i].selfLoopAngle = -pi / 2 + angleStep * i;
-      }
-    }
-
-    if (!anyMoved) break;
-  }
 }

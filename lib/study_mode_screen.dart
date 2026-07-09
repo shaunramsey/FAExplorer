@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  study_mode_screen.dart
 //
 //  Interactive practice mode — generates unlimited regex↔DFA challenges
@@ -34,6 +34,7 @@ import 'game_level.dart' show GameLevel, kAllLevels;
 import 'models.dart';
 import 'simulator.dart';
 import 'study_mode_pda.dart';
+import 'study_mode_tm.dart';
 import 'study_mode_symbols.dart';
 import 'tutorial_screen.dart' show TutorialScreen;
 import 'widgets/app_theme.dart';
@@ -274,7 +275,7 @@ const List<_DescTemplate> _kDescTemplates = [
   _dSecondIsSymbol,
   // Accepts strings of length at most 3
   _dLengthAtMost3,
-  // Accepts strings that are a palindrome of length ≤ 2 (ε, a, b, aa, bb)
+  // Accepts strings that are a palindrome of length ≤ 2 (~, a, b, aa, bb)
   _dShortPalindrome,
 
   // ── Hard ──────────────────────────────────────────────────────────────────
@@ -301,7 +302,7 @@ const List<_DescTemplate> _kDescTemplates = [
 
 ({String description, String regex, _Difficulty difficulty})
     _dOnlyEmpty(String a, String b, Random rng) => (
-          description: 'Build an FA that accepts only the empty string (ε) '
+          description: 'Build an FA that accepts only the empty string (~) '
               'and rejects every non-empty string.',
           regex: '~',
           difficulty: _Difficulty.easy,
@@ -339,7 +340,7 @@ const List<_DescTemplate> _kDescTemplates = [
   final sym = rng.nextBool() ? a : b;
   return (
     description: 'Build an FA that accepts strings made up of zero or more '
-        'copies of "$sym" (including ε), and rejects any string that '
+        'copies of "$sym" (including ~), and rejects any string that '
         'contains "${ sym == a ? b : a }".',
     regex: '$sym*',
     difficulty: _Difficulty.easy,
@@ -482,7 +483,7 @@ const List<_DescTemplate> _kDescTemplates = [
     _dShortPalindrome(String a, String b, Random rng) => (
           description: 'Build an FA that accepts only strings of length ≤ 2 '
               'that read the same forwards and backwards: '
-              'ε, "$a", "$b", "$a$a", and "$b$b".',
+              '~, "$a", "$b", "$a$a", and "$b$b".',
           regex: '~+$a+$b+$a$a+$b$b',
           difficulty: _Difficulty.medium,
         );
@@ -599,7 +600,8 @@ enum _PracticeMode {
   regexToDfa('REGEX → DFA', Icons.functions),
   dfaToRegex('DFA → REGEX', Icons.account_tree_outlined),
   describeToFa('DESCRIBE → FA', Icons.lightbulb_outline_rounded),
-  pdaToDraw('PDA → DRAW', Icons.layers_outlined);
+  pdaToDraw('PDA → DRAW', Icons.layers_outlined),
+  tmToDraw('TM → DRAW', Icons.memory_outlined);
 
   const _PracticeMode(this.label, this.icon);
   final String label;
@@ -609,24 +611,39 @@ enum _PracticeMode {
 class _AnyChallenge {
   final _Challenge? regexChallenge;
   final StudyPdaChallenge? pdaChallenge;
+  final StudyTmChallenge? tmChallenge;
 
-  const _AnyChallenge.regex(this.regexChallenge) : pdaChallenge = null;
-  const _AnyChallenge.pda(this.pdaChallenge) : regexChallenge = null;
+  const _AnyChallenge.regex(this.regexChallenge)
+      : pdaChallenge = null,
+        tmChallenge = null;
+  const _AnyChallenge.pda(this.pdaChallenge)
+      : regexChallenge = null,
+        tmChallenge = null;
+  const _AnyChallenge.tm(this.tmChallenge)
+      : regexChallenge = null,
+        pdaChallenge = null;
 
   bool get isPda => pdaChallenge != null;
+  bool get isTm => tmChallenge != null;
   _Difficulty get difficulty => isPda
       ? switch (pdaChallenge!.difficulty) {
           StudyPdaDifficulty.easy => _Difficulty.easy,
           StudyPdaDifficulty.medium => _Difficulty.medium,
           StudyPdaDifficulty.hard => _Difficulty.hard,
         }
-      : regexChallenge!.difficulty;
+      : isTm
+          ? switch (tmChallenge!.difficulty) {
+              StudyTmDifficulty.easy => _Difficulty.easy,
+              StudyTmDifficulty.medium => _Difficulty.medium,
+              StudyTmDifficulty.hard => _Difficulty.hard,
+            }
+          : regexChallenge!.difficulty;
   String? get description =>
-      regexChallenge?.description ?? pdaChallenge?.description;
-  String? get hint => pdaChallenge?.hint;
+      regexChallenge?.description ?? pdaChallenge?.description ?? tmChallenge?.description;
+  String? get hint => pdaChallenge?.hint ?? tmChallenge?.hint;
   String get regex => regexChallenge?.regex ?? '';
   Set<String> get alphabet =>
-      regexChallenge?.alphabet ?? pdaChallenge!.alphabet;
+      regexChallenge?.alphabet ?? pdaChallenge?.alphabet ?? tmChallenge!.alphabet;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -732,6 +749,12 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       }
       return _PracticeMode.pdaToDraw;
     }
+    if (challenge.isTm) {
+      if (_selectedModes.contains(_PracticeMode.tmToDraw)) {
+        return _PracticeMode.tmToDraw;
+      }
+      return _PracticeMode.tmToDraw;
+    }
     final rc = challenge.regexChallenge!;
     if (rc.description != null &&
         _selectedModes.contains(_PracticeMode.describeToFa)) {
@@ -740,7 +763,8 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     final pool = _selectedModes
         .where((m) =>
             m != _PracticeMode.describeToFa &&
-            m != _PracticeMode.pdaToDraw)
+            m != _PracticeMode.pdaToDraw &&
+            m != _PracticeMode.tmToDraw)
         .toList();
     if (pool.isEmpty) return _PracticeMode.regexToDfa;
     return pool[_rng.nextInt(pool.length)];
@@ -800,6 +824,10 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     if (_selectedModes.contains(_PracticeMode.pdaToDraw)) {
       all.addAll(generateStudyPdaChallenges(_rng, count: 20)
           .map(_AnyChallenge.pda));
+    }
+    if (_selectedModes.contains(_PracticeMode.tmToDraw)) {
+      all.addAll(generateStudyTmChallenges(_rng, count: 20)
+          .map(_AnyChallenge.tm));
     }
     if (all.isEmpty) {
       all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
@@ -922,7 +950,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     }
 
     // Build player NFA from their typed regex.
-    final playerResult = regexToNfa(raw);
+    final playerResult = regexToDfa(raw);
     if (playerResult.isError) {
       return _GradeResult.parseError('Parse error: ${playerResult.error}');
     }
@@ -963,6 +991,21 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     return _GradeResult.wrong(studyPdaFailureMessage(grade.failedCase!));
   }
 
+  _GradeResult _gradePlayerTm() {
+    if (_playerStart == null || _playerNodes.isEmpty) {
+      return const _GradeResult.parseError(
+          'Draw some states first, then hit Check.');
+    }
+    final grade = gradeStudyTm(
+      nodes: _playerNodes,
+      lines: _playerLines,
+      start: _playerStart,
+      challenge: _current.tmChallenge!,
+    );
+    if (grade.correct) return const _GradeResult.correct();
+    return _GradeResult.wrong(studyTmFailureMessage(grade.failedCase!));
+  }
+
   // ── Tutorial library ─────────────────────────────────────────────────────
 
   /// Opens a sheet listing every game-mode tutorial slideshow, so someone
@@ -997,6 +1040,8 @@ class _StudyModeScreenState extends State<StudyModeScreen>
     final _GradeResult result;
     if (_mode == _PracticeMode.pdaToDraw) {
       result = _gradePlayerPda();
+    } else if (_mode == _PracticeMode.tmToDraw) {
+      result = _gradePlayerTm();
     } else if (_mode == _PracticeMode.dfaToRegex) {
       result = _gradePlayerRegex();
     } else {
@@ -1188,7 +1233,9 @@ class _TopBar extends StatelessWidget {
                     ? const Color(0xFFB47FFF)
                     : m == _PracticeMode.pdaToDraw
                         ? const Color(0xFF26C6DA)
-                        : theme.accent;
+                        : m == _PracticeMode.tmToDraw
+                            ? const Color(0xFFFF7043)
+                            : theme.accent;
             return Padding(
               padding: const EdgeInsets.only(right: 6),
               child: GestureDetector(
@@ -1716,14 +1763,23 @@ class _ChallengeBody extends StatelessWidget {
                         onFaChanged: onPlayerFaChanged,
                         theme: theme,
                       )
-                    : _DfaDrawingArea(
-                        challenge: challenge.regexChallenge!,
-                        submitted: submitted,
-                        gradeResult: gradeResult,
-                        answerRevealed: answerRevealed,
-                        onFaChanged: onPlayerFaChanged,
-                        theme: theme,
-                      ),
+                    : mode == _PracticeMode.tmToDraw
+                        ? StudyTmDrawingArea(
+                            challenge: challenge.tmChallenge!,
+                            submitted: submitted,
+                            answerRevealed: answerRevealed,
+                            lastCorrect: gradeResult?.correct,
+                            onFaChanged: onPlayerFaChanged,
+                            theme: theme,
+                          )
+                        : _DfaDrawingArea(
+                            challenge: challenge.regexChallenge!,
+                            submitted: submitted,
+                            gradeResult: gradeResult,
+                            answerRevealed: answerRevealed,
+                            onFaChanged: onPlayerFaChanged,
+                            theme: theme,
+                          ),
           ),
 
           SizedBox(height: compact ? 8 : 14),
@@ -1849,7 +1905,9 @@ class _ChallengeCard extends StatelessWidget {
             ? const Color(0xFFB47FFF)
             : mode == _PracticeMode.pdaToDraw
                 ? const Color(0xFF26C6DA)
-                : theme.accentGreen;
+                : mode == _PracticeMode.tmToDraw
+                    ? const Color(0xFFFF7043)
+                    : theme.accentGreen;
 
     return Container(
       padding: compact
@@ -2011,11 +2069,10 @@ class _ChallengeCard extends StatelessWidget {
                 ),
               ),
             ],
-          ] else ...[
-            // DFA→REGEX: no description shown — alphabet is the only hint
+          ] else if (mode == _PracticeMode.tmToDraw) ...[
             if (!compact) ...[
               Text(
-                'ALPHABET',
+                'RECURSIVELY ENUMERABLE LANGUAGE',
                 style: GoogleFonts.orbitron(
                   color: theme.textDim,
                   fontSize: 8,
@@ -2026,11 +2083,46 @@ class _ChallengeCard extends StatelessWidget {
             ],
             Container(
               padding: compact
-                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
-                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                  : const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF7043).withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFFFF7043).withValues(alpha: 0.25)),
+              ),
+              child: Text(
+                challenge.description ?? '',
+                style: GoogleFonts.sourceCodePro(
+                  color: const Color(0xFFFFAB91),
+                  fontSize: compact ? 12 : 14,
+                  height: compact ? 1.3 : 1.55,
+                ),
+                maxLines: compact ? 3 : null,
+                overflow: compact ? TextOverflow.ellipsis : TextOverflow.clip,
+              ),
+            ),
+            if (challenge.hint != null && !compact) ...[
+              const SizedBox(height: 10),
+              Text(
+                challenge.hint!,
+                style: GoogleFonts.sourceCodePro(
+                  color: theme.textDim,
+                  fontSize: 12,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ] else ...[
+            // DFA→REGEX: the alphabet already appears in the header row
+            // above (Σ = {...}), so this just restates it as a small inline
+            // chip instead of a large standalone block — that was taking up
+            // card height that the DFA preview below could use instead.
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: theme.accentGreen.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
                 border:
                     Border.all(color: theme.accentGreen.withValues(alpha: 0.20)),
               ),
@@ -2038,7 +2130,7 @@ class _ChallengeCard extends StatelessWidget {
                 'Σ = {${(challenge.alphabet.toList()..sort()).join(', ')}}',
                 style: GoogleFonts.courierPrime(
                   color: theme.accentGreen,
-                  fontSize: compact ? 15 : 20,
+                  fontSize: compact ? 12 : 14,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                 ),
@@ -2069,7 +2161,9 @@ class _ChallengeCard extends StatelessWidget {
                             ? 'Draw a DFA on the canvas below whose language matches the description above.'
                             : mode == _PracticeMode.pdaToDraw
                                 ? 'Draw a PDA on the canvas below that accepts exactly this language.'
-                                : 'Type a regular expression below that describes exactly this language.',
+                                : mode == _PracticeMode.tmToDraw
+                                    ? 'Draw a TM on the canvas below that accepts exactly this language.'
+                                    : 'Type a regular expression below that describes exactly this language.',
                     style: GoogleFonts.sourceCodePro(
                       color: theme.textDim,
                       fontSize: 11,
@@ -2239,16 +2333,14 @@ class _RegexInputArea extends StatelessWidget {
         : correct
             ? const Color(0xFF4CAF50)
             : theme.error;
-    final compact = isCompactLayout(context);
-    final previewFlex = compact ? 2 : 3;
-    final inputFlex = compact ? 1 : 1;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Read-only DFA preview (so player can actually see the machine)
+        // Read-only DFA preview — takes all the room left over once the
+        // regex box below claims only what it needs. This way the diagram
+        // gets as much space as possible without ever squeezing the input
+        // box down to the point where it's hard to read or type into.
         Expanded(
-          flex: previewFlex,
           child: Container(
             decoration: BoxDecoration(
               color: theme.surface,
@@ -2284,75 +2376,73 @@ class _RegexInputArea extends StatelessWidget {
 
         const SizedBox(height: 12),
 
-        // Regex text field
-        Expanded(
-          flex: inputFlex,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: theme.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: borderColor, width: 1.5),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'YOUR REGEX',
-                  style: GoogleFonts.orbitron(
-                    color: theme.textDim,
-                    fontSize: 8,
-                    letterSpacing: 2,
+        // Regex text field — sized to fit its own content (label + one
+        // line of input + operator hints), not squeezed to a flex share,
+        // so it stays a fixed, comfortable size to read and type into no
+        // matter how large the DFA preview above grows.
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: theme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: 1.5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'YOUR REGEX',
+                style: GoogleFonts.orbitron(
+                  color: theme.textDim,
+                  fontSize: 8,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                focusNode: focusNode,
+                readOnly: submitted && correct, // lock on correct answer
+                style: GoogleFonts.courierPrime(
+                  color: !submitted
+                      ? theme.textLight
+                      : correct
+                          ? const Color(0xFF4CAF50)
+                          : theme.error,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'e.g.  a*(ba+b)*',
+                  hintStyle: GoogleFonts.courierPrime(
+                    color: theme.textDim.withValues(alpha: 0.5),
+                    fontSize: 18,
                   ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  isDense: true,
                 ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    readOnly:
-                        submitted && correct, // lock on correct answer
-                    style: GoogleFonts.courierPrime(
-                      color: !submitted
-                          ? theme.textLight
-                          : correct
-                              ? const Color(0xFF4CAF50)
-                              : theme.error,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'e.g.  a*(ba+b)*',
-                      hintStyle: GoogleFonts.courierPrime(
-                        color: theme.textDim.withValues(alpha: 0.5),
-                        fontSize: 18,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      isDense: true,
-                    ),
-                    onSubmitted: (_) {
-                      // pressing Enter submits
-                    },
-                  ),
-                ),
-                // Operator quick-reference
-                Row(
-                  children: [
-                    _OpHint(op: '*', label: 'star', theme: theme),
-                    const SizedBox(width: 10),
-                    _OpHint(op: '+', label: 'or', theme: theme),
-                    const SizedBox(width: 10),
-                    _OpHint(op: '~', label: 'ε', theme: theme),
-                    const SizedBox(width: 10),
-                    _OpHint(op: '()', label: 'group', theme: theme),
-                  ],
-                ),
-              ],
-            ),
+                onSubmitted: (_) {
+                  // pressing Enter submits
+                },
+              ),
+              const SizedBox(height: 10),
+              // Operator quick-reference
+              Row(
+                children: [
+                  _OpHint(op: '*', label: 'star', theme: theme),
+                  const SizedBox(width: 10),
+                  _OpHint(op: '+', label: 'or', theme: theme),
+                  const SizedBox(width: 10),
+                  _OpHint(op: '~', label: '~', theme: theme),
+                  const SizedBox(width: 10),
+                  _OpHint(op: '()', label: 'group', theme: theme),
+                ],
+              ),
+            ],
           ),
         ),
       ],
@@ -2524,14 +2614,16 @@ class _FeedbackBanner extends StatelessWidget {
                 ? 'Your FA correctly captures the described language!'
                 : mode == _PracticeMode.pdaToDraw
                     ? 'Your PDA passes every oracle test case for this language.'
-                    : 'Your regex describes the same language.',
+                    : mode == _PracticeMode.tmToDraw
+                        ? 'Your TM passes every oracle test case for this language.'
+                        : 'Your regex describes the same language.',
         theme: theme,
       );
     }
 
     // Wrong — show counterexample and either tries-remaining or the answer.
     final ce = result.counterexample ?? '';
-    final ceDisplay = ce.isEmpty ? 'ε (empty string)' : '"$ce"';
+    final ceDisplay = ce.isEmpty ? '~ (empty string)' : '"$ce"';
     final triesLeft = maxTries - wrongAttempts;
 
     if (answerRevealed) {
@@ -2540,7 +2632,9 @@ class _FeedbackBanner extends StatelessWidget {
           ? 'A correct regex for this language is:\n  ${challenge.regex}'
           : mode == _PracticeMode.pdaToDraw
               ? 'The correct PDA has been loaded on the canvas above — study it, then move on.'
-              : 'The correct FA has been loaded on the canvas above — study it, then move on.';
+              : mode == _PracticeMode.tmToDraw
+                  ? 'The correct TM has been loaded on the canvas above — study it, then move on.'
+                  : 'The correct FA has been loaded on the canvas above — study it, then move on.';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

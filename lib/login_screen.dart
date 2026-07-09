@@ -610,7 +610,9 @@ class _ModeSelectScreenState extends State<ModeSelectScreen>
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final completed = widget.progressStore.loadCompletedLevels().length;
+    // Counts completions on either difficulty — matches the union that
+    // unlock logic already uses, so this can't undercount Easy-only progress.
+    final completed = widget.progressStore.loadCompletedLevelsAnyDifficulty().length;
 
     return Scaffold(
       backgroundColor: theme.bg,

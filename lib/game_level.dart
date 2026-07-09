@@ -1,4 +1,4 @@
-import 'dialogs/equivalence_dialog.dart' show RequiredAutomatonType;
+﻿import 'dialogs/equivalence_dialog.dart' show RequiredAutomatonType;
 import 'tutorial_screen.dart' show TutorialSlide, TutorialIllustration;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -366,7 +366,7 @@ class GameLevel {
 //    Col 5  x≈0.22   FA STRINGS A  — empty-dfa/accept-all-nfa   (2 levels)
 //    Col 6  x≈0.26   TUTORIAL      — NFA Patterns (alone)
 //    Col 7  x≈0.31   FA STRINGS B  — ends-b/one-0-dfa/starts-ab (3 levels)
-//    Col 8  x≈0.35   FA PATTERNS   — ends-b-nfa/contains-aba/epsilon/complement (4 levels)
+//    Col 8  x≈0.35   FA PATTERNS   — ends-b-nfa/contains-aba/tilda/complement (4 levels)
 //    Col 9  x≈0.40   FA ADVANCED A — one-0-nfa/ends-abc-nfa/ends-same-nfa/ends-b-dfa (4 levels)
 //    Col 10 x≈0.44   BOSS          — three-state challenge (boss, alone)
 //    Col 11 x≈0.48   FA ADVANCED B — ends-abc-dfa/caterpillar-nfa/ends-same-dfa/halt-y (4 levels)
@@ -525,7 +525,7 @@ const List<GameLevel> kAllLevels = [
         headline: 'DFA Rules',
         body: 'For a valid DFA over alphabet {a, b}:\n\n'
             '1. Every state must have **exactly one** outgoing transition for each symbol.\n'
-            '2. No ε (epsilon / free-jump) transitions are allowed.\n'
+            '2. No ~ (tilda / free-jump) transitions are allowed.\n'
             '3. There must be exactly **one start state**.\n\n'
             'If your submission violates any of these, the checker will tell you exactly which states are the problem.',
         illustrationType: TutorialIllustration.none,
@@ -534,7 +534,7 @@ const List<GameLevel> kAllLevels = [
         headline: 'NFA Rules',
         body: 'An NFA is more flexible — it **may** have:\n\n'
             '• Multiple outgoing arrows for the **same** symbol from one state\n'
-            '• **ε-transitions** (free jumps, drawn as arrows with no label)\n'
+            '• **~-transitions** (free jumps, drawn as arrows with no label)\n'
             '• States with **no** outgoing arrow for some symbol\n\n'
             'An NFA accepts a string if **any** path through the machine leads to an accept state.',
         illustrationType: TutorialIllustration.none,
@@ -547,10 +547,10 @@ const List<GameLevel> kAllLevels = [
         illustrationType: TutorialIllustration.none,
       ),
       TutorialSlide(
-        headline: 'Epsilon (ε) Transitions',
-        body: 'An **ε-transition** (drawn without a label) is a free jump — '
+        headline: 'tilda (~) Transitions',
+        body: 'An **~-transition** (drawn without a label) is a free jump — '
             'the machine moves to the next state without consuming any input.\n\n'
-            'In the canvas, draw an arrow between two states and **clear the label** to create an ε-transition. '
+            'In the canvas, draw an arrow between two states and **clear the label** to create an ~-transition. '
             'Only NFAs may use these.',
         illustrationType: TutorialIllustration.epsilonTransition,
       ),
@@ -588,8 +588,8 @@ const List<GameLevel> kAllLevels = [
     id: 'dsl_accepts_everything_nfa',
     title: 'Accept Everything (NFA)',
     description:
-        'Build a two-state NFA that uses a free ε-jump to accept every string. '
-        'Hint: an ε-transition (no label) is a "free jump" to another state.',
+        'Build a two-state NFA that uses a free ~-jump to accept every string. '
+        'Hint: an ~-transition (no label) is a "free jump" to another state.',
     svgAsset: '',
     dsl: '''
       n0 = A
@@ -2626,7 +2626,7 @@ const List<GameLevel> kAllLevels = [
       TutorialSlide(
         headline: 'Notation Reference',
         body: 'The checker uses the following notation:\n\n'
-            '• **~** — empty string ε  (e.g. a+~ means "a or nothing")\n'
+            '• **~** — empty string ~  (e.g. a+~ means "a or nothing")\n'
             '• **∅** — empty language (matches nothing)\n'
             '• **+** — alternation  (a+b means a OR b)\n'
             '• ***** — Kleene star, postfix  (a* = zero or more a)\n'
@@ -2640,7 +2640,7 @@ const List<GameLevel> kAllLevels = [
         body: 'When you see a regex, ask: "what pattern must a string satisfy?"\n\n'
             '• **ab*** — any number of b\'s after exactly one a\n'
             '• **(a+b)*abb** — anything, ending in "abb"\n'
-            '• **(ab)*** — alternating pairs: ε, ab, abab, …\n\n'
+            '• **(ab)*** — alternating pairs: ~, ab, abab, …\n\n'
             'Think about what the machine must *remember*. '
             'Each memory unit (e.g. "last symbol seen") usually becomes a state.',
         illustrationType: TutorialIllustration.none,
@@ -2649,9 +2649,9 @@ const List<GameLevel> kAllLevels = [
         headline: 'DFA → Regex: Add Super States',
         body: 'To turn a DFA into a regex, first convert it into a **GNFA** '
             '(generalised NFA) by adding two new states:\n\n'
-            '• A **super-start** S, with a single ε-edge into the original '
+            '• A **super-start** S, with a single ~-edge into the original '
             'start state.\n'
-            '• A **super-accept** F, with an ε-edge in from every original '
+            '• A **super-accept** F, with an ~-edge in from every original '
             'accept state (if there\'s more than one, they all point to the '
             'same F).\n\n'
             'From this point on, only S and F count as start/accept — that '
@@ -2804,7 +2804,7 @@ const List<GameLevel> kAllLevels = [
     description:
         'Build a DFA over {a, b} equivalent to the regular expression:\n\n'
         '    (a+b)*\n\n'
-        'Matches every string over {a, b} — including the empty string ε.',
+        'Matches every string over {a, b} — including the empty string ~.',
     svgAsset: '',
     dsl: '''
       n0 = q0
@@ -3165,14 +3165,74 @@ final Map<String, GameLevel> kLevelById = {
 //  4. NORMAL CAP — a regular (non-tutorial, non-boss) layer may contain
 //     AT MOST 4 levels.
 //
-//  "Layer" is determined by the same topological-sort logic used by
-//  [_computeLayersFromDeps] in level_select_screen.dart.
+//  "Layer" is determined by [computeLevelLayers] below — the single,
+//  shared topological-sort implementation. level_select_screen.dart calls
+//  this same function for its on-screen layout, so the startup validator
+//  and the rendered map can never disagree about what a "layer" is.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Assigns each level a layer index via a topological sort (Kahn's
+/// algorithm) over the unlock-dependency graph: a level's layer is the
+/// longest path (in steps of 2) from any root (always-unlocked) level.
+/// Levels involved in an unlock cycle — which should never happen in a
+/// well-formed level list — are pushed past the max assigned layer rather
+/// than left unassigned, so a malformed graph still produces a usable
+/// (if flagged-elsewhere) layout instead of crashing.
+///
+/// Shared by [LayerConstraintValidator] (startup validation) and
+/// level_select_screen.dart (actual rendered layout) so the two can never
+/// silently diverge.
+Map<String, int> computeLevelLayers(List<GameLevel> levels) {
+  List<String> depsOf(UnlockRule rule) {
+    if (rule is AlwaysUnlocked) return [];
+    if (rule is RequireLevel) return [rule.levelId];
+    if (rule is RequireAll) return rule.levelIds;
+    if (rule is RequireAny) return rule.levelIds;
+    if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
+    return [];
+  }
+
+  final Map<String, List<String>> adj = {for (final l in levels) l.id: []};
+  final Map<String, int> indeg = {for (final l in levels) l.id: 0};
+
+  for (final l in levels) {
+    for (final d in depsOf(l.unlockRule)) {
+      if (!adj.containsKey(d)) continue;
+      adj[d] = [...adj[d]!, l.id];
+      indeg[l.id] = indeg[l.id]! + 1;
+    }
+  }
+
+  final List<String> q = [];
+  final Map<String, int> layer = {for (final l in levels) l.id: 0};
+  for (final id in indeg.keys) {
+    if (indeg[id] == 0) q.add(id);
+  }
+
+  while (q.isNotEmpty) {
+    final cur = q.removeAt(0);
+    for (final next in adj[cur]!) {
+      final candidate = layer[cur]! + 2;
+      if (candidate > layer[next]!) layer[next] = candidate;
+      indeg[next] = indeg[next]! - 1;
+      if (indeg[next] == 0) q.add(next);
+    }
+  }
+
+  int maxAssigned = layer.values.fold(0, (a, b) => a > b ? a : b);
+  for (final id in indeg.keys) {
+    if (indeg[id]! > 0) {
+      maxAssigned += 1;
+      layer[id] = maxAssigned;
+    }
+  }
+  return layer;
+}
 
 abstract final class LayerConstraintValidator {
   /// Returns a list of human-readable error strings.  Empty means all good.
   static List<String> validate(List<GameLevel> levels) {
-    final layerById = _computeLayers(levels);
+    final layerById = computeLevelLayers(levels);
     final Map<int, List<GameLevel>> byLayer = {};
     for (final l in levels) {
       byLayer.putIfAbsent(layerById[l.id]!, () => []).add(l);
@@ -3225,55 +3285,6 @@ abstract final class LayerConstraintValidator {
     }
 
     return errors;
-  }
-
-  // ── Internal: same topological-sort as level_select_screen.dart ─────────────
-
-  static Map<String, int> _computeLayers(List<GameLevel> levels) {
-    List<String> depsOf(UnlockRule rule) {
-      if (rule is AlwaysUnlocked) return [];
-      if (rule is RequireLevel) return [rule.levelId];
-      if (rule is RequireAll) return rule.levelIds;
-      if (rule is RequireAny) return rule.levelIds;
-      if (rule is RequireExpression) return rule.children.expand(depsOf).toList();
-      return [];
-    }
-
-    final Map<String, List<String>> adj = {for (final l in levels) l.id: []};
-    final Map<String, int> indeg = {for (final l in levels) l.id: 0};
-
-    for (final l in levels) {
-      for (final d in depsOf(l.unlockRule)) {
-        if (!adj.containsKey(d)) continue;
-        adj[d] = [...adj[d]!, l.id];
-        indeg[l.id] = indeg[l.id]! + 1;
-      }
-    }
-
-    final List<String> q = [];
-    final Map<String, int> layer = {for (final l in levels) l.id: 0};
-    for (final id in indeg.keys) {
-      if (indeg[id] == 0) q.add(id);
-    }
-
-    while (q.isNotEmpty) {
-      final cur = q.removeAt(0);
-      for (final next in adj[cur]!) {
-        final candidate = layer[cur]! + 2;
-        if (candidate > layer[next]!) layer[next] = candidate;
-        indeg[next] = indeg[next]! - 1;
-        if (indeg[next] == 0) q.add(next);
-      }
-    }
-
-    int maxAssigned = layer.values.fold(0, (a, b) => a > b ? a : b);
-    for (final id in indeg.keys) {
-      if (indeg[id]! > 0) {
-        maxAssigned += 1;
-        layer[id] = maxAssigned;
-      }
-    }
-    return layer;
   }
 }
 

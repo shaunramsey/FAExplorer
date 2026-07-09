@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+﻿// ─────────────────────────────────────────────────────────────────────────────
 //  sim_panels.dart
 //
 //  Floating panels shown only while a simulation is active. Merged from the
@@ -115,7 +115,7 @@ class PdaStackPanel extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        'Stopped: ε-closure stack became too large '
+                        'Stopped: ~-closure stack became too large '
                         '(typical unbounded free-push like ~,~|X). '
                         'If you want to drain a loop, use ~,symbol|~.',
                         style: GoogleFonts.courierPrime(
@@ -203,7 +203,7 @@ class _ConfigCard extends StatelessWidget {
           const SizedBox(height: 4),
           _RowLabel(
             label: 'input',
-            value: remaining.isEmpty ? 'ε' : remaining,
+            value: remaining.isEmpty ? '~' : remaining,
             muted: remaining.isEmpty,
           ),
           const SizedBox(height: 8),
@@ -314,7 +314,7 @@ class _StackCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
-    final display = symbol.isEmpty ? 'ε' : symbol;
+    final display = symbol.isEmpty ? '~' : symbol;
     final isBottomMarker = symbol == kStackBottom;
 
     return Container(
@@ -322,7 +322,9 @@ class _StackCell extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 1),
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
       decoration: BoxDecoration(
-        color: isTop ? const Color(0xFF0A1929) : const Color(0xFF080D14),
+        color: isTop
+            ? Color.alphaBlend(theme.accent.withValues(alpha: 0.14), theme.bg)
+            : theme.bg,
         borderRadius: BorderRadius.vertical(
           top: isTop ? const Radius.circular(6) : Radius.zero,
           bottom: isBottom ? const Radius.circular(6) : Radius.zero,
@@ -634,7 +636,7 @@ class _TmConfigCard extends StatelessWidget {
     final bgColor = isAccepted
         ? theme.accentGreen.withValues(alpha: 0.08)
         : isRejected
-            ? const Color(0xFF1A0005)
+            ? const Color(0xFFFF1744).withValues(alpha: 0.08)
             : theme.bg;
 
     final stateTextColor = isAccepted
@@ -1787,7 +1789,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                                 vertical: 7,
                               ),
                               filled: true,
-                              fillColor: const Color(0xFF080D14),
+                              fillColor: theme.bg,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                                 borderSide: BorderSide(color: theme.borderMid),
@@ -1981,7 +1983,7 @@ class _StringSimulatorPanelState extends State<StringSimulatorPanel>
                               vertical: 7,
                             ),
                             filled: true,
-                            fillColor: const Color(0xFF080D14),
+                            fillColor: theme.bg,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(6),
                               borderSide: BorderSide(color: theme.borderMid),

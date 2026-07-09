@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
@@ -90,6 +91,9 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
   final Object _lineModeTag = Object();
   final Object _deleteModeTag = Object();
 
+  // ── Keyboard (Shift toggles line mode, mirrors AutomataScreen/GamePuzzle) ─
+  final FocusNode _focusNode = FocusNode();
+
   // ────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
@@ -108,6 +112,39 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
     for (final id in _lines.keys) {
       final n = int.tryParse(id.replaceFirst('l', ''));
       if (n != null && n >= _lineCounter) _lineCounter = n + 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  // ── Keyboard handling ───────────────────────────────────────────────────
+  //
+  //  Shift toggles line mode, same as the sandbox (AutomataScreen) and game
+  //  (GamePuzzle) canvases. Disabled in readOnly mode: there's no toolbar to
+  //  reflect the toggle and lineMode is permanently forced false there.
+  void _onKeyEvent(KeyEvent event) {
+    if (widget.readOnly) return;
+
+    final isShift = event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+        event.logicalKey == LogicalKeyboardKey.shiftRight;
+    if (!isShift) return;
+
+    if (event is KeyDownEvent) {
+      setState(() {
+        _lineMode = !_lineMode;
+        if (_lineMode) {
+          _placingStartArrow = false;
+          _deleteMode = false;
+        } else {
+          _draggingLineId = null;
+          _draggingNodeId = null;
+          _cancelRubberBand();
+        }
+      });
     }
   }
 
@@ -424,6 +461,16 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
                 }
               },
               onNodeDoubleTap: (id) {
+                // In line mode, double-tap is repurposed: instead of
+                // toggling accept state, it drops the start arrow on
+                // whichever node was double-clicked.
+                if (_lineMode) {
+                  if (_nodes[id] == null) return;
+                  setState(() => _startArrow = StartArrowData(nodeId: id));
+                  _notify();
+                  return;
+                }
+
                 final node = _nodes[id];
                 if (node == null || !node.canToggleNormalAccept) return;
                 setState(() => node.isAccept = !node.isAccept);
@@ -448,73 +495,78 @@ class _AutomataCanvasEmbedState extends State<AutomataCanvasEmbed> {
             ),
           );
 
-    return Stack(
-      children: [
-        Positioned.fill(child: canvasBody),
+    return KeyboardListener(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _onKeyEvent,
+      child: Stack(
+        children: [
+          Positioned.fill(child: canvasBody),
 
-        // ── Empty-canvas hint (edit mode only) ─────────────────────────
-        if (!widget.readOnly && _nodes.isEmpty)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.touch_app_outlined,
-                        color: theme.textDim.withValues(alpha: 0.22), size: 36),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Double-tap to add a state\n'
-                      'Drag node to move  ·  Use toolbar to draw transitions',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: theme.textDim.withValues(alpha: 0.28),
-                        fontSize: 11,
-                        height: 1.7,
+          // ── Empty-canvas hint (edit mode only) ─────────────────────────
+          if (!widget.readOnly && _nodes.isEmpty)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.touch_app_outlined,
+                          color: theme.textDim.withValues(alpha: 0.22), size: 36),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Double-tap to add a state\n'
+                        'Drag node to move  ·  Use toolbar to draw transitions',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: theme.textDim.withValues(alpha: 0.28),
+                          fontSize: 11,
+                          height: 1.7,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
-        // ── Mini toolbar (edit mode only) ────────────────────────────
-        if (!widget.readOnly)
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: _MiniToolbar(
-              lineMode: _lineMode,
-              placingStartArrow: _placingStartArrow,
-              deleteMode: _deleteMode,
-              startArrowTag: _startArrowTag,
-              lineModeTag: _lineModeTag,
-              deleteModeTag: _deleteModeTag,
-              onStartArrowToggle: () => setState(() {
-                _placingStartArrow = !_placingStartArrow;
-                if (_placingStartArrow) {
-                  _lineMode = false;
-                  _deleteMode = false;
-                }
-              }),
-              onLineModeToggle: () => setState(() {
-                _lineMode = !_lineMode;
-                if (_lineMode) {
-                  _placingStartArrow = false;
-                  _deleteMode = false;
-                }
-              }),
-              onDeleteModeToggle: () => setState(() {
-                _deleteMode = !_deleteMode;
-                if (_deleteMode) {
-                  _lineMode = false;
-                  _placingStartArrow = false;
-                }
-              }),
+          // ── Mini toolbar (edit mode only) ────────────────────────────
+          if (!widget.readOnly)
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: _MiniToolbar(
+                lineMode: _lineMode,
+                placingStartArrow: _placingStartArrow,
+                deleteMode: _deleteMode,
+                startArrowTag: _startArrowTag,
+                lineModeTag: _lineModeTag,
+                deleteModeTag: _deleteModeTag,
+                onStartArrowToggle: () => setState(() {
+                  _placingStartArrow = !_placingStartArrow;
+                  if (_placingStartArrow) {
+                    _lineMode = false;
+                    _deleteMode = false;
+                  }
+                }),
+                onLineModeToggle: () => setState(() {
+                  _lineMode = !_lineMode;
+                  if (_lineMode) {
+                    _placingStartArrow = false;
+                    _deleteMode = false;
+                  }
+                }),
+                onDeleteModeToggle: () => setState(() {
+                  _deleteMode = !_deleteMode;
+                  if (_deleteMode) {
+                    _lineMode = false;
+                    _placingStartArrow = false;
+                  }
+                }),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
