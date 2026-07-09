@@ -48,11 +48,39 @@ Future<void> showBatchSimulatorDialog(
   PdaSimulator? pdaSimulator,
   TmSimulator? tmSimulator,
   required StartArrowData? startArrow,
+  // The string currently loaded in the main string-simulator panel, plus any
+  // extra-tape inputs (TM only). Needed to restore each simulator to its
+  // pre-batch state once every candidate line has been tested — see the
+  // comment above `rebuildResults()` for why this must be a full rebuild()
+  // rather than a manual field-by-field restore.
+  required String currentInput,
+  List<String> additionalTapeInputs = const [],
 }) async {
   final accepted = <int>{};
   final rejected = <int>{};
   late _BatchHighlightController controller;
 
+  // Each iteration below drives a simulator through rebuild(candidateString)
+  // purely to read off its accept/reject verdict, then must put that
+  // simulator back exactly how it was so the main screen keeps showing the
+  // *original* string's state once this dialog closes.
+  //
+  // That restoration used to be done by hand-copying a few public fields
+  // (tokens, steps, step, states, usedLines). That was never enough:
+  //   - AutomataSimulator additionally tracks acceptance via a *private*
+  //     field (_configsByStep) that the dialog has no way to reach and copy
+  //     back, so finalResult() kept reflecting the last batch line tested.
+  //   - PdaSimulator/TmSimulator also carry loop/halt flags
+  //     (stackGrowthLoopDetected / noMovesTerminal) and their own `tokens`
+  //     list that weren't part of the manual restore, risking a stale
+  //     "loop detected" result and a RangeError in remainingInputAt() if a
+  //     later string were shorter than the last batch line tested.
+  //
+  // Rebuilding each simulator against `currentInput` after the test is the
+  // one operation guaranteed to reset *all* of that state at once, public
+  // or private, because it's the same code path the main screen itself uses
+  // to build a simulator's state from a string. The extra rebuild per line
+  // is negligible for the string lengths this dialog is used with.
   void rebuildResults() {
     accepted.clear();
     rejected.clear();
@@ -64,8 +92,7 @@ Future<void> showBatchSimulatorDialog(
       if (!isComplete || str.isEmpty) continue;
 
       if (tmSimulator != null) {
-        final oldStep  = tmSimulator.step;
-        final oldSteps = List<TmStepSnapshot>.from(tmSimulator.steps);
+        final oldStep = tmSimulator.step;
 
         tmSimulator.rebuild(str, startArrow: startArrow);
         final result = tmSimulator.result;
@@ -76,13 +103,14 @@ Future<void> showBatchSimulatorDialog(
           rejected.add(i);
         }
 
-        tmSimulator.steps
-          ..clear()
-          ..addAll(oldSteps);
-        tmSimulator.step = oldStep;
+        tmSimulator.rebuild(
+          currentInput,
+          startArrow: startArrow,
+          additionalTapeInputs: additionalTapeInputs,
+        );
+        tmSimulator.step = oldStep.clamp(-1, tmSimulator.maxStep);
       } else if (pdaSimulator != null) {
-        final oldStep  = pdaSimulator.step;
-        final oldSteps = List<PdaStepSnapshot>.from(pdaSimulator.steps);
+        final oldStep = pdaSimulator.step;
 
         pdaSimulator.rebuild(str, startArrow: startArrow);
         final result = pdaSimulator.finalResult();
@@ -93,15 +121,10 @@ Future<void> showBatchSimulatorDialog(
           rejected.add(i);
         }
 
-        pdaSimulator.steps
-          ..clear()
-          ..addAll(oldSteps);
-        pdaSimulator.step = oldStep;
+        pdaSimulator.rebuild(currentInput, startArrow: startArrow);
+        pdaSimulator.step = oldStep.clamp(-1, pdaSimulator.maxStep);
       } else {
-        final oldTokens = List<String>.from(simulator.tokens);
-        final oldStates = simulator.states.map(Set<String>.from).toList();
-        final oldLines  = simulator.usedLines.map(Set<String>.from).toList();
-        final oldStep   = simulator.step;
+        final oldStep = simulator.step;
 
         simulator.rebuild(str, startArrow: startArrow);
         final result = simulator.finalResult();
@@ -112,14 +135,8 @@ Future<void> showBatchSimulatorDialog(
           rejected.add(i);
         }
 
-        simulator.tokens = oldTokens;
-        simulator.step   = oldStep;
-        simulator.states
-          ..clear()
-          ..addAll(oldStates);
-        simulator.usedLines
-          ..clear()
-          ..addAll(oldLines);
+        simulator.rebuild(currentInput, startArrow: startArrow);
+        simulator.step = oldStep.clamp(-1, simulator.maxStep);
       }
     }
   }

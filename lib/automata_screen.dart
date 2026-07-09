@@ -101,6 +101,8 @@ class _AutomataScreenState extends State<AutomataScreen> with WidgetsBindingObse
         pdaSimulator: _automataMode == AutomataMode.pda ? _pdaSimulator : null,
         tmSimulator: _automataMode == AutomataMode.tm ? _tmSimulator : null,
         startArrow: _startArrow,
+        currentInput: _simController.text,
+        additionalTapeInputs: _tapeControllers.map((c) => c.text).toList(),
       );
 
   GraphState get _graphState => GraphState(
