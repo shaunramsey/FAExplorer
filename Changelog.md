@@ -1,3 +1,60 @@
+# July 13th, 2026
+* Added in more levels to tm study mode
+* Added in comments to multiple files to better explain code 
+
+# July 9th, 2026
+* Fixed an issue with batch simulator for pda mode
+* Fixed a multitape issue with tm mode not fully working
+* Fixed config panel highlights being behind by 1 step
+
+# July 8th, 2026
+* Fixed minor code issues with gamemode
+* Added in a simple tm study mode
+
+# July 7th, 2026
+* Increased the screen size of study mode
+* Fixed an issue where study mode and game mode were using the depercated regex to nfa
+* Allowed shift to switch to line mode in study mode
+* Allowed double click in line mode to place a start state
+* Converted all epsilons to ~
+* Reduced the size of the alphabet banner in study mode to make the screen more visible
+* Fixed an issue where certain textfields were not editing upon color updated leading to unreadable text
+
+# July 6th, 2026
+* Improved the UI and layout of the drawer
+* Edited study mode to be more random
+* Added in blinking for line highlights
+* Added in more quick color palettes 
+* Improved regex to dfa tutorial
+* Added in tutorials to study mode
+* Allowed the user to view other tape configurations in tm mode
+* Edited study modes dfa to regex to allow the movement of nodes via the user
+* 
+
+# July 3rd, 2026
+* Fixed an issue with batch sim in PDA mode not being correct
+* Fixed an issue with PDA study mode not returning the correct language
+* Fixed multiple minor/misc bugs
+* Fixed an issue with game levels not being readable
+* Cleaned up level screen panning
+* Fixed an issue where immediate free jump lines were not being highlighted
+* Improved the help menu to only show tips related to the users current mode
+* Fixed a study mode issue where description to dfa would have regex as well
+* Fixed an issue with halt and accept not halting all computations
+* Added in a main menu button to all modes
+
+# July 2nd, 2026
+* Further code refactors to lessen file quantity and size
+* Fixed deprecation issues and other small/minor bugs
+
+# July 1st, 2026
+* Tm mode now properly resets to prevent issues
+* Code refactors to lessen file amounts
+
+# June 29th, 2026
+* Code refactoring
+* Change to nodes to lessen their overlap between them and line textboxes
+
 # June 25th, 2026
 * Added in PDA study mode 
 * Improved study mode correct results screen
