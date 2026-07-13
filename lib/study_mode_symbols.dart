@@ -33,6 +33,13 @@
 import 'dart:math';
 
 /// The full pool of symbols study-mode challenges may draw from.
+///
+/// Order here doesn't matter for correctness (randomStudyAlphabet shuffles
+/// before drawing), but it's kept in a readable digits-then-letters order
+/// for anyone skimming the source.
+///
+/// Count check: 10 digits + 24 letters (26 minus 'l' and 'o') = 34 symbols
+/// total. That's the ceiling for `size` in randomStudyAlphabet below.
 const List<String> kStudySymbolPool = [
   // Digits.
   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
@@ -48,9 +55,46 @@ const List<String> kStudySymbolPool = [
 /// templates, PDA challenges) should call this itself for each individual
 /// challenge it builds, so a session never settles into a couple of
 /// recurring symbols.
+///
+/// Implementation notes:
+///   - `rng` is passed in (rather than constructed here) so callers control
+///     seeding — e.g. tests can pass a seeded Random for determinism, and
+///     production call sites can share one Random instance across a whole
+///     generation session instead of constructing a fresh unseeded one per
+///     challenge (repeatedly constructing `Random()` in a tight loop can
+///     produce correlated sequences on some platforms since it's commonly
+///     seeded from the clock).
+///   - The assert below is debug-only (stripped in release builds per Dart
+///     semantics), so a bad `size` argument will silently misbehave in
+///     release rather than throw — see BUG note below.
 Set<String> randomStudyAlphabet(Random rng, {int size = 2}) {
+  // Guards the two ways `size` could be invalid:
+  //   size <= 0            -> take(size) would yield an empty/negative-length
+  //                            iteration (take() actually clamps negative to 0,
+  //                            so size <= 0 just silently returns an empty set
+  //                            in release mode rather than failing loudly).
+  //   size > pool.length    -> take(size) would just return the whole
+  //                            34-element pool instead of an error, silently
+  //                            giving the caller fewer symbols than requested.
+  //
+  // NOTE (potential issue): this assert is compiled out of release builds.
+  // If a caller ever passes e.g. `size: 40` or `size: 0` in production, this
+  // function will NOT throw — it will silently return a smaller-than-
+  // requested (or empty) set instead of surfacing the bug. Callers that rely
+  // on getting exactly `size` distinct symbols back should not depend on
+  // this assert catching misuse in release builds.
   assert(size > 0 && size <= kStudySymbolPool.length,
       'size must be between 1 and ${kStudySymbolPool.length}');
+
+  // Copy the const pool into a growable/mutable List (List.of makes a new
+  // list; shuffling the const list in place would throw, since const lists
+  // are unmodifiable) and shuffle it using the caller-supplied Random so the
+  // draw order is fully controlled by `rng`.
   final shuffled = List<String>.of(kStudySymbolPool)..shuffle(rng);
+
+  // Take the first `size` symbols post-shuffle and collect them into a Set.
+  // Using a Set (rather than a List) both documents "these are meant to be
+  // distinct" and would silently de-duplicate if the pool ever contained a
+  // repeat — though it currently doesn't, so this is purely defensive.
   return shuffled.take(size).toSet();
 }

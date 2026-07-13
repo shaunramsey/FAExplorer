@@ -158,6 +158,24 @@ class AuthService {
     _user = null;
   }
 
+  // BUG (race condition): _prefs is only guaranteed non-null *after* init()
+  // has completed (it's assigned via `_prefs ??= await SharedPreferences
+  // .getInstance()` inside init()). But init() is kicked off from
+  // AppGate._initializeAuth() WITHOUT gating the UI on it — LoginScreen is
+  // shown immediately on the very first frame (_authenticated starts false)
+  // and initState() calls _initializeAuth() without awaiting before the
+  // first build(). If the user taps "Continue as guest" (or Sign in/Sign
+  // up below) fast enough that this method runs before init()'s
+  // `SharedPreferences.getInstance()` future resolves, `_prefs` is still
+  // null here. `_prefs?.setString(...)` then silently no-ops (null-aware
+  // operator swallows it — no exception, no signal of any kind) instead of
+  // persisting the auth mode. In-memory state (_mode/_user) still updates
+  // correctly for the current session, so the bug is invisible until the
+  // next cold start: init() reads AuthPreferenceKeys.authMode, finds
+  // nothing was ever written, and the user is dropped back to the login
+  // screen despite having "signed in" successfully last time. Same failure
+  // mode applies to signIn(), signUp(), and signOut() below, all of which
+  // use the same `_prefs?.` pattern.
   Future<void> continueAsGuest() async {
     final auth = _auth;
     if (auth != null && auth.currentUser != null) {

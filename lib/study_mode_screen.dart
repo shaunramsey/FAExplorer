@@ -707,6 +707,40 @@ class StudyModeScreen extends StatefulWidget {
 
 void _noop() {}
 
+/// Nudges a freshly-shuffled challenge queue so no two neighbouring entries
+/// are the exact same question. A plain shuffle can still land two
+/// identical challenges side by side — that's what actually reads as
+/// "repetitive" when working through the queue in order, more so than any
+/// amount of variety elsewhere in the pool.
+///
+/// This is a generic safety net over whichever source(s) contributed to
+/// [queue] (regex, description, PDA, or TM challenges, in any combination),
+/// since a per-source generator's own ordering doesn't survive the combined
+/// shuffle `_buildQueue` does afterward. Individual generators should still
+/// avoid *producing* duplicates in the first place — this only cleans up
+/// unlucky adjacency, it can't manufacture variety that isn't there.
+void _spreadOutAdjacentDuplicates(List<_AnyChallenge> queue) {
+  String key(_AnyChallenge c) {
+    final sortedAlphabet = c.alphabet.toList()..sort();
+    return '${c.description}\u0000${c.regex}\u0000${sortedAlphabet.join()}';
+  }
+
+  for (int i = 1; i < queue.length; i++) {
+    if (key(queue[i]) != key(queue[i - 1])) continue;
+    // Find the nearest later entry that isn't a duplicate of the one right
+    // before this slot, and swap it in. If none exists (only possible when
+    // the whole remaining queue is one repeated challenge), leave it be.
+    for (int j = i + 1; j < queue.length; j++) {
+      if (key(queue[j]) != key(queue[i - 1])) {
+        final tmp = queue[i];
+        queue[i] = queue[j];
+        queue[j] = tmp;
+        break;
+      }
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _StudyModeScreenState extends State<StudyModeScreen>
@@ -833,6 +867,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       all.addAll(_generateChallenges(_rng).map(_AnyChallenge.regex));
     }
     _queue = all..shuffle(_rng);
+    _spreadOutAdjacentDuplicates(_queue);
     _queueIndex = 0;
   }
 
