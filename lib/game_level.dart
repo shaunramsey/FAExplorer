@@ -232,6 +232,8 @@ class EasyModeNode {
 //  GameLevel
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Stores the metadata for one puzzle level, including its title, unlock rule,
+/// hidden target machine, and the kind of challenge the player must solve.
 class GameLevel {
   final String id;
   final String title;
@@ -397,6 +399,7 @@ class GameLevel {
 //    Col 30 x≈1.12   DFA→REGEX B   — dfa_to_regex_starts_ab / dfa_to_regex_no_consec_b / dfa_to_regex_binary_mod2 (3 levels)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// The complete catalog of puzzle levels shown by the level-selection UI.
 const List<GameLevel> kAllLevels = [
 
   // ═══════════════════════════════════════════════════════════════════════════

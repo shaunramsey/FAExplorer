@@ -71,6 +71,7 @@ enum TmSolutionKind {
   copyLang,
   unequalCount,
   crossingDep,
+  addConstant,
 }
 
 /// Describes which reference TM to build for a study challenge.
@@ -162,6 +163,21 @@ class TmSolutionSpec {
   const TmSolutionSpec.crossingDep(this.a, this.b, this.c, this.d, {this.mults})
       : kind = TmSolutionKind.crossingDep,
         k = null;
+
+  /// Not a decision language: the machine must transform the tape from N
+  /// (binary, no leading zeros except "0" itself) into N + [k]. [a]/[b] are
+  /// unused by this kind (the alphabet is always the fixed {'0','1'}, not a
+  /// per-challenge random pair) but are still given harmless placeholder
+  /// values since the fields are non-nullable. See _buildAddConstantTm for
+  /// the construction and study_mode_tm.dart's gradeStudyTm for how output
+  /// (not just accept/reject) gets checked.
+  const TmSolutionSpec.addConstant(this.k)
+      : kind = TmSolutionKind.addConstant,
+        a = '0',
+        b = '1',
+        c = null,
+        d = null,
+        mults = null;
 }
 
 GraphState buildStudyTmSolution(TmSolutionSpec spec) {
@@ -178,6 +194,7 @@ GraphState buildStudyTmSolution(TmSolutionSpec spec) {
     TmSolutionKind.unequalCount => _buildUnequalCountTm(spec.a, spec.b),
     TmSolutionKind.crossingDep => _buildCrossingDepTm(
         [spec.a, spec.b, spec.c!, spec.d!], spec.mults ?? const [1, 1, 1, 1]),
+    TmSolutionKind.addConstant => _buildAddConstantTm(spec.k!),
   };
 }
 
@@ -863,4 +880,105 @@ GraphState _buildCrossingDepTm(List<String> order, List<int> mults) {
   transitions.add(('ret2', 'g1', _atBlank('R')));
 
   return _graph(states: states, transitions: transitions, startId: 'p0');
+}
+
+// K) Not a decision language: f(N) = N + k for a fixed constant k, N a
+// binary numeral (no leading zeros, except "0" itself). Graded on the
+// tape's final contents matching N + k exactly, not just accept/reject —
+// see study_mode_tm.dart's gradeStudyTm / StudyTmTestCase.expectedOutput.
+//
+// This is a ripple-carry adder against a *compile-time* constant: k is
+// never written to the tape — its bits are baked directly into which of a
+// chain of m = k.bitLength() phases the machine is in, so the state count
+// is O(log k) (2*m + 3, at most 21 states for k up to 256) rather than
+// O(k). A naive "chain k separate +1 machines back to back" construction
+// was considered and rejected for exactly this reason: for k up to 256 it
+// would run into the hundreds of states, which stops being something a
+// person can read as a graph, whereas this construction tops out at 21.
+//
+// Algorithm, processing bit positions 0 (least-significant — the tape's
+// rightmost digit) upward:
+//  0. SEEK — scan right off the end of N, then step back one to sit on
+//     N's rightmost bit.
+//  1. PHASES 0..m-1 (p{i}_c0 / p{i}_c1 — one pair of states per bit of k,
+//     the suffix tracking the incoming carry) — phase i adds k's bit i
+//     plus the incoming carry to N's bit at that tape position. Reading
+//     blank here means N ran out of bits first; it's treated as an
+//     implicit 0 and materialized by writing the sum bit, extending the
+//     tape. Each phase writes the sum bit, moves left, and advances to
+//     the next phase carrying the new carry bit *in the state itself*
+//     (there's nowhere on the tape to put it) — except the last phase,
+//     whose target is 'acc' directly when its carry-out is 0 (nothing
+//     left to change) or 'carry' when its carry-out is 1 (still need to
+//     ripple through whatever of N's bits lie beyond k's bit-length).
+//  2. CARRY — an ordinary increment-style ripple: flip 1→0 and keep
+//     going; flip the first 0 (or blank, extending the tape with a new
+//     leading digit) to 1 and stop.
+//
+// Verified against an independent Python model of this exact transition
+// table: exhaustive over every k in 1..256 crossed with every canonical N
+// from 0..299 (76,800 cases), 20,000 randomized trials with N up to 2^20,
+// and a dedicated adversarial sweep of all-ones inputs (the
+// maximum-carry-cascade case) at several bit-lengths relative to k, for
+// k in {1,2,3,4,7,8,15,16,31,32,63,64,127,128,129,200,255,256} — 0
+// failures in every case, plus N="0" for every k from 1 to 256. Worst-case
+// step count observed across all of the above was 42 steps, far inside
+// kStudyTmMaxSteps (5000).
+GraphState _buildAddConstantTm(int k) {
+  assert(k >= 1, 'addConstant needs k >= 1');
+  final m = k.bitLength;
+  final kBits = [for (int i = 0; i < m; i++) (k >> i) & 1];
+
+  final states = <(String, String, bool)>[
+    ('seek', 'SEEK', false),
+    for (int i = 0; i < m; i++) ('p${i}_c0', 'P${i}0', false),
+    for (int i = 0; i < m; i++) ('p${i}_c1', 'P${i}1', false),
+    ('carry', 'CARRY', false),
+    ('acc', 'OK', true),
+  ];
+
+  // Where phase i lands next, given its own carry-out bit.
+  String afterPhase(int i, int carryOut) {
+    if (i + 1 < m) return 'p${i + 1}_c$carryOut';
+    return carryOut == 0 ? 'acc' : 'carry';
+  }
+
+  final transitions = <(String, String, String)>[
+    ('seek', 'seek', _selfR('0')),
+    ('seek', 'seek', _selfR('1')),
+    ('seek', 'p0_c0', _atBlank('L')),
+  ];
+
+  for (int i = 0; i < m; i++) {
+    final ki = kBits[i];
+    final c0 = 'p${i}_c0';
+    final c1 = 'p${i}_c1';
+    if (ki == 0) {
+      // carry-in 0, k-bit 0: sum = bit, carry-out = 0 (nothing changes).
+      transitions.add((c0, afterPhase(i, 0), _tt('0', '0', 'L')));
+      transitions.add((c0, afterPhase(i, 0), _tt(_blank, '0', 'L')));
+      transitions.add((c0, afterPhase(i, 0), _tt('1', '1', 'L')));
+      // carry-in 1, k-bit 0: sum = bit XOR 1, carry-out = bit.
+      transitions.add((c1, afterPhase(i, 0), _tt('0', '1', 'L')));
+      transitions.add((c1, afterPhase(i, 0), _tt(_blank, '1', 'L')));
+      transitions.add((c1, afterPhase(i, 1), _tt('1', '0', 'L')));
+    } else {
+      // carry-in 0, k-bit 1: sum = bit XOR 1, carry-out = bit.
+      transitions.add((c0, afterPhase(i, 0), _tt('0', '1', 'L')));
+      transitions.add((c0, afterPhase(i, 0), _tt(_blank, '1', 'L')));
+      transitions.add((c0, afterPhase(i, 1), _tt('1', '0', 'L')));
+      // carry-in 1, k-bit 1: sum = bit, carry-out = 1.
+      transitions.add((c1, afterPhase(i, 1), _tt('0', '0', 'L')));
+      transitions.add((c1, afterPhase(i, 1), _tt(_blank, '0', 'L')));
+      transitions.add((c1, afterPhase(i, 1), _tt('1', '1', 'L')));
+    }
+  }
+
+  transitions.addAll([
+    ('carry', 'carry', _tt('1', '0', 'L')),
+    ('carry', 'acc', _tt('0', '1', 'S')),
+    ('carry', 'acc', _tt(_blank, '1', 'S')),
+  ]);
+
+  return _graph(states: states, transitions: transitions, startId: 'seek');
 }

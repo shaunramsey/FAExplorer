@@ -82,6 +82,8 @@ String _rep(String s, int n) => List.filled(n, s).join();
 /// On top of that, [_spreadOutSameFamily] nudges the shuffled result so the
 /// same family doesn't land back-to-back either — even with different
 /// symbols, two "a^n b^n"-shaped questions in a row read as repetitive.
+/// Generates a shuffled pool of TM practice challenges and makes sure the same
+/// language family does not appear back-to-back too often.
 List<StudyTmChallenge> generateStudyTmChallenges(Random rng, {int count = 20}) {
   final templates = List<_TmTemplate>.of(_kTmTemplates)..shuffle(rng);
   final result = <StudyTmChallenge>[
@@ -456,7 +458,7 @@ StudyTmChallenge _tmCrossingDep(Random rng) {
   final m0 = mults[0], m1 = mults[1], m2 = mults[2], m3 = mults[3];
 
   String blockTerm(String sym, int m, String counter) =>
-      m == 1 ? '$sym^$counter' : '$sym^(${m}$counter)';
+      m == 1 ? '$sym^$counter' : '$sym^($m$counter)';
   String countPhrase(int m, String counter) =>
       m == 1 ? counter : '$m·$counter';
 
@@ -529,6 +531,8 @@ class StudyTmGradeResult {
   const StudyTmGradeResult.failed(this.failedCase) : correct = false;
 }
 
+/// Grades a player's TM solution by running the submitted machine against the
+/// challenge's oracle test cases and comparing the outcomes to the expected ones.
 StudyTmGradeResult gradeStudyTm({
   required Map<String, NodeData> nodes,
   required Map<String, LineData> lines,
@@ -561,6 +565,8 @@ StudyTmGradeResult gradeStudyTm({
 
 // ── Widgets ──────────────────────────────────────────────────────────────────
 
+/// Draw area for TM practice rounds, rendering either the player's current
+/// machine or the read-only solution once the answer is revealed.
 class StudyTmDrawingArea extends StatefulWidget {
   final StudyTmChallenge challenge;
   final bool submitted;
@@ -674,6 +680,7 @@ class _StudyTmDrawingAreaState extends State<StudyTmDrawingArea> {
   }
 }
 
+/// Compact strip showing accepting and rejecting example strings for the TM challenge.
 class StudyTmTestCaseStrip extends StatelessWidget {
   final StudyTmChallenge challenge;
   final AppThemeNotifier theme;

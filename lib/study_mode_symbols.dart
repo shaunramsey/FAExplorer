@@ -37,9 +37,6 @@ import 'dart:math';
 /// Order here doesn't matter for correctness (randomStudyAlphabet shuffles
 /// before drawing), but it's kept in a readable digits-then-letters order
 /// for anyone skimming the source.
-///
-/// Count check: 10 digits + 24 letters (26 minus 'l' and 'o') = 34 symbols
-/// total. That's the ceiling for `size` in randomStudyAlphabet below.
 const List<String> kStudySymbolPool = [
   // Digits.
   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
@@ -54,16 +51,10 @@ const List<String> kStudySymbolPool = [
 /// point. Every study-mode generator (regex templates, description
 /// templates, PDA challenges) should call this itself for each individual
 /// challenge it builds, so a session never settles into a couple of
-/// recurring symbols.
+/// recurring symbols. Additionally this prevents the alphabet for each language
+/// from being null upon a reload.
 ///
 /// Implementation notes:
-///   - `rng` is passed in (rather than constructed here) so callers control
-///     seeding — e.g. tests can pass a seeded Random for determinism, and
-///     production call sites can share one Random instance across a whole
-///     generation session instead of constructing a fresh unseeded one per
-///     challenge (repeatedly constructing `Random()` in a tight loop can
-///     produce correlated sequences on some platforms since it's commonly
-///     seeded from the clock).
 ///   - The assert below is debug-only (stripped in release builds per Dart
 ///     semantics), so a bad `size` argument will silently misbehave in
 ///     release rather than throw — see BUG note below.
@@ -95,6 +86,6 @@ Set<String> randomStudyAlphabet(Random rng, {int size = 2}) {
   // Take the first `size` symbols post-shuffle and collect them into a Set.
   // Using a Set (rather than a List) both documents "these are meant to be
   // distinct" and would silently de-duplicate if the pool ever contained a
-  // repeat — though it currently doesn't, so this is purely defensive.
+  // repeat this is purely defensive.
   return shuffled.take(size).toSet();
 }

@@ -131,6 +131,8 @@ String _resolveCommand(String token) {
   return kTokenReplacements[inner] ?? token;
 }
 
+/// Runs a DFA/NFA step-by-step and records every reachable configuration so
+/// the UI can highlight the active states and transitions as the machine advances.
 class AutomataSimulator {
   AutomataSimulator({required this.nodes, required this.lines});
 
@@ -859,6 +861,8 @@ class PdaStepSnapshot {
   Set<String> get activeNodeIds => {for (final c in configs) c.nodeId};
 }
 
+/// Executes a PDA over the input while tracking the stack contents for every
+/// active configuration, which lets the UI animate both state and stack progress.
 class PdaSimulator {
   PdaSimulator({required this.nodes, required this.lines});
 
@@ -1242,7 +1246,8 @@ class TmTransition {
   });
 }
 
-/// Parse a single transition alternative string into a [TmTransition].
+/// Parses one transition alternative into a TM action, including shorthand,
+/// wildcard reads, blank-symbol handling, and optional tape-index prefixes.
 TmTransition parseTmLabel(String raw) {
   String preprocessed = raw.replaceAll('\\0', kBlank);
   String s = parseTokenText(preprocessed.trim());
@@ -2023,6 +2028,8 @@ enum TmResult { accept, reject, running }
 //  NTM Simulator
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Simulates a Turing machine across one or more tapes and records each
+/// branching step so the app can replay the computation in the canvas UI.
 class TmSimulator {
   TmSimulator({required this.nodes, required this.lines});
 

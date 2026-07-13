@@ -82,6 +82,8 @@ class GraphState {
 //  DslCodec
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Converts automata graphs to and from the app's DSL and SVG formats so
+/// machines can be saved, imported, and reloaded across sessions.
 class DslCodec {
   const DslCodec._();
 
@@ -1175,6 +1177,7 @@ String _latexLabelToDsl(String tex) {
 //  LatexExporter
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Exports a graph to LaTeX-friendly text for documentation or sharing.
 class LatexExporter {
   const LatexExporter._();
 
@@ -1338,6 +1341,7 @@ class LatexExporter {
 //  recover an original node id from the % id=nN comment.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Imports LaTeX-generated automata descriptions back into the editor graph.
 class LatexImporter {
   const LatexImporter._();
 
@@ -2233,6 +2237,7 @@ String _printPrec(_RE r, int prec) {
 // SECTION: svg_export.dart
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Renders a graph as an SVG so it can be embedded or downloaded externally.
 class SvgExporter {
   const SvgExporter._();
 
