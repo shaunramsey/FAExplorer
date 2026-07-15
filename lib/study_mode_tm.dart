@@ -18,7 +18,16 @@ enum StudyTmDifficulty { easy, medium, hard }
 class StudyTmTestCase {
   final String input;
   final bool expected;
-  const StudyTmTestCase(this.input, this.expected);
+
+  /// When non-null, grading requires more than just accept/reject: after
+  /// the machine accepts, its final tape (blank-trimmed, same convention as
+  /// automata_dialogs.dart's transform-preview output) must equal this
+  /// string exactly. Only [TmSolutionKind.addConstant] (see
+  /// tm_study_solutions.dart) uses this — every other family is a plain
+  /// decision language and leaves it null.
+  final String? expectedOutput;
+
+  const StudyTmTestCase(this.input, this.expected, {this.expectedOutput});
 }
 
 class StudyTmChallenge {
@@ -59,6 +68,7 @@ final List<_TmTemplate> _kTmTemplates = [
   _tmCopyLang,
   _tmUnequalCount,
   _tmCrossingDep,
+  _tmAddConstant,
 ];
 
 /// Repeats [s] [n] times. Dart strings don't overload `*`, and several
@@ -68,7 +78,7 @@ String _rep(String s, int n) => List.filled(n, s).join();
 
 /// Builds [count] TM challenges.
 ///
-/// There are 10 language families below, so hitting the default count of 20
+/// There are 11 language families below, so hitting the default count of 20
 /// still means revisiting families multiple times — that part's
 /// unavoidable. What matters is that every visit is a *fresh* call into the
 /// template, drawing its own alphabet via [_freshPair] /
@@ -82,8 +92,6 @@ String _rep(String s, int n) => List.filled(n, s).join();
 /// On top of that, [_spreadOutSameFamily] nudges the shuffled result so the
 /// same family doesn't land back-to-back either — even with different
 /// symbols, two "a^n b^n"-shaped questions in a row read as repetitive.
-/// Generates a shuffled pool of TM practice challenges and makes sure the same
-/// language family does not appear back-to-back too often.
 List<StudyTmChallenge> generateStudyTmChallenges(Random rng, {int count = 20}) {
   final templates = List<_TmTemplate>.of(_kTmTemplates)..shuffle(rng);
   final result = <StudyTmChallenge>[
@@ -458,7 +466,7 @@ StudyTmChallenge _tmCrossingDep(Random rng) {
   final m0 = mults[0], m1 = mults[1], m2 = mults[2], m3 = mults[3];
 
   String blockTerm(String sym, int m, String counter) =>
-      m == 1 ? '$sym^$counter' : '$sym^($m$counter)';
+      m == 1 ? '$sym^$counter' : '$sym^(${m}$counter)';
   String countPhrase(int m, String counter) =>
       m == 1 ? counter : '$m·$counter';
 
@@ -515,6 +523,73 @@ StudyTmChallenge _tmCrossingDep(Random rng) {
   );
 }
 
+// L) Not a decision language: f(N) = N + k for a fixed constant k drawn
+// fresh per challenge (1-256), N a binary numeral (no leading zeros, except
+// "0" itself). Grading (see gradeStudyTm below) checks the machine's final
+// tape contents against a numerically-computed expected output, not just
+// whether it accepted — every test case's expectedOutput is computed here
+// by ordinary Dart integer arithmetic, entirely independent of whatever the
+// player's (or the reference solution's) machine actually does, so grading
+// never depends on any TM construction being correct.
+StudyTmChallenge _tmAddConstant(Random rng) {
+  final k = 1 + rng.nextInt(256); // 1..256, inclusive both ends
+  final kBin = k.toRadixString(2);
+  final m = kBin.length; // k's bit-length
+
+  String bin(int n) => n == 0 ? '0' : n.toRadixString(2);
+
+  // Representative N values, chosen to exercise every corner of the
+  // ripple-carry logic:
+  //   0, 1            - shortest possible inputs
+  //   allOnes         - exactly k's bit-length, all 1s: forces the carry to
+  //                      ripple through every one of k's phases
+  //   smallRandom     - a modest-length random value
+  //   longerRandom    - deliberately longer than k, so some of the answer's
+  //                      high-order bits must pass through untouched
+  // A Set dedupes the rare cases where these coincide for small k.
+  final allOnes = (1 << m) - 1;
+  final smallRandom = rng.nextInt(1 << (m + 3));
+  final longerRandom = (1 << (m + 4)) + rng.nextInt(1 << (m + 4));
+  final values = <int>{0, 1, allOnes, smallRandom, longerRandom}.toList()
+    ..sort();
+
+  final testCases = [
+    for (final n in values)
+      StudyTmTestCase(bin(n), true, expectedOutput: bin(n + k)),
+  ];
+
+  final sampleA = values[values.length ~/ 2];
+  final sampleB = values.last;
+
+  return StudyTmChallenge(
+    description: 'f(N) = N + $k, for N a non-negative integer in binary\n\n'
+        'The input is a binary numeral N (no leading zeros, except "0" '
+        'itself). This isn\'t accept/reject: halt with the tape showing '
+        'the binary numeral for N + $k. Grading checks the exact final '
+        'tape contents, not just whether your machine halts in an '
+        'accepting state.',
+    hint: 'Add $k (binary $kBin) to N the way you\'d add by hand: walk to '
+        'N\'s rightmost bit, then add $kBin\'s bits one at a time from '
+        'least-significant up, carrying leftward (there\'s nowhere on the '
+        'tape to write the carry, so track it with which state you\'re '
+        'in). Once you run out of $kBin\'s bits, if there\'s still a '
+        'carry, keep rippling left through N\'s remaining bits the way a '
+        'plain "+1" machine would: flip 1s to 0s and keep carrying, flip '
+        'the first 0 (or blank) to a 1 and stop.',
+    alphabet: const {'0', '1'},
+    difficulty: k <= 8
+        ? StudyTmDifficulty.easy
+        : (k <= 64 ? StudyTmDifficulty.medium : StudyTmDifficulty.hard),
+    testCases: testCases,
+    acceptExamples: [
+      '${bin(sampleA)}→${bin(sampleA + k)}',
+      '${bin(sampleB)}→${bin(sampleB + k)}',
+    ],
+    rejectExamples: const [],
+    solutionSpec: TmSolutionSpec.addConstant(k),
+  );
+}
+
 // ── Grading ──────────────────────────────────────────────────────────────────
 
 /// Safety cap on simulation steps per test case. Every construction the
@@ -531,8 +606,6 @@ class StudyTmGradeResult {
   const StudyTmGradeResult.failed(this.failedCase) : correct = false;
 }
 
-/// Grades a player's TM solution by running the submitted machine against the
-/// challenge's oracle test cases and comparing the outcomes to the expected ones.
 StudyTmGradeResult gradeStudyTm({
   required Map<String, NodeData> nodes,
   required Map<String, LineData> lines,
@@ -565,8 +638,6 @@ StudyTmGradeResult gradeStudyTm({
 
 // ── Widgets ──────────────────────────────────────────────────────────────────
 
-/// Draw area for TM practice rounds, rendering either the player's current
-/// machine or the read-only solution once the answer is revealed.
 class StudyTmDrawingArea extends StatefulWidget {
   final StudyTmChallenge challenge;
   final bool submitted;
@@ -680,7 +751,6 @@ class _StudyTmDrawingAreaState extends State<StudyTmDrawingArea> {
   }
 }
 
-/// Compact strip showing accepting and rejecting example strings for the TM challenge.
 class StudyTmTestCaseStrip extends StatelessWidget {
   final StudyTmChallenge challenge;
   final AppThemeNotifier theme;
