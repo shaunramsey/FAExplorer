@@ -12,13 +12,13 @@
 //    • fa_to_regex_dialog.dart — showFaToRegexDialog() UI
 // ═══════════════════════════════════════════════════════════════════════════
 
-import 'dart:convert';
-import 'dart:math';
+import 'dart:convert'; // jsonDecode/JsonEncoder (SVG's embedded data script), utf8/base64 (legacy blackbox DSL decoding), htmlEscape (SVG text)
+import 'dart:math'; // pi, sin, cos, atan2, min/max — geometry + numbering helpers throughout
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart'; // Clipboard
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart'; // context.watch<AppThemeNotifier>() in the fa-to-regex dialog
 
 import 'models.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
@@ -33,10 +33,18 @@ import 'widgets/app_theme.dart';
 //  GraphState  (plain data bag passed in / returned)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Everything needed to fully describe (and rebuild) one automaton on the
+/// canvas. Every import/export path in this file — DSL, SVG, LaTeX — reads
+/// from or produces one of these, so it's the shared currency the rest of
+/// the app hands around instead of dealing with nodes/lines/mode separately.
 class GraphState {
   final Map<String, NodeData> nodes;
   final Map<String, LineData> lines;
   final StartArrowData? startArrow;
+
+  // Next free numeric suffix for a new node/line id ("n{nodeCounter}" /
+  // "l{lineCounter}") — kept here (not derived from nodes.length) so ids
+  // stay unique even after some nodes/lines have been deleted.
   final int nodeCounter;
   final int lineCounter;
   final AutomataMode automataMode;
@@ -44,6 +52,8 @@ class GraphState {
   /// Convenience getter for code that still checks the PDA flag.
   bool get pdaMode => automataMode == AutomataMode.pda;
 
+  /// Hit-tests every node and returns the first one containing [point], or
+  /// null. Used for tap/drag handling on the canvas.
   NodeData? nodeAt(Offset point) {
     for (final node in nodes.values) {
       if (node.containsPoint(point)) return node;
@@ -51,16 +61,20 @@ class GraphState {
     return null;
   }
 
+  /// Hit-tests every line (using its two endpoint nodes' current centres,
+  /// so this stays correct as nodes move) and returns the first match.
   LineData? lineAt(Offset point) {
     for (final line in lines.values) {
       final a = nodes[line.nodeAId];
       final b = nodes[line.nodeBId];
-      if (a == null || b == null) continue;
+      if (a == null || b == null) continue; // stale line referencing a deleted node
       if (line.containsPoint(point, a.center, b.center)) return line;
     }
     return null;
   }
 
+  /// True if [point] hits the start arrow (only meaningful when one exists
+  /// and its target node still exists).
   bool hitStartArrow(Offset point) {
     if (startArrow == null) return false;
     final node = nodes[startArrow!.nodeId];
@@ -85,12 +99,19 @@ class GraphState {
 /// Converts automata graphs to and from the app's DSL and SVG formats so
 /// machines can be saved, imported, and reloaded across sessions.
 class DslCodec {
-  const DslCodec._();
+  const DslCodec._(); // static-only class; never instantiated
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  /// Escapes text for safe embedding as a DSL label: backslash first (so a
+  /// literal backslash doesn't get mistaken for the start of an escape
+  /// sequence added by the second replace), then real newlines become the
+  /// two-character sequence `\n`.
   static String _escapeDsl(String text) => text.replaceAll(r'\', r'\\').replaceAll('\n', r'\n');
 
+  /// Inverse of [_escapeDsl]: walks the string char-by-char rather than
+  /// using a single regex replace, since `\\` and `\n` need to be told
+  /// apart from an escaped backslash followed by a literal 'n'.
   static String _unescapeDsl(String text) {
     final buffer = StringBuffer();
     for (int i = 0; i < text.length; i++) {
@@ -98,11 +119,11 @@ class DslCodec {
       if (char == r'\' && i + 1 < text.length) {
         final next = text[i + 1];
         if (next == 'n') {
-          buffer.write('\n');
+          buffer.write('\n'); // \n -> real newline
         } else {
-          buffer.write(next);
+          buffer.write(next); // \\ -> \, or any other \X -> X (lenient fallback)
         }
-        i++;
+        i++; // consumed both the backslash and the escaped character
       } else {
         buffer.write(char);
       }
@@ -111,14 +132,23 @@ class DslCodec {
   }
 
   // Node ref: prefer label, fall back to id, use id(label) for duplicates.
+  /// How a node is *referred to* elsewhere in the exported DSL (transition
+  /// lines, position lines, etc): its label if that label is unique among
+  /// all nodes, otherwise the disambiguated `id(label)` form so re-import
+  /// can tell which of several same-labelled nodes was meant.
   static String _nodeRef(NodeData node, Map<String, NodeData> nodes) {
     final label = node.label.trim();
-    if (label.isEmpty) return node.id;
+    if (label.isEmpty) return node.id; // no label at all: fall back to the bare internal id
     final dups = nodes.values.where((n) => n.label.trim() == label).length;
     if (dups <= 1) return _escapeDsl(label);
     return '${node.id}(${_escapeDsl(label)})';
   }
 
+  /// Same idea as [_nodeRef] but for a *line's* label, using the
+  /// `~N(label)` occurrence-index form for disambiguation instead of the
+  /// line's raw id — see the DSL grammar comment on `line-ref` below for why
+  /// (ids get renumbered on reimport, so an index among same-label lines,
+  /// in file order, is what actually survives a round-trip).
   static String _lineRef(LineData line, Map<String, LineData> lines) {
     final label = line.label.trim();
     if (label.isEmpty) return line.id;
@@ -130,8 +160,13 @@ class DslCodec {
     return '~$rank(${_escapeDsl(label)})';
   }
 
+  /// Spreadsheet-style base-26 numbering (0 -> A, 1 -> B, … 25 -> Z, 26 ->
+  /// AA, …) used as a node's display label when it has no user-entered one.
+  /// Note: this is a separate, slightly differently-indexed implementation
+  /// of the same idea as models.dart's nodeIdToAlpha (that one parses an
+  /// "n7"-style id string; this one takes a plain int index directly).
   static String _numberToAlphaLabel(int index) {
-    index += 1;
+    index += 1; // shift to 1-based so the bijective base-26 math below works out (see nodeIdToAlpha in models.dart for the same trick)
     String result = '';
     while (index > 0) {
       index--;
@@ -148,13 +183,17 @@ class DslCodec {
     // Ring radius is capped at 280 px so even deep rings stay within a
     // typical ~800×600 viewport when the canvas origin is near (0,0).
     int ring = 0, capacity = 0, ringSize = 7;
+    // Walks forward ring-by-ring (capacities 7, 13, 19, …, each 6 bigger
+    // than the last) until `count` falls within the current ring's range,
+    // to find which ring the `count`-th node belongs in and how many slots
+    // came before it.
     while (capacity + ringSize <= count) {
       capacity += ringSize;
       ring++;
       ringSize += 6;
     }
-    final pos = count - capacity;
-    final angle = (2 * pi * pos) / ringSize - pi / 2;
+    final pos = count - capacity; // this node's 0-based slot index within its own ring
+    final angle = (2 * pi * pos) / ringSize - pi / 2; // evenly spaced around the ring, starting at the top (-pi/2)
     // Cap radius growth so nodes don't fly off-screen for large graphs.
     final radius = min(280.0, 150.0 + ring * 80.0);
     return Offset(300 + cos(angle) * radius, 300 + sin(angle) * radius);
@@ -162,9 +201,17 @@ class DslCodec {
 
   // ── DSL EXPORT ─────────────────────────────────────────────────────────────
 
+  /// Serializes [g] to the app's plain-text DSL. Produces the statement
+  /// forms documented in the grammar comment on [importFromDsl] below, one
+  /// blank-line-separated group per concern (mode, node defs, positions,
+  /// accept states, transitions, curves, self-loop angles, start arrow) —
+  /// so a human skimming the file can jump straight to the section they
+  /// care about.
   static String exportToDsl(GraphState g) {
     final out = <String>[];
 
+    // Mode declaration, only emitted for non-default modes (plain ndfa/dfa
+    // needs no explicit line at all — importFromDsl's default is ndfa).
     if (g.automataMode == AutomataMode.pda) {
       out.add('pda mode');
       out.add('');
@@ -179,12 +226,15 @@ class DslCodec {
     // Node definitions
     for (final n in g.nodes.values) {
       final num = int.tryParse(n.id.substring(1)) ?? 0;
+      // Auto-generate a display label from the node's numeric id when the
+      // user never gave it one, so every exported node line has *some*
+      // readable label rather than sitting blank.
       final rawLabel = n.label.trim().isEmpty ? _numberToAlphaLabel(num) : n.label;
       String label = _escapeDsl(rawLabel);
       if (n.isHaltAccept) {
-        label = '<<$label>>';
+        label = '<<$label>>'; // halt-accept marker, unwrapped again on import
       } else if (n.isHaltReject) {
-        label = '>>$label<<';
+        label = '>>$label<<'; // halt-reject marker
       }
       out.add('${n.id} = $label');
       if (n.isBlackBox) {
@@ -197,6 +247,9 @@ class DslCodec {
           out.add('  $dslLine');
         }
         out.add('}');
+        // These three are only emitted when they differ from their
+        // defaults, keeping the common case (tape 1, positional triple
+        // mapping) out of the exported text entirely.
         if (n.blackBoxReadTape != 1) {
           out.add('${n.id} blackbox read tape = ${n.blackBoxReadTape}');
         }
@@ -208,9 +261,13 @@ class DslCodec {
         }
       }
     }
-    if (g.nodes.isNotEmpty) out.add('');
+    if (g.nodes.isNotEmpty) out.add(''); // blank-line separator before the next section
 
     // Positions
+    // Every node's (x, y), keyed by its ref — kept as a separate section
+    // (rather than folded into the node-definition line above) so the
+    // grammar's node-def and position statements can be parsed
+    // independently and so hand-edited DSL can freely omit positions.
     bool wrote = false;
     for (final n in g.nodes.values) {
       out.add('${_nodeRef(n, g.nodes)} = (${n.position.dx.toStringAsFixed(1)}, ${n.position.dy.toStringAsFixed(1)})');
@@ -231,7 +288,7 @@ class DslCodec {
     wrote = false;
     for (final l in g.lines.values) {
       final a = g.nodes[l.nodeAId], b = g.nodes[l.nodeBId];
-      if (a == null || b == null) continue;
+      if (a == null || b == null) continue; // stale line referencing a deleted node
       final ra = _nodeRef(a, g.nodes), rb = _nodeRef(b, g.nodes);
       out.add(l.label.trim().isEmpty ? '$ra to $rb' : '$ra to $rb = ${_escapeDsl(l.label)}');
       wrote = true;
@@ -239,6 +296,9 @@ class DslCodec {
     if (wrote) out.add('');
 
     // Curves
+    // Only lines with a non-negligible bend get an explicit `curve = N`
+    // line — a plain straight transition (perpendicularPart ~ 0) doesn't
+    // need one, since 0 is the importer's implicit default.
     wrote = false;
     for (final l in g.lines.values) {
       if (l.perpendicularPart.abs() <= 0.5) continue;
@@ -248,6 +308,9 @@ class DslCodec {
     if (wrote) out.add('');
 
     // Self-loop angles
+    // Every self-loop line always gets one of these (unlike curves above,
+    // there's no "default" self-loop angle worth omitting — 0 rotation is
+    // just as arbitrary a default as any other angle would be).
     wrote = false;
     for (final l in g.lines.values) {
       if (l.nodeAId != l.nodeBId) continue;
@@ -263,6 +326,9 @@ class DslCodec {
         final ref = _nodeRef(node, g.nodes);
         final sa = g.startArrow!;
         out.add(sa.label.trim().isEmpty ? 'to $ref' : 'to $ref = ${_escapeDsl(sa.label)}');
+        // Length/angle are only written out when they differ from their
+        // defaults (100px shaft, direction unchanged/default) — same
+        // "don't clutter the common case" approach as blackbox tape fields above.
         if ((sa.length - 100).abs() > 0.5) out.add('to $ref length = ${sa.length.toStringAsFixed(1)}');
         final dir = sa.direction();
         out.add('to $ref angle = ${dir.dx.toStringAsFixed(4)}, ${dir.dy.toStringAsFixed(4)}');
@@ -369,7 +435,7 @@ class DslCodec {
   static GraphState importFromDsl(String src) {
     // Preprocess: normalize multi-line blackbox dsl blocks into single lines
     final List<String> workspaces = _preprocessBlackboxBlocks(src);
-    src = workspaces[0];
+    src = workspaces[0]; // the "main" source text, with every {...} block stripped out (they live in workspaces[1..])
 
     final Map<String, NodeData> newNodes = <String, NodeData>{};
     final labelToId = <String, String>{};
@@ -382,24 +448,40 @@ class DslCodec {
     int nodeCounter = 0, lineCounter = 0;
     AutomataMode automataMode = AutomataMode.ndfa;
 
+    // Heuristic used to auto-detect PDA mode from a transition label that
+    // was never explicitly declared with a `pda mode` line: PDA labels look
+    // like "read,pop|push" or "read,pop/push" — comma plus one of the two
+    // separators — which a plain FA/TM label would never contain together.
     bool looksLikePdaTransitionLabel(String lbl) {
       final s = lbl.trim();
       if (s.isEmpty) return false;
       return s.contains(',') && (s.contains('|') || s.contains('/'));
     }
 
+    // Resolves a `node` grammar reference (either a bare label, or the
+    // disambiguating `id(label)` form) to an existing node's id, or null if
+    // no such node has been created yet.
     String? idForLabel(String lbl) {
       lbl = _unescapeDsl(lbl.trim());
       final explicit = RegExp(r'^(n\d+)\((.*)\)$').firstMatch(lbl);
-      if (explicit != null) return explicit.group(1);
-      if (newNodes.containsKey(lbl)) return lbl;
-      return labelToId[lbl];
+      if (explicit != null) return explicit.group(1); // the "id(label)" form: trust the explicit id directly
+      if (newNodes.containsKey(lbl)) return lbl; // caller passed a raw node id (e.g. "n3") directly
+      return labelToId[lbl]; // plain label lookup
     }
 
+    /// Resolves [lbl] to a node id, creating a brand-new node (with an
+    /// auto-assigned id and default ring-layout position) if none exists
+    /// for that label yet. This is what lets a `node` reference anywhere in
+    /// the file — not just an explicit `nN = label` line — implicitly
+    /// declare a node the first time it's mentioned.
     String ensureNode(String lbl) {
       lbl = _unescapeDsl(lbl);
       bool haltAccept = false, haltReject = false;
       bool hasHaltMarker = false;
+      // Halt markers wrap the *entire* label, so they're only recognized
+      // when they appear at both ends — this is what lets an ordinary
+      // label happen to contain "<<" or ">>" characters without being
+      // mistaken for a halt marker.
       if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
         haltAccept = true;
         hasHaltMarker = true;
@@ -411,6 +493,9 @@ class DslCodec {
       }
       final existing = idForLabel(lbl);
       if (existing != null) {
+        // Node already exists (e.g. mentioned earlier as a transition
+        // endpoint) — just apply the halt marker to it if this mention
+        // carried one, rather than creating a duplicate.
         if (hasHaltMarker) {
           newNodes[existing]!.applyHaltFromLabel(haltAccept: haltAccept, haltReject: haltReject);
         }
@@ -424,15 +509,16 @@ class DslCodec {
         isHaltAccept: haltAccept,
         isHaltReject: haltReject,
       );
-      if (node.isHaltState) node.isAccept = false;
+      if (node.isHaltState) node.isAccept = false; // halt states use their own visual, not the accept ring — see NodeData.applyHaltFromLabel
       newNodes[id] = node;
       labelToId[lbl] = id;
       return id;
     }
 
+    // ── Main line-by-line pass: try each statement form in grammar order ────
     for (var rawLine in src.split('\n')) {
       final ci = rawLine.indexOf('#');
-      if (ci >= 0) rawLine = rawLine.substring(0, ci);
+      if (ci >= 0) rawLine = rawLine.substring(0, ci); // strip a trailing '#' comment
       final line = rawLine.trim();
       if (line.isEmpty) continue;
 
@@ -440,7 +526,7 @@ class DslCodec {
       final pdaModeMatch = RegExp(r'^pda\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
       if (pdaModeMatch != null) {
         final flag = pdaModeMatch.group(1)?.toLowerCase();
-        if (flag != 'off') automataMode = AutomataMode.pda;
+        if (flag != 'off') automataMode = AutomataMode.pda; // bare "pda mode" (no on/off) also means on
         continue;
       }
       final tmModeMatch = RegExp(r'^tm\s+mode(?:\s+(on|off))?$', caseSensitive: false).firstMatch(line);
@@ -460,17 +546,24 @@ class DslCodec {
       if (line.toLowerCase().startsWith('to ')) {
         final rest = line.substring(3).trim();
 
+        // "to <node> length = N" — sets shaft length, preserving whatever
+        // direction/label a previous "to" line (if any) already set.
         final lengthMatch = RegExp(r'^(.+?)\s+length\s*=\s*(-?[\d.]+)$', caseSensitive: false).firstMatch(rest);
         if (lengthMatch != null) {
           final nid = ensureNode(_unescapeDsl(lengthMatch.group(1)!.trim()));
           final len = double.parse(lengthMatch.group(2)!);
           newStartArrow ??= StartArrowData(nodeId: nid);
+          // If this "length" line points at a *different* node than the
+          // start arrow currently targets, retarget it entirely (dropping
+          // the old offset) rather than keeping a stale direction from the
+          // previous node; otherwise just update length in place.
           newStartArrow = (newStartArrow.nodeId != nid)
               ? StartArrowData(nodeId: nid, length: len, label: newStartArrow.label)
               : StartArrowData(nodeId: nid, offset: newStartArrow.offset, length: len, label: newStartArrow.label);
           continue;
         }
 
+        // "to <node> angle = dx, dy" — sets direction (as an offset vector).
         final angleMatch = RegExp(
           r'^(.+?)\s+angle\s*=\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$',
           caseSensitive: false,
@@ -489,6 +582,10 @@ class DslCodec {
           continue;
         }
 
+        // Plain "to <node>" or "to <node> = label" — declares which node is
+        // the start state (and optionally its label), superseding any
+        // start arrow set by an earlier "to" line entirely (only one start
+        // arrow can exist at a time).
         final eq = rest.indexOf('=');
         if (eq >= 0) {
           final nid = ensureNode(_unescapeDsl(rest.substring(0, eq).trim()));
@@ -521,7 +618,7 @@ class DslCodec {
         final lbl = _unescapeDsl(acceptMatch.group(1)!.trim());
         final acceptNode = newNodes[idForLabel(lbl) ?? ensureNode(lbl)]!;
         if (acceptNode.canToggleNormalAccept) {
-          acceptNode.isAccept = true;
+          acceptNode.isAccept = true; // no-op for halt states (canToggleNormalAccept is false for those — see NodeData)
         }
         continue;
       }
@@ -530,7 +627,7 @@ class DslCodec {
       final toIdx = _findToSeparator(line);
       if (toIdx >= 0) {
         final leftPart = _unescapeDsl(line.substring(0, toIdx).trim());
-        final rightPart = line.substring(toIdx + 4).trim();
+        final rightPart = line.substring(toIdx + 4).trim(); // +4 skips past the ' to ' separator itself
         String lineLabel = '', nodeBLabel = rightPart;
         final eq = rightPart.indexOf('=');
         if (eq >= 0) {
@@ -538,11 +635,16 @@ class DslCodec {
           lineLabel = _unescapeDsl(rightPart.substring(eq + 1).trim());
         }
         final idA = ensureNode(leftPart), idB = ensureNode(nodeBLabel);
+        // Halt states can't have outgoing transitions (see
+        // NodeData.canHaveOutgoingTransitions) — silently drop any edge
+        // whose source is a halt state rather than erroring the whole import.
         if (newNodes[idA]!.canHaveOutgoingTransitions) {
           final lid = 'l${lineCounter++}';
           newLines[lid] = LineData(id: lid, nodeAId: idA, nodeBId: idB, label: lineLabel);
           newNodes[idA]!.connectedLineIds.add(lid);
           newNodes[idB]!.connectedLineIds.add(lid);
+          // Auto-detect PDA mode from the label shape if no explicit `pda
+          // mode` line appeared earlier in the file.
           if (lineLabel.isNotEmpty && looksLikePdaTransitionLabel(lineLabel)) {
             if (automataMode == AutomataMode.ndfa) automataMode = AutomataMode.pda;
           }
@@ -568,7 +670,7 @@ class DslCodec {
         final id = nodeDefMatch.group(1)!;
         var lbl = _unescapeDsl(nodeDefMatch.group(2)!.trim());
         final num = int.tryParse(id.substring(1)) ?? -1;
-        if (num >= nodeCounter) nodeCounter = num + 1;
+        if (num >= nodeCounter) nodeCounter = num + 1; // keep the counter ahead of any explicit id seen, so later auto-generated ids never collide
 
         bool haltAccept = false, haltReject = false;
         if (lbl.startsWith('<<') && lbl.endsWith('>>')) {
@@ -590,6 +692,9 @@ class DslCodec {
           if (node.isHaltState) node.isAccept = false;
           newNodes[id] = node;
         } else {
+          // Node was already implicitly created (e.g. referenced by an
+          // earlier transition line before its own `nN = label` line
+          // appeared) — update it in place rather than creating a duplicate.
           newNodes[id]!.label = lbl;
           newNodes[id]!.applyHaltFromLabel(haltAccept: haltAccept, haltReject: haltReject);
         }
@@ -608,7 +713,7 @@ class DslCodec {
         node.isBlackBox = true;
         node.blackBoxDescription = desc;
         if (node.label.trim().isEmpty) {
-          node.label = 'BB ${id.toUpperCase()}';
+          node.label = 'BB ${id.toUpperCase()}'; // placeholder label so a blackbox node created purely via this line still shows something
         }
         newNodes[id] = node;
         continue;
@@ -642,7 +747,7 @@ class DslCodec {
         if (num >= nodeCounter) nodeCounter = num + 1;
         final node = newNodes[id] ?? NodeData(id: id, position: _defaultPosition(newNodes.length));
         node.isBlackBox = true;
-        node.blackBoxReadTape = tapeNum < 1 ? 1 : tapeNum;
+        node.blackBoxReadTape = tapeNum < 1 ? 1 : tapeNum; // guard against a malformed "0" or negative value in hand-edited DSL
         if (node.label.trim().isEmpty) {
           node.label = 'BB ${id.toUpperCase()}';
         }
@@ -674,8 +779,8 @@ class DslCodec {
         final tapes = bbActiveTapesMatch.group(2)!
             .split(',')
             .map((t) => int.tryParse(t.trim()))
-            .whereType<int>()
-            .where((t) => t >= 1)
+            .whereType<int>() // drops any unparseable entries
+            .where((t) => t >= 1) // drops any non-positive (invalid tape index) entries
             .toList();
         final num = int.tryParse(id.substring(1)) ?? -1;
         if (num >= nodeCounter) nodeCounter = num + 1;
@@ -690,6 +795,8 @@ class DslCodec {
       }
 
       // ── bare label → create node ─────────────────────────────────────────
+      // Nothing else matched: per the grammar's `bare-node` fallback, treat
+      // the whole line as a label and materialize an isolated node for it.
       ensureNode(_unescapeDsl(line));
     }
 
@@ -750,6 +857,10 @@ class DslCodec {
 
   // ── SVG IMPORT ─────────────────────────────────────────────────────────────
 
+  /// Reads back a [GraphState] previously written by [SvgExporter] — the SVG
+  /// itself is only a visual rendering; the actual round-trippable data
+  /// lives in a `<script id="automata-data">` JSON payload embedded in it
+  /// (see SvgExporter.export below), which is all this method actually reads.
   static GraphState importFromSvg(String svg) {
     final scriptMatch = RegExp(r'<script[^>]*id="automata-data"[^>]*>(.*?)</script>', dotAll: true).firstMatch(svg);
 
@@ -760,6 +871,9 @@ class DslCodec {
     final newLines = <String, LineData>{};
     AutomataMode automataMode = AutomataMode.ndfa;
 
+    // Same PDA-label heuristic as importFromDsl — SVG's JSON payload has no
+    // separate mode field, so mode is inferred purely from transition
+    // label shape here.
     bool looksLikePdaTransitionLabel(String lbl) {
       final s = lbl.trim();
       if (s.isEmpty) return false;
@@ -781,7 +895,7 @@ class DslCodec {
 
     for (final l in data['lines'] as List) {
       final nodeAId = l['a'] as String;
-      if (newNodes[nodeAId]?.canHaveOutgoingTransitions != true) continue;
+      if (newNodes[nodeAId]?.canHaveOutgoingTransitions != true) continue; // drop edges sourced from a halt state, same as DSL import
 
       final line =
           LineData(
@@ -812,6 +926,11 @@ class DslCodec {
       );
     }
 
+    // Unlike DSL import (which tracks nodeCounter/lineCounter incrementally
+    // as ids are assigned), SVG's ids already exist verbatim in the JSON —
+    // so the counters are instead derived after the fact by scanning for
+    // the highest numeric suffix actually used, ensuring future new
+    // nodes/lines still get fresh, non-colliding ids.
     int highestNode = 0, highestLine = 0;
     for (final id in newNodes.keys) {
       highestNode = max(highestNode, (int.tryParse(id.substring(1)) ?? 0) + 1);
@@ -839,7 +958,7 @@ class DslCodec {
   ///   }
   /// Into: n0 blackbox dsl = n0 = A\nn1 = B
   static List<String> _preprocessBlackboxBlocks(String src) {
-    final returns = <String>[""];
+    final returns = <String>[""]; // returns[0] will become the "main" workspace text; returns[1..] hold one extracted block payload each
     final lines = src.split('\n');
     final result = <String>[]; // list of lines that are the "main workspace"
     int i = 0;
@@ -865,6 +984,10 @@ class DslCodec {
             continue;
           }
 
+          // The block's own lines are indented by 2 spaces or a tab in the
+          // exported form (see exportToDsl's "  $dslLine" above) — strip
+          // exactly one level of that indentation back off so the nested
+          // DSL's own content isn't left permanently re-indented.
           String contentLine = rawLine;
           if (contentLine.startsWith('  ')) {
             contentLine = contentLine.substring(2);
@@ -904,6 +1027,10 @@ class DslCodec {
     return _unescapeDsl(encoded);
   }
 
+  /// Resolves a `line-ref` grammar reference to an internal line id, trying
+  /// each accepted form in turn: the new `~N(label)` occurrence-index form,
+  /// the legacy explicit `lN(label)` form, a raw internal id, a 1-based
+  /// "lN" the user might type by hand, and finally a plain label lookup.
   static String? _resolveLineRef(String lbl, Map<String, LineData> lines, Map<String, List<String>> lineLabelToIds) {
     // New occurrence-index form:  ~N(label) → Nth line (0-based) with that label
     final rankMatch = RegExp(r'^~(\d+)\((.*)\)$', dotAll: true).firstMatch(lbl);
@@ -934,6 +1061,13 @@ class DslCodec {
     return ids?.isNotEmpty == true ? ids!.first : null;
   }
 
+  /// Finds the index of the ' to ' separator (space-to-space) in an `edge`
+  /// statement — a manual char scan rather than a regex, since the
+  /// separator has to be located *before* the left/right sides are each
+  /// independently unescaped and reparsed (a regex split would need to
+  /// somehow avoid matching ' to ' sequences that are part of an escaped
+  /// label, which this scan sidesteps by operating on the still-escaped
+  /// raw line first).
   static int _findToSeparator(String s) {
     for (int i = 0; i < s.length - 3; i++) {
       if (s[i] == ' ' && s.substring(i + 1, i + 3).toLowerCase() == 'to' && s[i + 3] == ' ') return i;
@@ -989,7 +1123,8 @@ const _latexEscapes = {
   '^': r'\textasciicircum{}',
 };
 
-// Known unicode symbols → LaTeX math equivalents.
+// Known unicode symbols → LaTeX math equivalents. Also used in reverse
+// (see _latexLabelToDsl below) to recover the original unicode on import.
 const _unicodeToLatex = {
   '~': r'\varepsilon',
   'λ': r'\lambda',
@@ -1107,6 +1242,11 @@ String _labelToLatex(String token) {
   final buf = StringBuffer();
   bool inMath = false;
 
+  // Math mode is opened/closed lazily around runs of characters that need
+  // it, rather than wrapping the whole token in one $…$ — this lets a
+  // label mixing plain ASCII and math symbols (e.g. "a→b") come out as
+  // "a$\rightarrow$b" instead of unnecessarily putting the plain letters
+  // in math mode too.
   void closeMath() {
     if (inMath) { buf.write(r'$'); inMath = false; }
   }
@@ -1128,7 +1268,7 @@ String _labelToLatex(String token) {
       buf.write(ch);
     }
   }
-  closeMath();
+  closeMath(); // in case the token ended while still inside math mode
   return buf.toString();
 }
 
@@ -1149,7 +1289,9 @@ String _latexLabelToDsl(String tex) {
 
   // Replace known LaTeX commands with unicode.
   final reversed = Map.fromEntries(_unicodeToLatex.entries.map((e) => MapEntry(e.value, e.key)));
-  // Sort by key length descending so longer commands are matched first.
+  // Sort by key length descending so longer commands are matched first —
+  // otherwise replacing the shorter r'\eta' before r'\theta' would corrupt
+  // '\theta' (which contains '\eta' as a substring) into garbage.
   final sorted = reversed.entries.toList()
     ..sort((a, b) => b.key.length.compareTo(a.key.length));
 
@@ -1228,6 +1370,11 @@ class LatexExporter {
 
     for (final node in g.nodes.values) {
       final name = _tikzName(node.id);
+      // Canvas position is stored as the node's top-left corner; shift by
+      // the node's own centre offset (140x100 rect for black boxes vs
+      // 100x100 circle otherwise — matches NodeData.center) before
+      // converting to tikz points, so the exported coordinate is the
+      // node's visual centre, not its corner.
       final xPt = _toPt(node.position.dx + (node.isBlackBox ? 70 : 50));
       final yPt = _toPt(-(node.position.dy + (node.isBlackBox ? 50 : 50))); // flip y for tikz
 
@@ -1301,6 +1448,9 @@ class LatexExporter {
     }
 
     // ── Start-arrow label (if non-empty) ──────────────────────────────────
+    // Only recorded as a comment (LaTeX's `initial` option draws the arrow
+    // itself with no room for custom label text) — LatexImporter reads it
+    // back from this comment on re-import.
     if (g.startArrow != null && g.startArrow!.label.trim().isNotEmpty) {
       final startNode = g.nodes[g.startArrow!.nodeId];
       if (startNode != null) {
@@ -1325,7 +1475,7 @@ class LatexExporter {
     // Extract between \begin{tikzpicture} and \end{tikzpicture} (inclusive).
     final start = full.indexOf(r'\begin{tikzpicture}');
     final end = full.indexOf(r'\end{tikzpicture}') + r'\end{tikzpicture}'.length;
-    if (start < 0 || end < r'\end{tikzpicture}'.length) return full;
+    if (start < 0 || end < r'\end{tikzpicture}'.length) return full; // markers not found: fall back to returning the whole document rather than a broken substring
     return full.substring(start, end);
   }
 }
@@ -1359,6 +1509,10 @@ class LatexImporter {
     }
 
     // ── Extract tikzpicture content ───────────────────────────────────────
+    // Accepts either a bare tikzpicture snippet or a full document — if no
+    // \begin{tikzpicture}...\end{tikzpicture} wrapper is found, just treat
+    // the whole input as the body (lets a user paste a raw snippet without
+    // the wrapper and still have it parse).
     final picMatch = RegExp(
       r'\\begin\{tikzpicture\}(.*?)\\end\{tikzpicture\}',
       dotAll: true,
@@ -1368,7 +1522,7 @@ class LatexImporter {
     // ── Parse \node lines ─────────────────────────────────────────────────
     //
     // Pattern:
-    //   \node[<options>] (<name>) at (<x>pt, <y>pt) {<label>}; % id=nN
+    //   \node[<options>] (<n>) at (<x>pt, <y>pt) {<label>}; % id=nN
     //
     // We use a regex that captures the key groups; options/label may span
     // multiple tokens but the semicolon always terminates the statement.
@@ -1393,6 +1547,9 @@ class LatexImporter {
       final commentId = m.group(6); // may be null if no % id= comment
 
       // Recover (or assign) an internal id.
+      // A file exported by this app always carries the % id=nN comment; a
+      // hand-written tikzpicture (or one edited to drop the comments)
+      // instead falls back to assigning fresh sequential ids here.
       String id;
       if (commentId != null) {
         id = commentId;
@@ -1419,11 +1576,11 @@ class LatexImporter {
 
       // Convert label back from LaTeX.
       final dslLabel = _latexLabelToDsl(rawLabel);
-      final displayLabel = (dslLabel == '~') ? '' : dslLabel;
+      final displayLabel = (dslLabel == '~') ? '' : dslLabel; // a bare epsilon label means "no label was ever set" (see export's nodeIdToAlpha fallback), not a literal "~" label
 
       final node = NodeData(
         id: id,
-        position: Offset(posX.clamp(0.0, 8000.0), posY.clamp(0.0, 8000.0)),
+        position: Offset(posX.clamp(0.0, 8000.0), posY.clamp(0.0, 8000.0)), // clamp guards against wildly out-of-range hand-edited coordinates
         label: displayLabel,
         isAccept: isAccepting && !isHaltReject,
         isHaltAccept: false,
@@ -1849,6 +2006,8 @@ Future<void> _copyToClipboard(BuildContext context, String text) async {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/// Outcome of [faToRegex]: either a derived regex string, or a human-readable
+/// reason it couldn't be derived (no start state, no states at all, etc).
 class FaToRegexResult {
   final String? regex;
   final String? error;
@@ -1859,6 +2018,8 @@ class FaToRegexResult {
   bool get isError => error != null;
 }
 
+/// Runs the GNFA state-elimination algorithm over the automaton described by
+/// [nodes]/[lines]/[startArrow] and returns the equivalent regular expression.
 FaToRegexResult faToRegex({
   required Map<String, NodeData> nodes,
   required Map<String, LineData> lines,
@@ -1875,10 +2036,19 @@ FaToRegexResult faToRegex({
   final acceptIds =
       nodes.values.where((n) => n.isAccept).map((n) => n.id).toSet();
   if (acceptIds.isEmpty) {
+    // No accept states at all means the automaton accepts nothing — this is
+    // a valid (if trivial) answer, not an error condition.
     return const FaToRegexResult.ok('∅');
   }
 
   // ── Build GNFA as AST-valued transition table ─────────────────────────────
+  //
+  // Standard GNFA construction: add a fresh super-start (with a single ~
+  // edge into the real start state) and a fresh super-accept (with a ~ edge
+  // in from every real accept state), so there's exactly one start and one
+  // accept state to eliminate down to — after every other state has been
+  // eliminated, the single remaining edge super-start → super-accept *is*
+  // the answer.
   const String superStart  = '__S__';
   const String superAccept = '__A__';
 
@@ -1898,7 +2068,7 @@ FaToRegexResult faToRegex({
   for (final line in lines.values) {
     final from = line.nodeAId;
     final to   = line.nodeBId;
-    if (!allStates.contains(from) || !allStates.contains(to)) continue;
+    if (!allStates.contains(from) || !allStates.contains(to)) continue; // stale line referencing a deleted node
 
     final alts = line.label
         .split(RegExp(r'[,\n]'))
@@ -1906,6 +2076,10 @@ FaToRegexResult faToRegex({
         .where((s) => s.isNotEmpty)
         .toList();
 
+    // Turn this line's alternatives (comma-/newline-separated symbols) into
+    // one union-of-literals AST node — an empty label is treated as an
+    // epsilon edge (fires without consuming input), matching how the FA
+    // simulator itself interprets a blank transition label.
     _RE? edgeRe;
     if (alts.isEmpty) {
       edgeRe = const _Eps();
@@ -1916,6 +2090,10 @@ FaToRegexResult faToRegex({
       }
     }
 
+    // Two lines between the same (from, to) pair (shouldn't normally happen
+    // given _graph-style builders merge these, but a hand-built or
+    // hand-edited graph could still have them) get unioned together rather
+    // than the second silently overwriting the first.
     gnfa[from]![to] = _union(gnfa[from]![to], edgeRe);
   }
 
@@ -1933,6 +2111,14 @@ FaToRegexResult faToRegex({
   // Re-score and pick the best state to eliminate each round (greedy).
   // Score = sum of string lengths of the new edges that would be created,
   // minus the edges that would be removed.  Lower is better.
+  //
+  // This greedy ordering (rather than eliminating states in an arbitrary or
+  // fixed order) is what keeps the final regex from blowing up into an
+  // unreadable mess on graphs with more than a handful of states: each
+  // round, eliminating a low-degree/low-fan-out state tends to create
+  // shorter replacement edges than eliminating a heavily-connected one
+  // would, so preferring cheap eliminations first keeps intermediate
+  // expressions smaller throughout.
   int score(String q) {
     final preds = gnfa.keys
         .where((p) => p != q && (gnfa[p]?[q]) != null)
@@ -1945,6 +2131,12 @@ FaToRegexResult faToRegex({
     final self = gnfa[q]?[q];
 
     int cost = 0;
+    // Simulates eliminating q: for every (pred, succ) pair, this is the new
+    // combined edge pred→succ that eliminating q would produce (pred→q,
+    // q's own self-loop starred if present, then q→succ, unioned into
+    // whatever pred→succ edge already exists) — `_size(merged) -
+    // _size(existing)` is how much bigger that union grows the AST, summed
+    // across every pred/succ pair q has.
     for (final p in preds) {
       for (final s in succs) {
         final rPQ = gnfa[p]![q]!;
@@ -1986,6 +2178,11 @@ FaToRegexResult faToRegex({
         .map((e) => e.key)
         .toList();
 
+    // The actual elimination: for every predecessor and successor of
+    // `elim`, splice a new direct edge pred → succ that represents "go
+    // pred→elim, optionally loop on elim any number of times, then
+    // elim→succ" — the textbook GNFA elimination step — merged into
+    // whatever direct pred→succ edge may already exist.
     for (final pred in preds) {
       for (final succ in succs) {
         final rPQ = gnfa[pred]![elim]!;
@@ -2003,8 +2200,10 @@ FaToRegexResult faToRegex({
     }
   }
 
+  // After every real state has been eliminated, only super-start and
+  // super-accept remain — the single edge between them is the answer.
   final result = gnfa[superStart]?[superAccept];
-  if (result == null) return const FaToRegexResult.ok('∅');
+  if (result == null) return const FaToRegexResult.ok('∅'); // no path at all survived elimination: language is empty
 
   return FaToRegexResult.ok(_print(result));
 }
@@ -2052,6 +2251,13 @@ class _Star extends _RE {
 }
 
 // ─── Smart constructors (simplify on build) ───────────────────────────────────
+//
+// These aren't just convenience wrappers — applying algebraic identities
+// (∅ is an identity/annihilator, r+r=r, r*+~=r*, …) at construction time
+// rather than only at the end is what keeps the AST from growing
+// exponentially across dozens of elimination rounds; without this, the
+// state-elimination loop above would produce regexes many times longer
+// than necessary (or, on bigger graphs, simply too large to be useful).
 
 /// Union of two nullable REs (null = ∅).
 _RE? _union(_RE? a, _RE? b) {
@@ -2162,6 +2368,10 @@ _RE? _removeEpsFromUnion(_RE r) {
 
 // ─── Structural equality ──────────────────────────────────────────────────────
 
+/// Deep structural equality between two AST nodes — used throughout the
+/// smart constructors above to detect the identities they simplify (a+a=a,
+/// etc), since two syntactically-identical subtrees built at different
+/// points in the elimination loop are never the same object instance.
 bool _eq(_RE a, _RE b) {
   if (identical(a, b)) return true;
   if (a is _Empty && b is _Empty) return true;
@@ -2175,6 +2385,10 @@ bool _eq(_RE a, _RE b) {
 
 // ─── AST size (used for elimination ordering) ─────────────────────────────────
 
+/// Rough complexity measure (roughly "how many printed characters/tokens"),
+/// used only comparatively by [score] above to judge how much an
+/// elimination round would grow the graph — not meant to exactly match
+/// [_print]'s actual output length.
 int _size(_RE? r) {
   if (r == null) return 0;
   if (r is _Empty || r is _Eps || r is _Lit) return 1;
@@ -2196,10 +2410,10 @@ String _print(_RE r) {
 String _printPrec(_RE r, int prec) {
   if (r is _Empty) return '∅';
   if (r is _Eps)   return '~';
-  if (r is _Lit)   return r.sym.length == 1 ? r.sym : '(${r.sym})';
+  if (r is _Lit)   return r.sym.length == 1 ? r.sym : '(${r.sym})'; // a multi-char literal token needs its own parens to print unambiguously
 
   if (r is _Star) {
-    final inner = _printPrec(r.child, 2);
+    final inner = _printPrec(r.child, 2); // child printed at "atom" precedence: gets its own parens if it's a Cat/Union, since e.g. (ab)* != ab*
     final starred = '$inner*';
     return starred;
   }
@@ -2215,6 +2429,9 @@ String _printPrec(_RE r, int prec) {
 
   if (r is _Union) {
     // Collect all union arms for flat printing.
+    // A chain of nested _Union nodes (left-associated by _unionNN's
+    // `reduced.reduce`) is flattened back into one flat "a+b+c+…" join here
+    // rather than printed as nested parens like "((a+b)+c)".
     final arms = <_RE>[];
     void collect(_RE node) {
       if (node is _Union) { collect(node.left); collect(node.right); }
@@ -2229,7 +2446,7 @@ String _printPrec(_RE r, int prec) {
     return s;
   }
 
-  return '?';
+  return '?'; // unreachable: every _RE subtype is handled above
 }
 
 
@@ -2238,12 +2455,23 @@ String _printPrec(_RE r, int prec) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Renders a graph as an SVG so it can be embedded or downloaded externally.
+///
+/// The SVG is both a visual rendering *and* a data file: the full graph
+/// state is embedded verbatim as JSON inside a `<script id="automata-data">`
+/// tag (see the `graphData` map built below), which is exactly what
+/// [DslCodec.importFromSvg] reads back out — so an exported SVG round-trips
+/// losslessly even though the visible drawing itself is just for humans.
 class SvgExporter {
   const SvgExporter._();
 
   static const double _arrowLen = 15;
   static const double _arrowWing = 9;
 
+  /// Builds an SVG `<polygon>` for a filled triangular arrowhead whose tip
+  /// sits at [tip], oriented along [angle] — same construction as the
+  /// on-canvas arrowhead painters elsewhere in the app (e.g.
+  /// tutorial_screen.dart's _drawArrow), just emitted as markup instead of
+  /// drawn on a Canvas.
   static String _arrowhead(Offset tip, double angle) {
     final dx = cos(angle);
     final dy = sin(angle);
@@ -2254,6 +2482,9 @@ class SvgExporter {
     return '<polygon points="${tip.dx},${tip.dy} $p1x,$p1y $p2x,$p2y" fill="var(--fg)"/>';
   }
 
+  /// Pulls the line/arc's endpoint back by the arrowhead's own length, so
+  /// the stroked path stops where the arrowhead's back edge is rather than
+  /// poking out past its tip.
   static Offset _shortenedEnd(Offset tip, double angle) {
     return Offset(tip.dx - cos(angle) * _arrowLen, tip.dy - sin(angle) * _arrowLen);
   }
@@ -2267,6 +2498,9 @@ class SvgExporter {
     const double nodePad = nodeRadius + 4;
     const double pad = 30.0;
 
+    // ── First pass: compute the bounding box of everything that will be
+    // drawn, so the SVG's viewBox can be sized to fit exactly (with `pad`
+    // margin) rather than using some arbitrary fixed canvas size. ─────────
     double minX = double.infinity;
     double minY = double.infinity;
     double maxX = double.negativeInfinity;
@@ -2313,7 +2547,7 @@ class SvgExporter {
       final node = nodes[startArrow.nodeId];
       if (node != null) {
         var dir = startArrow.direction();
-        if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071);
+        if (dir.distance == 0) dir = const Offset(-0.7071, -0.7071); // same degenerate-direction fallback as StartArrowData.containsPoint (models.dart)
         final center = node.center;
         final arrowEnd = Offset(center.dx + dir.dx * 50, center.dy + dir.dy * 50);
         final arrowStart = Offset(
@@ -2335,6 +2569,8 @@ class SvgExporter {
       }
     }
 
+    // Nothing was drawn at all (empty graph): fall back to a fixed
+    // reasonable canvas size instead of a degenerate/inverted viewBox.
     if (minX == double.infinity) {
       minX = 0;
       minY = 0;
@@ -2347,6 +2583,10 @@ class SvgExporter {
     final vw = (maxX - minX) + pad * 2;
     final vh = (maxY - minY) + pad * 2;
 
+    // ── The embedded round-trip payload: every field DslCodec.importFromSvg
+    // needs to fully reconstruct nodes/lines/startArrow/mode is here — the
+    // 'version' field lets a future importer detect and handle older
+    // payload shapes if this format ever needs to change. ────────────────
     final graphData = {
       'version': 2,
       'nodes': nodes.values.map((n) {
@@ -2390,6 +2630,9 @@ class SvgExporter {
       ' viewBox="${vx.toStringAsFixed(1)} ${vy.toStringAsFixed(1)} ${vw.toStringAsFixed(1)} ${vh.toStringAsFixed(1)}">',
     );
     buffer.writeln();
+    // CSS custom properties so the SVG can be recolored (e.g. for a dark
+    // background) just by overriding these variables, without touching the
+    // markup itself.
     buffer.writeln('''<style>
   :root {
     --fg:          black;
@@ -2404,6 +2647,7 @@ class SvgExporter {
     buffer.writeln('</script>');
     buffer.writeln();
 
+    // ── Transitions ────────────────────────────────────────────────────
     for (final line in lines.values) {
       final nodeA = nodes[line.nodeAId];
       final nodeB = nodes[line.nodeBId];
@@ -2413,6 +2657,10 @@ class SvgExporter {
       const strokeW = 4;
 
       if (line.nodeAId == line.nodeBId) {
+        // Self-loop: full circular arc, drawn with SVG's elliptical-arc
+        // path command using equal x/y radii (a true circle). The "1 1"
+        // large-arc/sweep flags are fixed here (unlike the general-arc case
+        // below) since a self-loop always sweeps the long way around.
         final radius = geometry.circleRadius!;
         final startPt = geometry.startPoint;
         final tipPt = geometry.endPoint;
@@ -2426,6 +2674,10 @@ class SvgExporter {
         buffer.writeln('  ${_arrowhead(tipPt, arrowAngle)}');
         buffer.writeln('</g>');
       } else if (geometry.hasCircle) {
+        // Curved (non-self-loop) transition: an SVG elliptical arc whose
+        // large-arc-flag and sweep-flag are derived directly from the
+        // geometry's own sweepAngle sign/magnitude, so the SVG path bends
+        // the same way the canvas-rendered arc does.
         final radius = geometry.circleRadius!;
         final startPt = geometry.startPoint;
         final tipPt = geometry.endPoint;
@@ -2441,6 +2693,9 @@ class SvgExporter {
         buffer.writeln('  ${_arrowhead(tipPt, arrowAngle)}');
         buffer.writeln('</g>');
       } else {
+        // Plain straight transition: simple <line>, with the arrow angle
+        // derived directly from the start→end direction rather than from
+        // geometry.arrowAngle (which is only populated for arcs).
         final startPt = geometry.startPoint;
         final tipPt = geometry.endPoint;
         final angle = atan2(tipPt.dy - startPt.dy, tipPt.dx - startPt.dx);
@@ -2454,6 +2709,11 @@ class SvgExporter {
         buffer.writeln('</g>');
       }
 
+      // Label textbox, positioned via the same LineData.getTextBoxLocation
+      // used for on-canvas rendering, so the SVG matches the app's own
+      // layout exactly. Multi-line labels become stacked <tspan> elements,
+      // each subsequent one shifted down by the fixed line height (36px)
+      // via SVG's relative `dy` attribute.
       if (line.label.trim().isNotEmpty) {
         const boxW = kLabelBoxWidth;
         const lineH = 36.0;
@@ -2480,11 +2740,16 @@ class SvgExporter {
       buffer.writeln();
     }
 
+    // ── Nodes ─────────────────────────────────────────────────────────
     const acceptRadius = 34.0;
     const strokeWidth = 3.0;
 
     for (final node in nodes.values) {
       final center = node.center;
+      // A node with no user-entered label displays its auto letter name
+      // (nodeIdToAlpha), dimmed via --hint-fill rather than the normal
+      // --label-fill, so it visibly reads as a placeholder rather than
+      // real user content.
       final hasLabel = node.label.trim().isNotEmpty;
       final displayText = hasLabel ? node.label : nodeIdToAlpha(node.id);
       final textColor = hasLabel ? 'var(--label-fill)' : 'var(--hint-fill)';
@@ -2495,18 +2760,24 @@ class SvgExporter {
         ' fill="var(--node-fill)" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
       );
       if (node.isAccept) {
+        // Second, slightly smaller concentric circle — the classic
+        // "double-ring" accepting-state marker.
         buffer.writeln(
           '  <circle cx="${center.dx}" cy="${center.dy}" r="$acceptRadius"'
           ' fill="none" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
         );
       }
       if (node.isHaltAccept) {
+        // Halt-accept renders as a filled green square instead of the
+        // ordinary circle+ring, so it's visually distinct at a glance.
         buffer.writeln(
           '  <rect x="${center.dx - 24}" y="${center.dy - 24}" width="48" height="48"'
           ' fill="green" stroke="var(--fg)" stroke-width="$strokeWidth"/>',
         );
       }
       if (node.isHaltReject) {
+        // Halt-reject renders as a filled red octagon (a hand-built
+        // 8-point polygon around the node's centre) — "stop sign" shape.
         final points = [
           '${center.dx - 12},${center.dy - 24}',
           '${center.dx + 12},${center.dy - 24}',
@@ -2532,6 +2803,7 @@ class SvgExporter {
       buffer.writeln();
     }
 
+    // ── Start arrow ───────────────────────────────────────────────────
     if (startArrow != null) {
       final node = nodes[startArrow.nodeId];
       if (node != null) {
@@ -2645,6 +2917,8 @@ class _FaToRegexDialog extends StatefulWidget {
 }
 
 class _FaToRegexDialogState extends State<_FaToRegexDialog> {
+  // Computed once in initState (the source graph doesn't change while this
+  // dialog is open), rather than recomputed on every build.
   late final FaToRegexResult _result;
   bool _copied = false;
 
@@ -2659,11 +2933,11 @@ class _FaToRegexDialogState extends State<_FaToRegexDialog> {
   }
 
   Future<void> _copyToClipboard() async {
-    if (_result.regex == null) return;
+    if (_result.regex == null) return; // nothing to copy in the error case
     await Clipboard.setData(ClipboardData(text: _result.regex!));
     setState(() => _copied = true);
     await Future.delayed(const Duration(seconds: 2));
-    if (mounted) setState(() => _copied = false);
+    if (mounted) setState(() => _copied = false); // revert the button back to "Copy" after the confirmation flash
   }
 
   @override

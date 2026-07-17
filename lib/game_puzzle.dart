@@ -9,13 +9,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:async';
+// sqrt/atan2/max/min/pi — reused for the same curve/self-loop drag math as
+// AutomataScreen, plus min/max for the read-only DFA canvas's fit-to-view
+// bounding-box arithmetic.
 import 'dart:math';
 import 'package:flutter/material.dart';
+// LogicalKeyboardKey — Shift-key line-mode shortcut; rootBundle — loads the
+// legacy .svg level-target asset for levels that predate DSL-embedded
+// targets (see _checkAnswer's SVG fallback path below).
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'widgets/app_theme.dart';
+// isCompactLayout — same phone/tablet breakpoint helper used across the app.
 import 'widgets/responsive_layout.dart';
 
 import 'game_level.dart';
@@ -23,6 +30,9 @@ import 'game_level.dart';
 import 'game_data.dart';
 import 'tutorial_screen.dart';
 import 'import_export.dart';
+// Only the equivalence-checking surface is imported (an explicit `show`
+// list) rather than the whole file, since equivalence_dialog.dart also
+// exports dialog *widgets* this screen has no use for.
 import 'dialogs/equivalence_dialog.dart'
     show
         checkEquivalence,
@@ -32,12 +42,23 @@ import 'dialogs/equivalence_dialog.dart'
         EquivalenceStatus,
         AutomatonTypeChecker,
         RequiredAutomatonType;
+// regexToDfa — compiles the player's typed regex for dfaToRegex levels.
 import 'simulator.dart';
 import 'models.dart';
 import 'widgets/automata_drawer.dart' show AutomataMode;
+// LineWidget, Node, StartArrowWidget, RubberBandPainter, PaletteFab — same
+// canvas building blocks AutomataScreen uses, reused here so puzzle levels
+// look and feel identical to the free-form editor.
 import 'widgets/graph_widgets.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A single puzzle level's play screen: an editable (or, for dfaToRegex
+/// levels, read-only) automaton canvas plus a "Check Answer" flow that runs
+/// equivalence checking against the level's target machine. Distinct from
+/// [AutomataScreen] (the free-form designer) — this widget owns its own,
+/// much simpler graph-editing state scoped to just this one level, and adds
+/// per-level persistence, an easy/hard scaffold, and win-condition checking
+/// on top.
 class GamePuzzleScreen extends StatefulWidget {
   final GameLevel level;
   final GameProgressStore progressStore;
@@ -65,6 +86,9 @@ class GamePuzzleScreen extends StatefulWidget {
 class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     with TickerProviderStateMixin {
   // ── user graph state ────────────────────────────────────────────────────
+  // The player's in-progress solution graph — same shape as
+  // AutomataScreen's _nodes/_lines, but scoped to just this one level and
+  // persisted under a per-level, per-difficulty key (see _saveNow).
   final Map<String, NodeData> _nodes = {};
   final Map<String, LineData> _lines = {};
   StartArrowData? _startArrow;
@@ -72,6 +96,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   int _lineCounter = 0;
 
   // ── interaction state ───────────────────────────────────────────────────
+  // Same three mutually-adjusted canvas modes as AutomataScreen (see the
+  // delete-mode FAB below, which turns the other two off).
   bool _lineMode = false;
   bool _deleteMode = false;
   bool _placingStartArrow = false;
@@ -88,6 +114,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   final FocusNode _focusNode = FocusNode();
 
   // ── check state ─────────────────────────────────────────────────────────
+  // Drives the AppBar/bottom-bar "Check" button's spinner and the goal
+  // banner's result message — set by _checkAnswer/_checkRegexAnswer.
   bool _checking = false;
   String? _checkResult;
   bool _isCorrect = false;
@@ -105,6 +133,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   Timer? _saveDebounce;
 
   // ── animation ───────────────────────────────────────────────────────────
+  // Drives the success-dialog's entrance animation — kicked off via
+  // .forward(from: 0) right before showing the dialog on a correct answer.
   late final AnimationController _successCtrl;
 
   @override
@@ -195,6 +225,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
       final nodes = <String, NodeData>{};
       StartArrowData? startArrow;
 
+      // Build fresh NodeData from each lightweight EasyModeNode descriptor
+      // (id/x/y/label/isAccept/isStart) — these aren't full NodeData
+      // objects in the level definition, just enough to place a state.
       for (final en in easyNodes) {
         final node = NodeData(id: en.id, position: Offset(en.x, en.y));
         node.label = en.label;
@@ -269,11 +302,16 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   // ── helpers ─────────────────────────────────────────────────────────────
 
+  /// Mints the next unique node ("n0", "n1", …) or line ("l0", "l1", …) ID,
+  /// same scheme as AutomataScreen's _nextId.
   String _nextId(String prefix) {
     if (prefix == 'n') return '$prefix${_nodeCounter++}';
     return '$prefix${_lineCounter++}';
   }
 
+  /// Bundles the player's current graph into a [GraphState] snapshot — used
+  /// by hit-testing (nodeAt/lineAt/hitStartArrow below) and by [_saveNow]/
+  /// [_checkAnswer] wherever the whole graph needs to be passed as a unit.
   GraphState get _graphState => GraphState(
         nodes: _nodes,
         lines: _lines,
@@ -287,15 +325,24 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   LineData? _lineAt(Offset p) => _graphState.lineAt(p);
 
+  /// True if some *other* node already has this exact (trimmed) label.
+  /// Empty labels never count as a duplicate.
   bool _isLabelTaken(String label, String currentId) {
     final n = label.trim();
     if (n.isEmpty) return false;
     return _nodes.values.any((nd) => nd.id != currentId && nd.label.trim() == n);
   }
 
+  /// Whether link-mode dragging may originate from this node (false for,
+  /// e.g., a halt state that can't have outgoing transitions).
   bool _canStartLineFrom(String? id) =>
       id != null && (_nodes[id]?.canHaveOutgoingTransitions ?? false);
 
+  /// Removes a state and every transition attached to it (via [_deleteLine],
+  /// which also detaches the line from its *other* endpoint). Clears the
+  /// start arrow too if it pointed at this node. Unlike AutomataScreen's
+  /// version, this one doesn't call setState/refresh itself — callers wrap
+  /// it in their own setState and follow up with _scheduleSave.
   void _deleteNode(String id) {
     final node = _nodes[id];
     if (node == null) return;
@@ -306,6 +353,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     _nodes.remove(id);
   }
 
+  /// Removes a transition and detaches it from both endpoint nodes'
+  /// connectedLineIds bookkeeping.
   void _deleteLine(String id) {
     final l = _lines[id];
     if (l == null) return;
@@ -317,7 +366,14 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   bool _hitStartArrow(Offset point) => _graphState.hitStartArrow(point);
 
   // ── pan / drag handlers ─────────────────────────────────────────────────
+  // Same three-phase (start/update/end) drag protocol as AutomataScreen's
+  // canvas — see that file's more heavily-annotated equivalents for the
+  // full rationale; comments here focus on what differs.
 
+  /// Determines what a drag gesture means the moment it begins: deleting
+  /// (delete mode), starting a new link (line mode), dragging an existing
+  /// line's curve, dragging the start arrow, dragging a node, or panning
+  /// the canvas — checked in that priority order.
   void _onPanStart(DragStartDetails d) {
     final pos = d.localPosition;
     _draggingNodeId = null;
@@ -326,6 +382,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     _draggingStartArrow = false;
 
     if (_deleteMode) {
+      // Node > line > start-arrow priority — deleting a node already
+      // cascades into deleting its lines via _deleteNode.
       final n = _nodeAt(pos);
       if (n != null) {
         setState(() => _deleteNode(n.id));
@@ -374,6 +432,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     }
   }
 
+  /// Applies this frame's drag delta: pans every node together (canvas
+  /// pan), moves a single node, adjusts the start arrow's direction/length,
+  /// or reshapes a transition line — self-loop angle if the line loops back
+  /// to its own node, otherwise perpendicular curve offset.
   void _onPanUpdate(DragUpdateDetails d) {
     if (_isPanningCanvas) {
       setState(() {
@@ -393,8 +455,13 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         final mouse = d.localPosition;
         final dir = mouse - center;
         final dist = dir.distance;
+        // Ignore tiny movements to avoid the direction snapping erratically
+        // near the node's center, where the direction is numerically
+        // unstable.
         if (dist > 10) {
           _startArrow!.offset = Offset(dir.dx / dist, dir.dy / dist);
+          // Length is distance-from-node minus the 50px standoff (matches
+          // StartArrowWidget's fixed `radius`), floored at 40.
           _startArrow!.length = max(40, dist - 50);
         }
       });
@@ -403,6 +470,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         final line = _lines[_draggingLineId!]!;
         final a = _nodes[line.nodeAId]!, b = _nodes[line.nodeBId]!;
         if (line.nodeAId == line.nodeBId) {
+          // Self-loop: rotate the loop by the pointer's incremental angular
+          // change around the node's center since last frame.
           final center = a.center;
           final mouse = d.localPosition;
           final previous = mouse - d.delta;
@@ -414,6 +483,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           if (delta < -pi) delta += 2 * pi;
           line.selfLoopAngle += delta;
         } else {
+          // Ordinary line: accumulate the drag delta's component
+          // perpendicular to the A→B direction as the line's curve offset.
           final dx = b.center.dx - a.center.dx;
           final dy = b.center.dy - a.center.dy;
           final len = sqrt(dx * dx + dy * dy);
@@ -426,12 +497,17 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     }
   }
 
+  /// Wraps [_onPanUpdate] to also track the pointer's latest position (used
+  /// by [_onPanEnd] to resolve a link-mode drop target) and drive the
+  /// rubber-band preview line while a link-mode drag is in progress.
   void _onPanUpdateTracking(DragUpdateDetails d) {
     _onPanUpdate(d);
     _lastPanPosition = d.localPosition;
     if (_lineSourceNodeId != null && _lineMode) {
       setState(() => _rubberBandEnd = d.localPosition);
     } else {
+      // Clean up stale rubber-band state left over from a mode switch
+      // mid-drag.
       if (_lineSourceNodeId != null || _rubberBandEnd != null) {
         setState(() {
           _lineSourceNodeId = null;
@@ -441,12 +517,18 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     }
   }
 
+  /// Finalizes whatever drag was in progress. The only case that creates
+  /// something is completing a link-mode drag over a valid destination
+  /// node; every other drag kind was already applied frame-by-frame in
+  /// [_onPanUpdate].
   void _onPanEnd(DragEndDetails d) {
     if (_lineMode && _lineSourceNodeId != null) {
       final dest =
           _lastPanPosition != null ? _nodeAt(_lastPanPosition!) : null;
       if (dest != null) {
         final src = _lineSourceNodeId!;
+        // Guard against an ineligible source and against creating a second
+        // parallel transition between the same ordered pair of states.
         if (_canStartLineFrom(src) &&
             !_lines.values.any(
                 (l) => l.nodeAId == src && l.nodeBId == dest.id)) {
@@ -478,6 +560,11 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
   // an NFA, then run the standard FA equivalence check against the target DFA
   // stored in the level DSL.  The canvas is irrelevant for this variant.
 
+  /// Compiles the player's typed regex, then checks it for language
+  /// equivalence against the level's target DFA. Sets [_checkResult]/
+  /// [_isCorrect] and, on success, marks the level complete and shows the
+  /// success dialog — mirrors [_checkAnswer]'s structure but operates on
+  /// [_regexInputCtrl].text instead of the canvas graph.
   Future<void> _checkRegexAnswer() async {
     final pattern = _regexInputCtrl.text.trim();
     if (pattern.isEmpty) {
@@ -540,6 +627,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           break;
 
         case EquivalenceStatus.notEquivalent:
+          // A "witness" is a concrete input string on which the two
+          // machines disagree — shown to the player as a concrete
+          // counterexample rather than a bare "wrong" verdict.
           final witness = result.witness ?? '';
           final by = result.acceptedByMachine;
           final yourSide   = by == 1 ? 'your regex' : 'the target DFA';
@@ -556,6 +646,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           break;
 
         case EquivalenceStatus.noStartState:
+          // Should be unreachable in practice — regexToDfa always produces
+          // a machine with a start state — but handled defensively rather
+          // than left as an unmatched case.
           _checkResult = '? Compiled NFA has no start state — this is a bug. '
               'Please report it.';
           break;
@@ -570,6 +663,13 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     }
   }
 
+  /// Main answer-checking flow for canvas-based puzzle variants
+  /// (buildAutomaton / regexToDfa): resolves the level's target machine,
+  /// optionally enforces a required automaton type (DFA vs NFA), runs
+  /// the appropriate equivalence check for the level's automata mode
+  /// (NFA/DFA exact check, or bounded PDA/TM simulation), and reports the
+  /// result. Delegates to [_checkRegexAnswer] instead for dfaToRegex
+  /// levels, since those check a typed string rather than the canvas.
   Future<void> _checkAnswer() async {
     // Delegate to the regex-input check for dfaToRegex levels.
     if (widget.level.puzzleVariant == PuzzleVariant.dfaToRegex) {
@@ -597,7 +697,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           return;
         }
       } else {
-        // Legacy SVG-asset path
+        // Legacy SVG-asset path: older levels shipped their target as a
+        // bundled .svg file (exported from another tool) rather than
+        // inline DSL text — still supported for backward compatibility.
         String svgText;
         try {
           svgText = await rootBundle.loadString(widget.level.svgAsset);
@@ -742,6 +844,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
             _successCtrl.forward(from: 0);
             _showSuccessDialog();
           } else {
+            // For NFA/DFA levels this path means the exact BFS search
+            // exceeded its state-space cap — genuinely inconclusive, unlike
+            // the PDA/TM case above where "passed everything we tried" is
+            // treated as a pass.
             _checkResult = '? Could not determine equivalence (search space too large).\n\n'
                 'Try simplifying your automaton or check manually.';
           }
@@ -762,6 +868,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
     }
   }
 
+  /// Shows the celebratory "LEVEL COMPLETE" dialog. Not dismissible by
+  /// tapping outside — the player must explicitly tap "BACK TO MAP", which
+  /// pops both the dialog and this puzzle screen in one go.
   void _showSuccessDialog() {
     showDialog(
       context: context,
@@ -807,8 +916,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           children: [
             Text(widget.level.title,
                 style: GoogleFonts.orbitron(
-                    fontWeight: FontWeight.w700,
-                    fontSize: compact ? 14 : null)),
+                    fontWeight: FontWeight.w700, fontSize: compact ? 14 : null)),
+            // Difficulty label (EASY/HARD) is dropped on compact/phone
+            // widths to save AppBar vertical space — the title alone still
+            // fits comfortably there.
             if (!compact)
               Text(
                 widget.difficulty.displayName.toUpperCase(),
@@ -826,6 +937,11 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          // Three mutually-exclusive states for the "Check" action:
+          // spinner while checking, a labeled button on wide layouts, or a
+          // bare icon button on compact ones (where the bottom bar's full
+          // "Check Answer" button is the primary action instead — see
+          // bottomNavigationBar below).
           if (_checking)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -866,9 +982,15 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           : _buildBody(theme),
 
       // ── FAB toolbar ───────────────────────────────────────────────────
+      // dfaToRegex levels render a read-only canvas (see _buildDfaToRegexBody)
+      // — there's nothing to edit, so no editing-mode FABs are shown.
       floatingActionButton: widget.level.puzzleVariant == PuzzleVariant.dfaToRegex
           ? null // no FAB needed — canvas is read-only
           : _buildFab(context, theme),
+      // Compact layouts get a full-width "Check Answer" button pinned to
+      // the bottom instead of relying solely on the small AppBar icon —
+      // easier to hit on a phone. Suppressed for dfaToRegex (its own
+      // regex-input panel already docks at the bottom of the screen).
       bottomNavigationBar: compact &&
               widget.level.puzzleVariant != PuzzleVariant.dfaToRegex
           ? SafeArea(
@@ -895,6 +1017,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   // ── Body router ──────────────────────────────────────────────────────────
 
+  /// Picks the body layout for the level's [PuzzleVariant]: a read-only
+  /// DFA diagram + regex input for dfaToRegex, or the standard editable
+  /// canvas for everything else.
   Widget _buildBody(AppThemeNotifier theme) {
     switch (widget.level.puzzleVariant) {
       case PuzzleVariant.dfaToRegex:
@@ -907,6 +1032,11 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   // ── DFA → Regex body: read-only DFA canvas + regex text input ────────────
 
+  /// Layout for dfaToRegex levels: goal banner, a pannable/zoomable
+  /// read-only rendering of the target DFA, and a docked text field for
+  /// the player's regex answer. Switches between a vertical stack (narrow)
+  /// and the DFA canvas getting more relative space (wide) via
+  /// [LayoutBuilder].
   Widget _buildDfaToRegexBody(AppThemeNotifier theme) {
     final gs = _dfaGs;
     final compact = isCompactLayout(context);
@@ -931,6 +1061,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           puzzleVariant: widget.level.puzzleVariant,
         );
 
+        // Falls back to a plain error message if the level's DSL failed to
+        // parse in initState (_dfaGs stayed null) — the player would
+        // otherwise see a blank canvas with no explanation.
         final dfaPreview = gs == null
             ? Center(
                 child: Text('Could not load DFA.',
@@ -944,6 +1077,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
         );
 
         if (wide) {
+          // Wide layout: DFA canvas gets a fixed flex ratio (3 parts of
+          // the Column) since the regex panel's own height is fixed/
+          // content-driven, not flex-based.
           return Column(
             children: [
               goalBanner,
@@ -982,6 +1118,12 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   // ── Standard canvas body (buildAutomaton + regexToDfa) ───────────────────
 
+  /// Layout for buildAutomaton and regexToDfa levels: goal banner on top,
+  /// full-size editable canvas below — structurally the same
+  /// KeyboardListener > GestureDetector > Stack shape as AutomataScreen's
+  /// canvas, just without the simulator/mode-switching machinery (a puzzle
+  /// level always has exactly one fixed automataMode, set by the level
+  /// definition).
   Widget _buildCanvasBody(AppThemeNotifier theme) {
     return Column(
         children: [
@@ -1004,6 +1146,7 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
               focusNode: _focusNode,
               autofocus: true,
               onKeyEvent: (e) {
+                // Shift toggles line mode, same shortcut as AutomataScreen.
                 final isShift = e.logicalKey == LogicalKeyboardKey.shiftLeft ||
                     e.logicalKey == LogicalKeyboardKey.shiftRight;
                 if (isShift && e is KeyDownEvent) {
@@ -1013,6 +1156,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onDoubleTapDown: (d) {
+                  // Double-tapping empty canvas creates a new node centered
+                  // on the tap point; suppressed in line mode or when the
+                  // tap actually landed on an existing node.
                   if (_lineMode) return;
                   if (_nodeAt(d.localPosition) != null) return;
                   setState(() {
@@ -1024,6 +1170,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                 },
                 onTapDown: (d) {
                   _lastTapPosition = d.localPosition;
+                  // Tapping a node while placing the start arrow commits it
+                  // as the start state and exits placement mode.
                   if (_placingStartArrow) {
                     final n = _nodeAt(d.localPosition);
                     if (n != null) {
@@ -1036,6 +1184,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                   }
                 },
                 onTap: () {
+                  // A plain tap on empty canvas returns keyboard focus to
+                  // the canvas, so the Shift-key shortcut keeps working
+                  // after finishing a label edit.
                   if (_lastTapPosition == null ||
                       _nodeAt(_lastTapPosition!) == null) {
                     _focusNode.requestFocus();
@@ -1076,6 +1227,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         ),
                       ),
 
+                    // Transition lines, painted before nodes so node
+                    // circles sit on top of line endpoints. `highlighted`
+                    // is always false here — puzzle levels have no
+                    // simulator/step-playback UI to highlight against.
                     ..._lines.values.map((line) {
                       final a = _nodes[line.nodeAId];
                       final b = _nodes[line.nodeBId];
@@ -1103,6 +1258,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
                         key: ValueKey(node.id),
                         data: node,
                         lineMode: _lineMode,
+                        // Locks node label editing while placing the start
+                        // arrow — a tap during that mode should only ever
+                        // commit the start arrow, never open the label
+                        // field underneath it.
                         interactionLocked: _placingStartArrow,
                         deleteMode: _deleteMode,
                         highlighted: false,
@@ -1148,6 +1307,11 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 
   // ── FAB toolbar (canvas modes only) ──────────────────────────────────────
 
+  /// Vertical stack of mode-toggle FABs for canvas-based puzzle variants:
+  /// start-arrow placement, delete mode, line mode, and a "clear canvas"
+  /// action (with a confirmation dialog) — a trimmed-down version of
+  /// AutomataScreen's FAB column, minus the simulator-visibility toggle
+  /// (puzzle levels have no simulator panel).
   Widget _buildFab(BuildContext context, AppThemeNotifier theme) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1170,6 +1334,8 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           activeColor: Theme.of(context).colorScheme.error,
           onPressed: () => setState(() {
             _deleteMode = !_deleteMode;
+            // Delete mode is mutually exclusive with the other editing
+            // modes.
             if (_deleteMode) {
               _lineMode = false;
               _placingStartArrow = false;
@@ -1194,6 +1360,9 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
           activeColor: theme.accent,
           small: true,
           onPressed: () {
+            // Read the theme once via the static accessor (rather than
+            // context.watch) since this dialog builder runs outside the
+            // normal widget-rebuild lifecycle of _buildFab itself.
             final dialogTheme = AppThemeNotifier.read(context);
             showDialog(
             context: context,
@@ -1272,6 +1441,10 @@ class _GamePuzzleScreenState extends State<GamePuzzleScreen>
 //  Goal banner
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// The panel docked at the top of a puzzle screen: the level's prose
+/// description, an alphabet/mode info row, an optional target-regex box
+/// (regexToDfa levels), and the latest check result (success/failure
+/// message), all left-bordered in the level's [tagColor].
 class _GoalBanner extends StatelessWidget {
   final String description;
   final Color tagColor;
@@ -1385,6 +1558,9 @@ class _GoalBanner extends StatelessWidget {
           ),
 
           // ── Regex expression box (regexToDfa levels only) ─────────────
+          // Shows the target regex the player must build an equivalent
+          // machine for — only meaningful (and non-empty) for regexToDfa,
+          // hence the puzzleVariant guard.
           if (puzzleVariant == PuzzleVariant.regexToDfa && targetRegex.isNotEmpty)
             Container(
               width: double.infinity,
@@ -1425,6 +1601,9 @@ class _GoalBanner extends StatelessWidget {
             ),
 
           // ── Check result ──────────────────────────────────────────────
+          // Only rendered once a check has actually run; animates its
+          // background/text color in when correctness flips (e.g. a fresh
+          // wrong answer replaces a previous one without an abrupt jump).
           if (checkResult != null)
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
@@ -1455,6 +1634,9 @@ class _GoalBanner extends StatelessWidget {
 //  Small labelled chip used inside _GoalBanner
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A small icon+label pill in a tinted rounded box — used for both the
+/// alphabet chip ("Σ = { a, b }") and the mode chip ("DFA"/"PDA"/etc.) in
+/// [_GoalBanner].
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1503,6 +1685,9 @@ class _InfoChip extends StatelessWidget {
 //  Success dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// The "LEVEL COMPLETE" celebration dialog shown by [_showSuccessDialog]:
+/// a glowing checkmark badge, the level title, and a "BACK TO MAP" button.
+/// Plays a bouncy elastic scale-in animation on mount.
 class _SuccessDialog extends StatefulWidget {
   final GameLevel level;
   final VoidCallback onNext;
@@ -1521,9 +1706,14 @@ class _SuccessDialogState extends State<_SuccessDialog>
   @override
   void initState() {
     super.initState();
+    // Starts playing immediately on mount (..forward()) — the dialog
+    // doesn't wait for any external trigger since showing it *is* the
+    // trigger.
     _ctrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
       ..forward();
+    // elasticOut gives the badge a bouncy "pop" overshoot rather than a
+    // flat linear/eased scale-up, matching the celebratory tone.
     _scale = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
   }
 
@@ -1636,6 +1826,9 @@ class _ReadOnlyDfaCanvas extends StatefulWidget {
 }
 
 class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
+  // Extra space reserved around the diagram's node bounding box when
+  // computing content size / fit-to-view scale, so nodes/labels near the
+  // edge aren't flush against the viewport border.
   static const double _contentPadding = 90;
   static const double _minScale = 0.15;
   static const double _maxScale = 3.0;
@@ -1656,12 +1849,22 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
   static const double _screenMarginPx = 300;
 
   final TransformationController _transformCtrl = TransformationController();
+  // Guards the one-time auto-fit-to-view that runs on first layout (see
+  // build()'s post-frame callback below) — flipped back to false in
+  // didUpdateWidget when a different DFA is loaded, so re-fitting happens
+  // again for the new content.
   bool _didAutoFit = false;
   Size _lastViewportSize = Size.zero;
 
+  /// Computes InteractiveViewer's boundaryMargin fresh from the current
+  /// zoom level and content size, independently per axis — see the class
+  /// doc comment above for why a flat/constant margin doesn't work here.
   EdgeInsets get _boundaryMargin {
     final scale = _transformCtrl.value.getMaxScaleOnAxis();
     final safeScale = scale > 0 ? scale : _minScale;
+    // Desired screen-space margin, converted into content-space units by
+    // dividing by the current scale (so it looks the same size in pixels
+    // regardless of zoom level).
     final base = _screenMarginPx / safeScale;
 
     final bounds = _computeNodeBounds();
@@ -1674,6 +1877,8 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
       // content is placed in the viewport along this axis.
       final slack = viewportExtent - contentExtent * safeScale;
       if (slack <= 0) return base; // content already fills/exceeds viewport
+      // Split the slack evenly on both sides, on top of the base margin,
+      // converted back into content-space units.
       return base + slack / (2 * safeScale);
     }
 
@@ -1737,12 +1942,18 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
     final contentWidth = bounds.right + _contentPadding;
     final contentHeight = bounds.bottom + _contentPadding;
 
+    // Uniform scale (same factor both axes) that fits the *tighter* of the
+    // two dimensions, so nothing overflows the viewport. Clamped so a tiny
+    // diagram doesn't zoom in past 1.0 (native size) — only ever shrinks
+    // to fit, never magnifies past 100% on auto-fit.
     final scale = min(
       viewportSize.width / contentWidth,
       viewportSize.height / contentHeight,
     ).clamp(_minScale, 1.0);
 
     final graphCenter = bounds.center;
+    // Translation that places the content's center at the viewport's
+    // center, at the chosen scale.
     final dx = viewportSize.width / 2 - graphCenter.dx * scale;
     final dy = viewportSize.height / 2 - graphCenter.dy * scale;
 
@@ -1753,6 +1964,10 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
     });
   }
 
+  /// Zooms in/out by [factor] (e.g. 1.25 to zoom in, 0.8 to zoom out),
+  /// keeping the viewport's *center point* visually fixed rather than
+  /// zooming around the content origin — the usual "zoom toward where
+  /// you're looking" behavior.
   void _zoomBy(double factor) {
     if (_lastViewportSize == Size.zero) return;
     final currentScale = _transformCtrl.value.getMaxScaleOnAxis();
@@ -1765,6 +1980,10 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
       _lastViewportSize.width / 2,
       _lastViewportSize.height / 2,
     );
+    // Convert the screen-space center into content ("scene") coordinates
+    // first, so the translate-scale-translate sequence below zooms
+    // relative to that fixed content point rather than the Matrix4
+    // origin.
     final focal = _transformCtrl.toScene(center);
     setState(() {
       _transformCtrl.value = _transformCtrl.value.clone()
@@ -1774,6 +1993,9 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
     });
   }
 
+  /// Re-runs [_fitToView] against the last known viewport size — wired to
+  /// both the "fit to view" zoom-control button and double-tapping the
+  /// canvas.
   void _resetView() {
     if (_lastViewportSize != Size.zero) _fitToView(_lastViewportSize);
   }
@@ -1793,6 +2015,9 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
           final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
           _lastViewportSize = viewportSize;
 
+          // One-time auto-fit: deferred to a post-frame callback since
+          // calling setState synchronously during build() (which
+          // _fitToView does) isn't allowed.
           if (!_didAutoFit) {
             _didAutoFit = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1806,6 +2031,11 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
                 onDoubleTap: _resetView,
                 child: InteractiveViewer(
                   transformationController: _transformCtrl,
+                  // constrained: false lets the child (the SizedBox below)
+                  // be larger than the viewport, which is required for
+                  // InteractiveViewer's own pan/zoom to have anything to
+                  // scroll — otherwise it would force-fit the child to the
+                  // viewport itself.
                   constrained: false,
                   boundaryMargin: _boundaryMargin,
                   minScale: _minScale,
@@ -1834,7 +2064,10 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
                             ),
                           ),
 
-                        // Transition lines
+                        // Transition lines — IgnorePointer'd since this
+                        // whole canvas is read-only; the label TextFields
+                        // inside LineWidget would otherwise still accept
+                        // focus/taps despite onLabelChanged being a no-op.
                         ...gs.lines.values.map((line) {
                           final a = gs.nodes[line.nodeAId];
                           final b = gs.nodes[line.nodeBId];
@@ -1918,6 +2151,8 @@ class _ReadOnlyDfaCanvasState extends State<_ReadOnlyDfaCanvas> {
 //  Small floating zoom/fit control cluster for _ReadOnlyDfaCanvas.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A small pill-shaped cluster of three icon buttons (zoom out / fit / zoom
+/// in) floated in the corner of [_ReadOnlyDfaCanvas].
 class _CanvasZoomControls extends StatelessWidget {
   final AppThemeNotifier theme;
   final VoidCallback onZoomIn;
@@ -1951,6 +2186,7 @@ class _CanvasZoomControls extends StatelessWidget {
   }
 }
 
+/// A single icon button within [_CanvasZoomControls].
 class _CanvasZoomButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -1986,6 +2222,9 @@ class _CanvasZoomButton extends StatelessWidget {
 //  regular expression.  Notifies the parent via the shared [controller].
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// The docked text-entry panel for dfaToRegex levels: a label, the regex
+/// text field itself (color/border shift to green once [isCorrect]), and a
+/// hint line listing the supported operators.
 class _RegexInputPanel extends StatelessWidget {
   final TextEditingController controller;
   final AppThemeNotifier theme;
@@ -1999,6 +2238,10 @@ class _RegexInputPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Local accent distinct from the app theme's usual accent — a cyan
+    // tone used only within this regex-input panel to visually tie it to
+    // the matching "Regex:" box in _GoalBanner (which uses the same
+    // color).
     const accentRegex = Color(0xFF00E5FF);
 
     return Container(
@@ -2039,6 +2282,10 @@ class _RegexInputPanel extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: TextField(
               controller: controller,
+              // Locks the field once the answer is correct — no point
+              // letting the player keep editing a winning solution (and
+              // it visually reinforces "you're done" alongside the green
+              // border).
               enabled: !isCorrect,
               style: GoogleFonts.courierPrime(
                 fontSize: 20,

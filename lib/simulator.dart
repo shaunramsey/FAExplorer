@@ -8,11 +8,23 @@
 //  regex_engine.dart and are re-exported below rather than duplicated here.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Queue (used by PdaSimulator's epsilon-closure worklist) and
+// UnmodifiableSetView (used by AutomataSimulator's activeNodes/activeLines
+// getters, so callers can't mutate the simulator's internal state through
+// them) both come from dart:collection.
 import 'dart:collection';
 
+// DslCodec.importFromDsl — used to parse a black-box node's embedded DSL
+// program into a fresh GraphState so its inner machine can be simulated.
 import 'import_export.dart';
+// NodeData, LineData, StartArrowData, GraphState — the shared graph data
+// types every simulator here operates over.
 import 'models.dart';
+// parseTokenText — resolves `[[KEY]]` tokens (e.g. `[[DELTA]]` -> 'δ') inside
+// transition labels and simulation input before matching.
 import 'token_replacements.dart';
+// Only AutomataMode is needed from the drawer widget, to switch on which
+// kind of graph a black box's inner DSL describes.
 import 'widgets/automata_drawer.dart' show AutomataMode;
 
 // Re-export the regex engine so existing code that only imports
@@ -26,6 +38,11 @@ export 'regex_engine.dart';
 //  AUTOMATA / PDA / TM SIMULATORS
 // ═════════════════════════════════════════════════════════════════════════════
 
+// Outcome of a DFA/NFA run — deliberately just two values (no "running"
+// state, unlike TmResult below) because AutomataSimulator always precomputes
+// the entire step history up front in _buildSimulation, so a final verdict
+// is available immediately after rebuild() rather than needing to be polled
+// mid-computation.
 enum SimResult { accept, reject }
 
 /// Wildcard label — matches any single input token (but not tilda).
@@ -35,12 +52,26 @@ const String kWildcard = '.';
 /// excluded tokens.  Returns null if [label] is not in that form.
 List<String>? _parseNegatedWildcard(String label) {
   // Must start with ".-" (dot dash) and have at least one excluded char.
+  // Minimum valid form is ".-X" (3 chars: dot, dash, one excluded symbol).
   if (label.length < 3) return null;
   if (label[0] != '.' || label[1] != '-') return null;
+  // Splits the excluded-symbols suffix into individual characters (one
+  // excluded token per character); the `.where(isNotEmpty)` guards against
+  // a pathological empty-string entry from split(''), though in practice
+  // splitting a non-empty string on '' never actually produces one.
   final excluded = label.substring(2).split('').where((s) => s.isNotEmpty).toList();
+  // ".-" with nothing after the dash isn't a valid negated-wildcard (nothing
+  // to exclude), so it's rejected rather than treated as "exclude nothing".
   return excluded.isEmpty ? null : excluded;
 }
 
+// One reachable (state, remaining-input, read-position) configuration during
+// DFA/NFA simulation. Deliberately holds the FULL token list plus a cursor
+// (inputPos) rather than a sliced remaining-tokens list, because black-box
+// nodes can rewrite `tokens` mid-run (see AutomataSimulator._runBlackBox) —
+// keeping the whole list plus a position makes "how much has been consumed"
+// and "what a black box rewrote" both representable without juggling two
+// separate lists that could drift out of sync.
 class _SimConfig {
   final String nodeId;
   final List<String> tokens;
@@ -52,11 +83,22 @@ class _SimConfig {
     required this.inputPos,
   });
 
+  // Used as a Map/Set dedup key throughout the epsilon-closure and
+  // step-building code below. \u0001 (a control character that can never
+  // appear in a legitimate token) joins the token list unambiguously, so two
+  // configs with genuinely different token lists never collide into the same
+  // key just because a plain "," or similar separator happened to appear
+  // inside a token.
   String get key => '$nodeId:$inputPos:${tokens.join('\u0001')}';
 }
 
 // Match comma, newline, or a literal "\n" escape — same rules as models.dart
 // and equivalence_dialog.dart.
+// Two separately-declared RegExps with byte-for-byte identical patterns:
+// kept as two names (rather than one shared constant) because they're
+// conceptually used for two different purposes below (splitting a
+// tilda-only label vs. splitting a full consuming-transition label), even
+// though today they happen to use the same split rule.
 final _transitionLabelSplitter = RegExp(r'[,\n]|\\n');
 final _epsilonLabelSplitter = RegExp(r'[,\n]|\\n');
 
@@ -84,10 +126,13 @@ List<String> _tokenize(String input, {String nullEscapeToken = '?'}) {
   final result = <String>[];
   int i = 0;
   while (i < input.length) {
+    // Whitespace between tokens is simply dropped rather than becoming its
+    // own token — a typed input like "a b c" tokenizes the same as "abc".
     if (input[i].trim().isEmpty) {
       i++;
       continue;
     }
+    // `[[...]]` command token, e.g. `[[DELTA]]` -> one token representing 'δ'.
     if (i + 1 < input.length && input[i] == '[' && input[i + 1] == '[') {
       final close = input.indexOf(']]', i + 2);
       if (close >= 0) {
@@ -99,6 +144,9 @@ List<String> _tokenize(String input, {String nullEscapeToken = '?'}) {
       result.add(input.substring(i));
       break;
     }
+    // `"..."` quoted span becomes ONE multi-character token, letting a user
+    // type e.g. "ab" to mean a single two-letter token rather than two
+    // separate single-character tokens 'a' and 'b'.
     if (input[i] == '"') {
       final close = input.indexOf('"', i + 1);
       if (close >= 0) {
@@ -111,11 +159,17 @@ List<String> _tokenize(String input, {String nullEscapeToken = '?'}) {
       break;
     }
     // \0 in user input is treated as the null/empty token.
+    // Two-character escape sequence (backslash + '0') collapses to whatever
+    // [nullEscapeToken] the caller asked for — see the doc comment above for
+    // why FA/PDA and TM want different tokens here.
     if (i + 1 < input.length && input[i] == '\\' && input[i + 1] == '0') {
       result.add(nullEscapeToken);
       i += 2;
       continue;
     }
+    // Fallback: every other character becomes its own single-character
+    // token — the default one-symbol-per-token behavior for plain,
+    // unquoted, non-command input.
     result.add(input[i]);
     i++;
   }
@@ -127,12 +181,29 @@ List<String> _tokenize(String input, {String nullEscapeToken = '?'}) {
 String _resolveCommand(String token) {
   final trimmed = token.trim();
   if (!trimmed.startsWith('[[') || !trimmed.endsWith(']]')) return token;
+  // Strip the surrounding brackets, trim incidental whitespace the user
+  // might have typed inside them, and uppercase — kTokenReplacements' keys
+  // (see token_replacements.dart) are all uppercase, so this makes the
+  // lookup effectively case-insensitive on the user's input even though the
+  // table itself is case-sensitive.
   final inner = trimmed.substring(2, trimmed.length - 2).trim().toUpperCase();
+  // Unrecognized key falls back to the original token unchanged (brackets
+  // and all), same "leave it alone if we don't understand it" convention as
+  // parseTokenText in token_replacements.dart.
   return kTokenReplacements[inner] ?? token;
 }
 
 /// Runs a DFA/NFA step-by-step and records every reachable configuration so
 /// the UI can highlight the active states and transitions as the machine advances.
+// Unlike TmSimulator (which computes one step at a time on demand via
+// computeNext(), so it can be paused/fast-forwarded interactively),
+// AutomataSimulator eagerly computes the ENTIRE run up front inside
+// rebuild()/_buildSimulation() and stores every round in `states` /
+// `usedLines` / `_configsByStep`. The `step` cursor then just indexes into
+// that precomputed history — stepping forward or backward is just moving the
+// cursor, no recomputation. This works because NFA/DFA simulation over a
+// bounded input is cheap and always terminates (capped at kMaxSteps below),
+// unlike a TM which can run indefinitely.
 class AutomataSimulator {
   AutomataSimulator({required this.nodes, required this.lines});
 
@@ -140,8 +211,17 @@ class AutomataSimulator {
   final Map<String, LineData> lines;
 
   List<String> tokens = [];
+  // states[i] = the set of active node ids after round i (states[0] is the
+  // initial epsilon-closure before any input is consumed).
   final List<Set<String>> states = [];
+  // usedLines[i] = the set of line ids traversed to reach states[i] — used
+  // by the UI to highlight which transitions just fired.
   final List<Set<String>> usedLines = [];
+  // The full _SimConfig objects (node + remaining tokens + input position)
+  // behind each round of `states` — richer than `states` alone since two
+  // configs can share a nodeId but differ in input position/tokens (e.g.
+  // after a black box rewrote the token stream on one branch but not
+  // another).
   final List<List<_SimConfig>> _configsByStep = [];
   // outputHeadPos: index into outputTokens where the outer machine should
   // resume reading after the black box runs.  For NFA/PDA black boxes this is
@@ -150,6 +230,9 @@ class AutomataSimulator {
   // TM black boxes it is the absolute tape-head position that the inner TM
   // left its head at, converted to a logical token index so the outer NFA
   // step-loop can use it as the new inputPos.
+  // Cache keyed by "$nodeId:$inputPos:$slicedTokensJoined" (built in
+  // _runBlackBox) so the same black-box node visited with the same
+  // remaining-input slice during the same rebuild() isn't re-simulated.
   final Map<String, ({bool accepted, List<String> outputTokens, int outputHeadPos})>
       _blackBoxResultCache = {};
 
@@ -162,12 +245,19 @@ class AutomataSimulator {
   /// halt-accept state is reached) `states` simply stops growing — there is
   /// no padding past that point — so this is also the point past which the
   /// UI must refuse to step forward.
+  // states.length - 2, not - 1: step uses a -1-based offset (step=-1 means
+  // "before round 0"), so the valid step range is -1..(states.length - 2)
+  // — i.e. states.length possible rounds map to states.length - 1 distinct
+  // step values starting from -1, and the last of those is states.length-2.
   int get maxStep => states.isEmpty ? -1 : states.length - 2;
 
   Set<String> get activeNodes {
     if (states.isEmpty) return {};
+    // step=-1 -> idx=0 (the initial round, before any input is consumed).
     final idx = step + 1;
     if (idx < 0 || idx >= states.length) return {};
+    // Wrapped so callers can't mutate the simulator's internal `states[idx]`
+    // set through the returned reference.
     return UnmodifiableSetView(states[idx]);
   }
 
@@ -186,6 +276,9 @@ class AutomataSimulator {
 
   void rebuild(String input, {StartArrowData? startArrow}) {
     tokens = _tokenize(input);
+    // A fresh input means every previously-cached black-box result (keyed
+    // partly by remaining-token-slice) is potentially stale, so the whole
+    // cache is invalidated rather than trying to selectively evict entries.
     _blackBoxResultCache.clear();
     _buildSimulation(startArrow: startArrow);
     // step uses a -1 offset (see activeNodes/activeLines): valid range is
@@ -202,6 +295,9 @@ class AutomataSimulator {
 
   void rebuildGraph({StartArrowData? startArrow}) {
     _blackBoxResultCache.clear(); // ← match rebuild()'s cache invalidation
+    // Unlike rebuild(), this doesn't retokenize `tokens` — used when only
+    // the graph (nodes/lines) changed, e.g. after an edit in the editor,
+    // while the simulated input string stays the same.
     _buildSimulation(startArrow: startArrow);
     if (step > maxStep) {
       step = maxStep;
@@ -211,6 +307,10 @@ class AutomataSimulator {
   SimResult finalResult() {
     if (_configsByStep.isEmpty) return SimResult.reject;
 
+    // A halt-accept reached at ANY point during the recorded run (not just
+    // the final round) is decisive — unlike a plain accept state, halt-accept
+    // means the machine is considered to have stopped there, so its presence
+    // anywhere in the history is enough to call the whole run an accept.
     for (final snapshot in _configsByStep) {
       for (final config in snapshot) {
         if (nodes[config.nodeId]?.isHaltAccept == true) {
@@ -219,6 +319,12 @@ class AutomataSimulator {
       }
     }
 
+    // No halt-accept anywhere: fall back to the classic NFA acceptance rule
+    // — accept iff some branch in the FINAL round is both in an accept state
+    // AND has consumed the entire input (inputPos == tokens.length). Configs
+    // that stopped early (didn't reach maxStep because their own token slice
+    // was shorter, e.g. after a black-box rewrite) are skipped via the
+    // `inputPos < tokens.length` continue below.
     bool anyAccept = false;
     for (final config in _configsByStep.last) {
       final node = nodes[config.nodeId];
@@ -232,10 +338,26 @@ class AutomataSimulator {
     return anyAccept ? SimResult.accept : SimResult.reject;
   }
 
+  // Runs a raw label token through [[KEY]] command resolution after
+  // trimming — the single normalization path every comparison below funnels
+  // through so "?" vs "[[?]]"-style variants are all compared consistently.
   String _normalizeSimToken(String token) => _resolveCommand(token.trim());
 
+  // '?' is this simulator's convention for the "null token" — see the
+  // _isEpsilonLabel doc/comments below for what that means in practice.
   bool _isNullToken(String token) => _normalizeSimToken(token) == '?';
 
+  // Determines whether a transition label should be treated as a "free"
+  // (input-consuming-nothing) move during epsilon-closure computation.
+  // Two independent cases both count as epsilon-like here:
+  //   1. A genuinely blank/tilda label (~ or empty) — the classic NFA
+  //      epsilon transition.
+  //   2. A `?` or `\0` label, but ONLY when the input is already fully
+  //      consumed (atEndOfInput) AND the user's actual input didn't
+  //      explicitly contain a literal `?`/`\0` token themselves
+  //      (nullWasExplicitlyTyped) — this is the "null jump" convention: a
+  //      transition meant to fire once input runs out, distinct from
+  //      matching a literal `?` character typed by the user.
   bool _isEpsilonLabel(String label, bool atEndOfInput, bool nullWasExplicitlyTyped) {
     final normalized = _normalizeSimToken(label);
     if (normalized.isEmpty || normalized == '~') return true;
@@ -246,9 +368,17 @@ class AutomataSimulator {
     return false;
   }
 
+  // Splits a label into its alternative branches for epsilon-closure
+  // purposes and trims each. Multiple alternatives on one line (e.g. a
+  // multi-line label with several possible transitions) are tried
+  // independently — this is what gives NFA-style branching.
   Iterable<String> _epsilonAlternatives(String label) =>
       label.split(_epsilonLabelSplitter).map((s) => s.trim());
 
+  // Same splitting rule as _epsilonAlternatives, kept as a separate method
+  // (see the two RegExp declarations' comment above) purely for readability
+  // at each call site — this one is used when checking consuming
+  // (non-epsilon) transitions.
   Iterable<String> _transitionAlternatives(String label) =>
       label.split(_transitionLabelSplitter).map((s) => s.trim());
 
@@ -267,6 +397,7 @@ class AutomataSimulator {
     List<String> inputTokens,
     int inputPos,
   ) {
+    // Non-black-box node: identity passthrough, nothing to run.
     if (!node.isBlackBox) {
       return (accepted: true, outputTokens: inputTokens, outputHeadPos: inputPos);
     }
@@ -278,12 +409,16 @@ class AutomataSimulator {
       ? (inputPos < inputTokens.length ? inputTokens.sublist(inputPos) : <String>[]) 
       : <String>[];
 
+    // Cache lookup keyed on the node plus exactly what the inner machine
+    // will actually see (position + remaining tokens) — a hit here skips
+    // re-parsing the black box's DSL and re-running its whole simulator.
     final cacheKey = '${node.id}:$inputPos:${slicedTokens.join('\u0001')}';
     final cached = _blackBoxResultCache[cacheKey];
     if (cached != null) return cached;
 
     final dsl = node.blackBoxDsl.trim();
     if (dsl.isEmpty) {
+      // No inner program configured — the black box can never accept.
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
@@ -297,6 +432,8 @@ class AutomataSimulator {
       switch (graph.automataMode) {
         case AutomataMode.ndfa:
         case AutomataMode.regex:
+          // Inner machine is itself an NFA/DFA — recursively build a fresh
+          // AutomataSimulator for it (black boxes can nest arbitrarily deep).
           final sim = AutomataSimulator(nodes: graph.nodes, lines: graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
           final accepted = sim.finalResult() == SimResult.accept;
@@ -326,6 +463,10 @@ class AutomataSimulator {
           // transition inside the box that targets tape 2+.
           sim.tapeCount = detectRequiredTapeCount(graph.nodes, graph.lines);
           sim.rebuild(input, startArrow: graph.startArrow);
+          // Runs the inner TM to completion (computeNext() keeps returning
+          // true until it halts or gets stuck) rather than stepping it
+          // interactively — the black box is a black box, only its final
+          // verdict and output tape matter to the outer machine.
           while (sim.computeNext()) {}
           if (sim.result != TmResult.accept) {
             return _blackBoxResultCache[cacheKey] = (
@@ -355,6 +496,9 @@ class AutomataSimulator {
           );
       }
     } catch (_) {
+      // Malformed inner DSL, or any other unexpected failure while running
+      // it — treat the black box as a dead branch rather than propagating
+      // the exception up into the outer simulation.
       return _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTokens: const <String>[],
@@ -376,6 +520,10 @@ class AutomataSimulator {
     TmConfig? haltConfig;
     if (sim.steps.isNotEmpty) {
       final finalConfigs = sim.steps.last.configs;
+      // Prefer an explicit halt-accept config; fall back to any plain accept
+      // config; fall back to whatever's first if neither exists (defensive
+      // — shouldn't normally be reached since the caller already checked
+      // sim.result == TmResult.accept before calling this).
       haltConfig = finalConfigs.where(
         (c) => sim.nodes[c.nodeId]?.isHaltAccept == true,
       ).firstOrNull;
@@ -424,6 +572,11 @@ class AutomataSimulator {
     return (outputTokens: outputTokens, outputHeadPos: outputHeadPos);
   }
 
+  // Computes the epsilon-closure of [startConfigs]: every config reachable
+  // via free (non-consuming) moves — tilda transitions, null jumps, and
+  // black-box hops that don't consume outer input — without advancing the
+  // input position. Returns both the closure's config set and the set of
+  // line ids traversed to build it (for UI highlighting).
   (Set<_SimConfig>, Set<String>) _epsilonClosure(Set<_SimConfig> startConfigs) {
     final visitedConfigs = <String, _SimConfig>{
       for (final cfg in startConfigs) cfg.key: cfg,
@@ -438,6 +591,10 @@ class AutomataSimulator {
 
       var effective = current;
       if (currentNode.isBlackBox) {
+        // A black box sitting at the head of the epsilon-closure worklist
+        // gets run eagerly (even though we haven't "stepped" input) so its
+        // rewritten output tokens/position are what subsequent free moves
+        // from this node see.
         final result = _runBlackBox(currentNode, current.tokens, current.inputPos);
         if (!result.accepted) {
           // If inner machine rejected, keep the original config so we can
@@ -453,6 +610,10 @@ class AutomataSimulator {
             visitedConfigs[effective.key] = effective;
             queue.add(effective);
           } else if (effective.key != current.key) {
+            // The rewritten config was already visited via a different path
+            // and differs from the original — nothing new to explore from
+            // here under `effective`; skip straight to the next queue item
+            // rather than falling through to explore outgoing lines twice.
             continue;
           }
         }
@@ -470,6 +631,10 @@ class AutomataSimulator {
 
         for (final alt in _epsilonAlternatives(line.label)) {
           final normalized = _normalizeSimToken(alt);
+          // Whether the user's ACTUAL typed input (not the black-box-rewritten
+          // `effective` tokens) contains a literal '?' — this is what
+          // distinguishes "the user really typed a ? character" from "input
+          // just happens to be exhausted", per _isEpsilonLabel's contract.
           final nullWasExplicitlyTyped = current.tokens.any(_isNullToken);
 
           if (normalized.isEmpty || normalized == '~') isNormalEpsilon = true;
@@ -499,12 +664,19 @@ class AutomataSimulator {
     return (visitedConfigs.values.toSet(), linesUsed);
   }
 
+  // Precomputes the ENTIRE step-by-step run (see the class-level comment
+  // above for why this is done eagerly rather than lazily). Populates
+  // states/usedLines/_configsByStep, one entry per round, starting with
+  // round 0 (the initial epsilon-closure before consuming anything).
   void _buildSimulation({StartArrowData? startArrow}) {
     states.clear();
     usedLines.clear();
     _configsByStep.clear();
 
     if (startArrow == null || !nodes.containsKey(startArrow.nodeId)) {
+      // No valid start state — record a single empty round rather than
+      // leaving the lists empty, so maxStep/activeNodes etc. still have a
+      // well-defined (if empty) round 0 to look at.
       states.add({});
       usedLines.add({});
       _configsByStep.add(const <_SimConfig>[]);
@@ -523,6 +695,9 @@ class AutomataSimulator {
     usedLines.add(Set.from(initialLines));
     _configsByStep.add(List<_SimConfig>.from(current));
 
+    // Safety valve against runaway/infinite simulation (e.g. a graph with a
+    // black-box cycle that never terminates) — caps the recorded history at
+    // 512 rounds rather than looping forever.
     const int kMaxSteps = 512;
     int stepsBuilt = 0;
     while (current.isNotEmpty && stepsBuilt < kMaxSteps) {
@@ -544,6 +719,11 @@ class AutomataSimulator {
         var effective = config;
         if (node.isBlackBox) {
           final result = _runBlackBox(node, config.tokens, config.inputPos);
+          // Rejected inner machine kills this branch outright (unlike the
+          // epsilon-closure case above, which kept exploring free moves from
+          // a rejected black box — here we're trying to CONSUME input via
+          // this node, and a rejecting black box has nothing valid to
+          // consume with).
           if (!result.accepted) continue;
           effective = _SimConfig(
             nodeId: config.nodeId,
@@ -580,6 +760,10 @@ class AutomataSimulator {
           continue;
         }
 
+        // Whether the user actually typed a literal '?'/'\0' anywhere in
+        // THIS branch's own token stream — passed to _isEpsilonLabel below
+        // so a genuinely-typed '?' character is matched literally rather
+        // than misread as the "null jump" convention.
         final nullWasExplicitlyTyped = config.tokens.any(_isNullToken);
 
         for (final line in lines.values) {
@@ -601,6 +785,10 @@ class AutomataSimulator {
                 inputPos: effective.inputPos + 1,
               ));
               stepLines.add(line.id);
+              // `break` here stops checking further alternatives on THIS
+              // line for THIS config — the wildcard already matched, so
+              // there's no need to also test any other alternative on the
+              // same line label against the same input position.
               break;
             }
             final negExcluded = _parseNegatedWildcard(altTrimmed);
@@ -623,9 +811,14 @@ class AutomataSimulator {
 
             // Treat the transition label as a sequence of tokens and attempt
             // to match that sequence starting at the current input position.
+            // This is what lets a single transition label consume MULTIPLE
+            // input tokens at once (e.g. a quoted multi-character label),
+            // not just one.
             final labelTokens = _tokenize(alt);
             final normalizedLabel = labelTokens.map(_normalizeSimToken).toList();
             final remaining = effective.tokens.length - effective.inputPos;
+            // Label is longer than what's left to consume — can't possibly
+            // match, skip without doing the per-character comparison below.
             if (normalizedLabel.length > remaining) continue;
 
             var allMatch = true;
@@ -651,7 +844,13 @@ class AutomataSimulator {
         }
       }
 
+      // No branch consumed anything this round (dead end), or every branch
+      // that could have advanced produced no successors — the computation
+      // has nothing left to explore, so stop recording further rounds.
       if (!consumedAny || nextConfigs.isEmpty) break;
+      // A halt-accept was reached this round (flagged above) — that round is
+      // already recorded; stop here rather than computing a further round
+      // past the halt.
       if (hasHaltAccept) break;
 
       final (closureConfigs, closureLines) = _epsilonClosure(nextConfigs);
@@ -701,6 +900,7 @@ class AutomataSimulator {
 //    a,∅|A ∅    read a, pop bottom marker ∅, push A then ∅
 // ─────────────────────────────────────────────────────────────────────────────
 
+// A single parsed alternative from a PDA transition label.
 class PdaTransition {
   /// Input symbol to consume.  Empty string = tilda.
   final String read;
@@ -722,6 +922,9 @@ class PdaTransition {
 const String kStackBottom = '∅';
 
 /// Parses a single alternative like "a,x|y" into a [PdaTransition].
+// Tries each supported label format in order of specificity, falling back
+// to a plain FA-style "read only" transition if nothing else matches — this
+// mirrors parseTmLabel's layered-fallback style further down in the file.
 PdaTransition parsePdaLabel(String raw) {
   final s = raw.trim();
   if (s.isEmpty) return const PdaTransition(read: '', pop: '', push: []);
@@ -759,6 +962,9 @@ PdaTransition parsePdaLabel(String raw) {
 
   // Format 4: 3-character shorthand e.g. `aXy` => read=a pop=X push=y
   if (!hasPipeOrSlash) {
+    // .runes rather than direct string indexing, so a shorthand label built
+    // from non-BMP characters (e.g. certain symbol glyphs) is measured in
+    // actual Unicode code points, not UTF-16 code units.
     final runes = s.runes.toList();
     if (runes.length == 3) {
       final read = _normalize(String.fromCharCode(runes[0]));
@@ -780,6 +986,9 @@ PdaTransition parsePdaLabel(String raw) {
 int _findPopPushSeparator(String s) {
   final pipe = s.indexOf('|');
   final slash = s.indexOf('/');
+  // Pipe wins whenever it's present and appears no later than any slash —
+  // this correctly prefers `|` even if a `/` also happens to appear further
+  // along in the string (e.g. inside an unrelated push symbol).
   if (pipe >= 0 && (slash < 0 || pipe < slash)) return pipe;
   if (slash >= 0) return slash;
   return -1;
@@ -788,12 +997,18 @@ int _findPopPushSeparator(String s) {
 List<String> _parsePushString(String raw) {
   final t = _normalize(raw);
   if (t.isEmpty) return [];
+  // Space-separated form lets a push symbol be more than one character
+  // (e.g. "AB CD" pushes two multi-char symbols); without a space, each
+  // character in the string becomes its own single-character push symbol.
   if (t.contains(' ')) {
     return t.split(' ').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
   }
   return t.split('').toList();
 }
 
+// Shared "tilda means empty" normalization for PDA label pieces — either
+// tilda glyph collapses to '', which is this simulator's convention for
+// "no read / no pop / no push" throughout the PDA code below.
 String _normalize(String s) {
   final t = s.trim();
   if (t == '~' || t == '~') return '';
@@ -804,6 +1019,12 @@ String _normalize(String s) {
 //  PDA Configuration  (state × remaining-input × stack)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// One reachable (state, input position, stack contents) configuration
+// during PDA simulation. Unlike _SimConfig above, this doesn't carry the
+// full token list — PDA black boxes (handled inline in _build/_epsilonClosure
+// below) don't rewrite the outer token stream the way TM black boxes can, so
+// there's no need to track a per-config token list, just the shared `tokens`
+// field on PdaSimulator plus this config's read position.
 class PdaConfig {
   final String nodeId;
   final int inputPos;
@@ -815,10 +1036,17 @@ class PdaConfig {
     required this.stack,
   });
 
+  // Stack contents joined bottom-to-top (`.reversed` since `stack` is stored
+  // top-of-stack-last, i.e. stack.last is the top) — used as part of the
+  // dedup key below so two configs with the same state/input but genuinely
+  // different stack contents are treated as distinct.
   String get stackKey => stack.reversed.join('|');
 
   String get key => '$nodeId:$inputPos:$stackKey';
 
+  // Value-equality override (needed because PdaConfig is stored in Sets —
+  // see `result.add(next)` in _epsilonClosure below — where structural
+  // equality, not reference identity, is what determines "already visited").
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -831,11 +1059,17 @@ class PdaConfig {
     return true;
   }
 
+  // Must be consistent with == above (equal objects -> equal hashCodes) for
+  // Set/Map membership checks to behave correctly.
   @override
   int get hashCode => Object.hash(nodeId, inputPos, Object.hashAll(stack));
 }
 
 /// One active NPDA configuration shown in the UI.
+// Read-only mirror of PdaConfig exposed to the UI layer — kept as a
+// separate type (rather than exposing PdaConfig directly) so UI code
+// doesn't depend on PdaConfig's equality/hashCode machinery, which exists
+// purely for the simulator's own internal dedup bookkeeping.
 class PdaActiveConfig {
   final String nodeId;
   final int inputPos;
@@ -852,6 +1086,10 @@ class PdaActiveConfig {
 
 enum PdaSimResult { accept, reject }
 
+// One recorded round of PDA simulation — the PDA analogue of
+// AutomataSimulator's parallel states/usedLines/_configsByStep lists, but
+// bundled into a single object per round here instead of three parallel
+// lists.
 class PdaStepSnapshot {
   final List<PdaActiveConfig> configs;
   final Set<String> usedLineIds;
@@ -863,6 +1101,9 @@ class PdaStepSnapshot {
 
 /// Executes a PDA over the input while tracking the stack contents for every
 /// active configuration, which lets the UI animate both state and stack progress.
+// Same eager-precompute-the-whole-run design as AutomataSimulator (see its
+// class comment) — `steps` is built once in _build() / rebuild(), and `step`
+// is just a cursor into that precomputed list.
 class PdaSimulator {
   PdaSimulator({required this.nodes, required this.lines});
 
@@ -913,6 +1154,10 @@ class PdaSimulator {
   List<String> get currentStack {
     final configs = activeConfigs;
     if (configs.isEmpty) return [];
+    // Arbitrarily shows the FIRST active config's stack (the UI's
+    // single-stack display can only show one at a time even when multiple
+    // NPDA branches are alive simultaneously) — see allCurrentStacks below
+    // for the multi-branch view.
     return List.unmodifiable(configs.first.stack);
   }
 
@@ -959,6 +1204,13 @@ class PdaSimulator {
     final last = steps.last;
     if (last.configs.isEmpty) return PdaSimResult.reject;
 
+    // Classic PDA acceptance check on the final round: accept if any
+    // surviving branch is in an accept state. Unlike AutomataSimulator's
+    // finalResult(), this doesn't additionally check "consumed all input"
+    // per-config — `steps` only advances by consuming one token per round
+    // across the whole tokens list (see _build below), so by the time the
+    // loop over tokens finishes, every surviving branch has, by
+    // construction, consumed the same number of tokens.
     bool anyAccept = false;
     for (final c in last.configs) {
       final node = nodes[c.nodeId];
@@ -971,6 +1223,12 @@ class PdaSimulator {
     return anyAccept ? PdaSimResult.accept : PdaSimResult.reject;
   }
 
+  // PDA-specific symbol normalizer: unlike AutomataSimulator's
+  // _normalizeSimToken (which only resolves [[KEY]] commands), this also
+  // runs the raw string through parseTokenText directly (rather than the
+  // trim-then-resolve wrapper _resolveCommand uses) and treats tilda as
+  // empty — matching the "tilda means empty" convention used throughout
+  // PdaTransition parsing above.
   String _normalizeSym(String s) {
     final resolved = parseTokenText(s.trim());
     if (resolved == '~' || resolved == '~') return '';
@@ -983,6 +1241,12 @@ class PdaSimulator {
         stack: c.stack,
       );
 
+  // Precomputes the PDA's entire run, one round per input token, mirroring
+  // AutomataSimulator._buildSimulation's eager-precompute design but with a
+  // token-driven outer loop instead: PDA transitions always consume exactly
+  // one input symbol when non-epsilon (no multi-token labels the way FA
+  // labels can have), so the natural loop bound is `tokens.length` rather
+  // than an arbitrary step cap.
   void _build({StartArrowData? startArrow}) {
     steps.clear();
     stackGrowthLoopDetected = false;
@@ -998,6 +1262,9 @@ class PdaSimulator {
       stack: const [],
     );
     final (initConfigs, initLines) = _epsilonClosure({initial});
+    // A stack-growth loop can be detected even during the very first
+    // (pre-input) epsilon-closure — bail out with `steps` left empty rather
+    // than recording a snapshot for a closure that never actually settled.
     if (stackGrowthLoopDetected) return;
 
     steps.add(PdaStepSnapshot(
@@ -1035,6 +1302,10 @@ class PdaSimulator {
           for (final altRaw in line.label.split('\n')) {
             final t = parsePdaLabel(altRaw);
             final readSym = _normalizeSym(t.read);
+            // Empty read symbol means this alternative is epsilon-only —
+            // not a candidate for consuming `token` this round (epsilon
+            // alternatives are instead handled entirely inside
+            // _epsilonClosure, called after this loop).
             if (readSym.isEmpty) continue;
 
             // ── wildcard / negated-wildcard on the read symbol ──────────
@@ -1056,6 +1327,9 @@ class PdaSimulator {
             final pushSyms = t.push.map(_normalizeSym).toList();
 
             final newStack = _applyStackOp(config.stack, popSym, pushSyms);
+            // null means the required pop couldn't be satisfied (e.g. popping
+            // a specific symbol that isn't on top) — this alternative can't
+            // fire for this config.
             if (newStack == null) continue;
 
             nextConfigs.add(PdaConfig(
@@ -1092,6 +1366,12 @@ class PdaSimulator {
     // reflects that real stopping point and the UI refuses to step past it.
   }
 
+  // PDA epsilon-closure: explores every reachable configuration via tilda
+  // (and "null jump" — see below) transitions without consuming input,
+  // updating the stack along the way. Uses a FIFO Queue (breadth-first)
+  // rather than the LIFO list AutomataSimulator._epsilonClosure uses —
+  // either traversal order reaches the same final closure set, the choice
+  // here doesn't affect correctness.
   (Set<PdaConfig>, Set<String>) _epsilonClosure(Set<PdaConfig> start) {
     final visited = <String>{};
     final result = <PdaConfig>{...start};
@@ -1103,6 +1383,11 @@ class PdaSimulator {
     // and only if the input did not explicitly contain `∅`.
     final nullWasExplicitlyTyped = tokens.any((t) => _normalizeSym(t) == kStackBottom);
 
+    // Safety valve distinct from AutomataSimulator's kMaxSteps: this guards
+    // specifically against the stack growing without bound during a single
+    // epsilon-closure pass (e.g. a `~,~|A` self-loop that keeps pushing),
+    // which would otherwise never terminate since epsilon-closure has no
+    // input to exhaust.
     const int kMaxStackHeightDuringEpsilonClosure = 200;
 
     while (queue.isNotEmpty) {
@@ -1122,6 +1407,10 @@ class PdaSimulator {
           final readSym = _normalizeSym(t.read);
           final atEndOfInput = config.inputPos == tokens.length;
           final isNullJumpRead = readSym == kStackBottom && atEndOfInput && !nullWasExplicitlyTyped;
+          // Only a genuinely empty read (tilda) or a null-jump read (∅ at
+          // end-of-input, when the user didn't literally type ∅) qualifies
+          // as a free move here; anything else needs an actual input token
+          // to consume and is handled in _build's main loop instead.
           if (readSym.isNotEmpty && !isNullJumpRead) continue;
 
           final popSym = _normalizeSym(t.pop);
@@ -1130,6 +1419,11 @@ class PdaSimulator {
           final newStack = _applyStackOp(config.stack, popSym, pushSyms);
           if (newStack == null) continue;
 
+          // A "free push" epsilon move — no pop required, but pushes at
+          // least one real symbol — is exactly the shape that can loop
+          // forever (~,~|A in a self-loop keeps growing the stack every
+          // pass with nothing to ever stop it). Detect and bail before the
+          // stack grows unboundedly rather than hanging.
           final nonEmptyPushCount = pushSyms.where((s) => s.isNotEmpty).length;
           final isFreePushEpsilonMove = popSym.isEmpty && nonEmptyPushCount > 0;
           if (isFreePushEpsilonMove &&
@@ -1144,6 +1438,10 @@ class PdaSimulator {
             stack: newStack,
           );
 
+          // Set.add returns false if an equal element (per PdaConfig's ==
+          // override) already exists — used here both to dedupe `result`
+          // and, in the same expression, to decide whether this is a
+          // genuinely new config worth enqueueing/recording as a used line.
           if (result.add(next)) {
             linesUsed.add(line.id);
             queue.add(next);
@@ -1155,6 +1453,9 @@ class PdaSimulator {
     return (result, linesUsed);
   }
 
+  // Applies one pop then N pushes to a copy of `stack`, returning the new
+  // stack, or null if the pop was required but not satisfiable (this
+  // alternative can't fire).
   List<String>? _applyStackOp(
     List<String> stack,
     String popSym,
@@ -1164,9 +1465,16 @@ class PdaSimulator {
 
     if (popSym.isNotEmpty) {
       if (!_canPop(s, popSym)) return null;
+      // Only actually remove a cell if the stack is non-empty — popping the
+      // implicit bottom marker off an empty stack (see _canPop's special
+      // case for kStackBottom below) is a legal no-op rather than an error.
       if (s.isNotEmpty) s.removeLast();
     }
 
+    // Push in reverse order so pushSyms[0] ends up on top: iterating the
+    // push list backwards and always adding to the end of `s` means the
+    // LAST thing added (pushSyms[0]) sits at s.last, matching the doc
+    // comment "[0] ends on top" on PdaTransition.push.
     for (int i = pushSyms.length - 1; i >= 0; i--) {
       if (pushSyms[i].isNotEmpty) s.add(pushSyms[i]);
     }
@@ -1174,6 +1482,11 @@ class PdaSimulator {
     return s;
   }
 
+  // Whether `popSym` can legally be popped off `stack`. kStackBottom (∅) is
+  // special: it's treated as always poppable when the stack is genuinely
+  // empty (an implicit bottom marker beneath everything), OR when it's
+  // explicitly present on top — this lets `∅` be used both as a real pushed
+  // marker and as shorthand for "the stack is at its floor."
   bool _canPop(List<String> stack, String popSym) {
     if (popSym == kStackBottom) {
       if (stack.isEmpty) return true;
@@ -1184,6 +1497,7 @@ class PdaSimulator {
   }
 }
 // ──────────────────────────────────────────────────────────────────────────────
+
 //  TM SIMULATOR
 //  (merged from tm_simulator.dart)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1218,6 +1532,9 @@ const String kBlank = '∅';
 /// Direction the TM head moves after executing a transition.
 enum TmDirection { right, left, stay }
 
+// A single parsed single-tape TM transition (one alternative of a label,
+// pre-multi-tape-compound-parsing — see TmCompoundTransition below for the
+// wrapper that adds multi-tape support).
 class TmTransition {
   final String read;
   final String write;
@@ -1249,9 +1566,16 @@ class TmTransition {
 /// Parses one transition alternative into a TM action, including shorthand,
 /// wildcard reads, blank-symbol handling, and optional tape-index prefixes.
 TmTransition parseTmLabel(String raw) {
+  // Normalize the `\0` escape to the real blank glyph BEFORE any other
+  // processing, so every subsequent check (all-tilde detection, rune-count
+  // shorthand detection, etc.) sees a consistent representation regardless
+  // of which way the user typed a blank.
   String preprocessed = raw.replaceAll('\\0', kBlank);
   String s = parseTokenText(preprocessed.trim());
   if (s.isEmpty) {
+    // Blank label defaults to a stationary blank-to-blank no-op transition
+    // on tape 1 — a reasonable default for an unlabeled arrow rather than
+    // treating it as an error.
     return TmTransition(read: kBlank, write: kBlank, direction: TmDirection.stay);
   }
 
@@ -1277,6 +1601,9 @@ TmTransition parseTmLabel(String raw) {
   }
 
   if (s.isEmpty) {
+    // Just a tape prefix with nothing after it, e.g. "2:" — treat as a
+    // stationary blank-to-blank no-op on that tape, mirroring the
+    // no-prefix-at-all empty-label case above.
     return TmTransition(
       read: kBlank, write: kBlank, direction: TmDirection.stay, tapeIndex: tapeIndex,
     );
@@ -1295,6 +1622,11 @@ TmTransition parseTmLabel(String raw) {
     final parts = s.split(',');
     if (parts.length >= 3) {
       final rawRead = parts[0].trim();
+      // A bare tilda specifically in the READ position (not write/direction)
+      // means "wildcard": the transition still writes and moves, it just
+      // doesn't check what's under the head first. Checked against the raw
+      // (pre-_normSym) string since _normSym would otherwise collapse tilda
+      // to '', indistinguishable from other blank-like inputs.
       final isWildcard = rawRead == '~';
       final read  = isWildcard ? '' : _normSym(rawRead);
       final write = _normSym(parts[1]);
@@ -1314,7 +1646,9 @@ TmTransition parseTmLabel(String raw) {
     return TmTransition(read: read, write: write, direction: dir, tapeIndex: tapeIndex, isWildcard: isWildcard);
   }
 
-  // Fallback
+  // Fallback: doesn't match any recognized format — degrade gracefully to
+  // reading and immediately re-writing the same (whole, un-split) string as
+  // both read and write, staying in place, rather than throwing.
   return TmTransition(read: _normSym(s), write: _normSym(s), direction: TmDirection.stay, tapeIndex: tapeIndex);
 }
 
@@ -1330,6 +1664,10 @@ TmDirection _parseDir(String s) {
   switch (s.trim().toUpperCase()) {
     case 'R': return TmDirection.right;
     case 'L': return TmDirection.left;
+    // Anything other than 'R'/'L' (including a genuinely invalid character)
+    // defaults to Stay rather than throwing — consistent with this file's
+    // general preference for graceful fallbacks over parse errors in label
+    // text, since labels are free-form user input.
     default:  return TmDirection.stay;
   }
 }
@@ -1409,6 +1747,10 @@ class TmCompoundTransition {
   }) {
     assert(transitions.length >= 2);
     return TmCompoundTransition(
+      // primary/secondary are kept in sync with transitions[0]/[1] so code
+      // that only knows about the classic 2-tape form (predating the N-tape
+      // shorthand) still sees sensible values without needing to branch on
+      // which construction path was used.
       primary: transitions[0],
       secondary: transitions[1],
       behavior: behavior,
@@ -1416,6 +1758,9 @@ class TmCompoundTransition {
     );
   }
 
+  // True whenever there's more than one tape operation to apply, regardless
+  // of whether this came from the classic bN-marker path (secondary != null)
+  // or the N-tape compact-shorthand path (transitions with >=2 entries).
   bool get isMultiTape => secondary != null || (transitions != null && transitions!.length >= 2);
 }
 
@@ -1504,6 +1849,12 @@ TmCompoundTransition parseTmCompoundLabel(String raw) {
       for (int i = 0; i < tapeCount; i++) {
         final tripleRaw = String.fromCharCodes(compactRunes.sublist(i * 3, i * 3 + 3));
         final base = parseTmLabel(tripleRaw);
+        // parseTmLabel has no way to know which tape a bare 3-rune triple
+        // belongs to inside a compact shorthand — it always defaults to
+        // tapeIndex 1 — so the correct 1-based index is injected here
+        // afterward, based on the triple's position, while carrying over
+        // everything else parseTmLabel already correctly determined
+        // (read/write/direction/epsilon/wildcard).
         transitions.add(TmTransition(
           read: base.read,
           write: base.write,
@@ -1633,6 +1984,9 @@ BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes, List<int>? ac
   if (tripleCount < 1) return null;
 
   // Validate every direction rune before committing.
+  // (Validated in a separate pass before actually building any BbTapeOp
+  // objects, so a label that fails validation partway through triple 3
+  // doesn't leave a partially-built, inconsistent result to clean up.)
   for (int i = 0; i < tripleCount; i++) {
     final dChar = String.fromCharCode(runes[i * 3 + 2]).toUpperCase();
     if (dChar != 'R' && dChar != 'L' && dChar != 'S' && dChar != '~') {
@@ -1676,6 +2030,11 @@ BbDirectTransition? parseBbDirectLabel(String raw, [int? maxTapes, List<int>? ac
   if (tripleCount != activeTapes.length) return null;
 
   final highestActive = activeTapes.fold<int>(0, (m, t) => t > m ? t : m);
+  // The result must be sized to cover the highest tape actually referenced —
+  // either by activeTapes or by the caller-supplied maxTapes upper bound,
+  // whichever is larger, so every tape slot the simulator has gets an
+  // explicit op (defaulting to `untouched` below) rather than being left
+  // unaddressed.
   final size = (maxTapes != null && maxTapes > highestActive) ? maxTapes : highestActive;
 
   // Implicit op for every tape *not* listed in activeTapes: wildcard read,
@@ -1740,6 +2099,9 @@ List<String> splitBbDirectAlternatives(String label) {
 int detectRequiredTapeCount(Map<String, NodeData> nodes, Map<String, LineData> lines) {
   int maxTape = 1;
 
+  // Scans one line label for tape-index references and bumps maxTape as
+  // needed; shared between the plain-line loop and (indirectly, via
+  // recursion) nested black-box DSLs below.
   void scanLabel(String label) {
     if (label.trim().isEmpty) return;
 
@@ -1812,6 +2174,10 @@ int detectRequiredTapeCount(Map<String, NodeData> nodes, Map<String, LineData> l
 //  TM tape (immutable snapshot)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Every mutation (write, extendToInclude) returns a NEW TmTape rather than
+// mutating in place — this immutability is what lets TmConfig/TmSimulator
+// keep a full branching history of snapshots (steps[]) without different
+// branches accidentally sharing and corrupting each other's tape state.
 class TmTape {
   final List<String> cells;
   final int headOffset; // absolute index of logical input position 0
@@ -1828,6 +2194,11 @@ class TmTape {
   /// headOffset = 1  (input position 0 is at absolute index 1)
   /// Head starts at absolutePos(0) = 1.
   factory TmTape.fromTokens(List<String> tokens) {
+    // One blank sentinel cell on each side of the input — guarantees there's
+    // always at least one blank cell immediately adjacent to the input
+    // region, so the very first extendToInclude/write call (if the head
+    // moves left of index 1 or right past the input) has somewhere sensible
+    // to land without needing a special first-extension case.
     final cells = <String>[kBlank, ...tokens, kBlank];
     // headOffset=1: absolute index of the first input symbol.
     return TmTape(
@@ -1847,6 +2218,9 @@ class TmTape {
 
   /// Read the symbol at absolute tape position [pos].
   String read(int pos) {
+    // Positions outside the currently-allocated cell range are, by the "tape
+    // is conceptually unbounded" model, implicitly blank — no need to have
+    // physically extended the list yet just to read from it.
     if (pos < 0 || pos >= cells.length) return kBlank;
     final v = cells[pos];
     return v.isEmpty ? kBlank : v;
@@ -1861,6 +2235,8 @@ class TmTape {
   /// Returns the new tape and an index shift (non-zero only when extending left).
   ({TmTape tape, int shift}) extendToInclude(int pos) {
     if (pos >= 0 && pos < cells.length) {
+      // Already within the allocated range — nothing to extend, and
+      // shift=0 tells the caller no index translation is needed.
       return (tape: this, shift: 0);
     }
 
@@ -1869,11 +2245,19 @@ class TmTape {
     int shift = 0;
 
     if (pos < 0) {
+      // Extending left is the tricky case: inserting blanks at the FRONT of
+      // the list shifts every existing absolute index to the right by
+      // `extension` — hence bumping headOffset by the same amount and
+      // returning that amount as `shift`, so callers can translate any
+      // absolute position they were tracking (e.g. a head position computed
+      // before this extension) into the new indexing scheme.
       final extension = -pos;
       newCells.insertAll(0, List<String>.filled(extension, kBlank));
       newOffset += extension;
       shift = extension;
     } else {
+      // Extending right is simpler: appending to the end doesn't disturb
+      // any existing index, so headOffset (and therefore shift) stays put.
       while (pos >= newCells.length) {
         newCells.add(kBlank);
       }
@@ -1890,6 +2274,9 @@ class TmTape {
     int newOffset     = headOffset;
 
     if (pos < 0) {
+      // Same left-extension logic as extendToInclude above, but folded
+      // directly into the write since we need to both make room for
+      // `pos` AND set the symbol at the new (shifted) index 0 in one pass.
       final extension = -pos;
       final blanks = List<String>.filled(extension, kBlank);
       newCells.insertAll(0, blanks);
@@ -1915,6 +2302,10 @@ class TmTape {
   int absolutePos(int inputIndex) => headOffset + inputIndex;
 
   /// A key that uniquely describes the tape content (for loop detection).
+  // Used as part of TmConfig.key below — two tapes with identical `cells`
+  // (in the same order) produce the same key regardless of headOffset,
+  // which is intentional: headOffset is bookkeeping for translating logical
+  // <-> absolute positions, not part of the tape's actual content.
   String get key => cells.join('|');
 }
 
@@ -1923,6 +2314,11 @@ class TmTape {
 //  NTM Configuration  (state × head position × tape)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// One reachable (state, tapes, head positions) configuration during TM
+// simulation. Unlike PdaConfig, this doesn't override == /hashCode — TM
+// configs are deduped via the string `key` getter compared through
+// `seenKeys` Sets in TmSimulator.computeNext below, rather than via
+// Set<TmConfig> structural equality.
 class TmConfig {
   final String nodeId;
 
@@ -1976,6 +2372,9 @@ class TmConfig {
     String? nodeId,
   }) {
     final i = tapeIndex - 1;
+    // Copy every list rather than mutating in place, preserving the same
+    // "every config is an independent immutable snapshot" contract as TmTape
+    // above.
     final newTapes = List<TmTape>.from(tapes);
     final newHeads = List<int>.from(headPositions);
     final newReadHeads = List<int>.from(readHeadPositions);
@@ -1997,6 +2396,10 @@ class TmConfig {
   TmConfig retarget({required String nodeId, required String usedLineId}) {
     return TmConfig(
       nodeId: nodeId,
+      // tapes itself is reused unchanged (not copied) since tilda/hop moves
+      // never touch tape content — only headPositions is duplicated below
+      // to seed readHeadPositions from the current (unmoved) head, since a
+      // tilda move has nothing new to report as "what was read".
       tapes: tapes,
       headPositions: List<int>.from(headPositions),
       readHeadPositions: List<int>.from(headPositions),
@@ -2022,6 +2425,11 @@ class TmStepSnapshot {
 //  TM simulation result
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Unlike SimResult/PdaSimResult (which are only ever computed AFTER the
+// whole run finishes, since those simulators precompute eagerly), TmResult
+// has a third `running` value — TmSimulator advances one step at a time on
+// demand (see computeNext() below), so at any given moment the machine may
+// genuinely still be mid-computation with no verdict yet.
 enum TmResult { accept, reject, running }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2030,6 +2438,12 @@ enum TmResult { accept, reject, running }
 
 /// Simulates a Turing machine across one or more tapes and records each
 /// branching step so the app can replay the computation in the canvas UI.
+// Unlike AutomataSimulator/PdaSimulator (which eagerly precompute the WHOLE
+// run in one pass — see their class comments), TmSimulator computes lazily,
+// one global expansion step at a time, via computeNext(). This is necessary
+// because a TM computation is not guaranteed to terminate at all (unlike a
+// bounded-input NFA/PDA run) — callers (the UI's play/step controls, or a
+// black box running an inner TM to completion) decide how far to advance.
 class TmSimulator {
   TmSimulator({required this.nodes, required this.lines});
 
@@ -2136,8 +2550,16 @@ class TmSimulator {
       int tapeIndex) {
     final config = _primaryConfig;
     if (config == null) return null;
+    // Clamp rather than index directly: a caller could ask for a tape index
+    // the current config doesn't actually have (e.g. UI still showing a
+    // tape-2 panel right after tapeCount was reduced back to 1) — falling
+    // back to the last real tape avoids an out-of-range crash.
     final i = (tapeIndex - 1).clamp(0, config.tapes.length - 1);
     final tape = config.tapes[i];
+    // Padding cells shown beyond the tape's currently-allocated content on
+    // both ends, purely so the visual tape strip always has a bit of
+    // breathing room around the interesting region rather than stopping
+    // exactly at the edge of allocated cells.
     const pad = 3;
     final cells = <String>[];
     final startPos = -pad;
@@ -2188,6 +2610,10 @@ class TmSimulator {
     return TmResult.reject;
   }
 
+  // Same shape as `result` above but scoped to whatever snapshot the `step`
+  // cursor currently points at, rather than the final/last snapshot — used
+  // by the UI to show a per-step verdict as the user scrubs through the
+  // recorded history rather than only the end-of-run verdict.
   TmResult get currentStepResult {
     final snap = currentSnapshot;
     if (snap == null) return TmResult.running;
@@ -2210,6 +2636,10 @@ class TmSimulator {
     /// Tapes not covered by this list start empty (backward-compatible default).
     List<String> additionalTapeInputs = const [],
   }) {
+    // nullEscapeToken: kBlank (not the FA/PDA default '?') — a TM's tape has
+    // a genuine blank symbol, so `\0` in the input should become that blank,
+    // not the FA/PDA "null jump" marker (see the shared-tokenizer section
+    // comment near the top of this file for the full rationale).
     tokens = _tokenize(input, nullEscapeToken: kBlank);
     _build(startArrow: startArrow, additionalTapeInputs: additionalTapeInputs);
     // step uses a -1 offset (see _snapshotAt): valid range is -1..maxStep.
@@ -2225,6 +2655,10 @@ class TmSimulator {
     if (step > maxStep) step = maxStep;
   }
 
+  // Builds ONLY the initial (step 0) snapshot — unlike AutomataSimulator/
+  // PdaSimulator's _build, which precompute every round, this simulator's
+  // "build" step is deliberately shallow; computeNext() (further below) is
+  // what actually advances the computation one step at a time afterward.
   void _build({
     StartArrowData? startArrow,
     List<String> additionalTapeInputs = const [],
@@ -2234,12 +2668,18 @@ class TmSimulator {
     _blackBoxResultCache.clear(); // ← invalidate stale DSL results on every rebuild
 
     if (startArrow == null || !nodes.containsKey(startArrow.nodeId)) {
+      // No valid start — leave `steps` empty. Unlike AutomataSimulator/
+      // PdaSimulator, no placeholder empty snapshot is added here; every
+      // getter in this class already treats an out-of-range/empty `steps`
+      // as "nothing to show" via _snapshotAt's null return.
       return;
     }
 
     final initialTape = TmTape.fromTokens(tokens);
     final initialTapes = <TmTape>[initialTape];
     final initialHeads = <int>[initialTape.absolutePos(0)];
+    // Guard against a caller having set tapeCount to something nonsensical
+    // (0 or negative) — always allocate at least tape 1.
     final effectiveTapeCount = tapeCount < 1 ? 1 : tapeCount;
     for (int i = 1; i < effectiveTapeCount; i++) {
       // Use the caller-supplied initial content for tapes 2..N when available.
@@ -2260,6 +2700,9 @@ class TmSimulator {
       nodeId: startArrow.nodeId,
       tapes: initialTapes,
       headPositions: initialHeads,
+      // readHeadPositions starts identical to headPositions — nothing has
+      // been "read to get here" yet, so the initial read position is
+      // wherever the head starts.
       readHeadPositions: List<int>.from(initialHeads),
       usedLineId: '',
     );
@@ -2317,6 +2760,10 @@ class TmSimulator {
   /// For non-black-box nodes this method is never called; the caller guards
   /// with [node.isBlackBox] before invoking.
   TmConfig? _applyBlackBox(NodeData node, TmConfig config) {
+    // Defensive identity passthrough: every actual call site already checks
+    // node.isBlackBox first (see canAdvance/computeNext above), so this
+    // branch is a belt-and-suspenders guard rather than something normally
+    // exercised.
     if (!node.isBlackBox) return config;
 
     final dsl = node.blackBoxDsl.trim();
@@ -2338,6 +2785,10 @@ class TmSimulator {
       if (!result.accepted) return null;
       return _rebuildConfigFromBlackBoxResult(result, config);
     } catch (_) {
+      // Malformed inner DSL, or any other unexpected failure while running
+      // it — cache the rejection too (same as a genuine inner-reject) so a
+      // broken black box doesn't get re-parsed and re-attempted on every
+      // subsequent visit within the same rebuild().
       _blackBoxResultCache[cacheKey] = (
         accepted: false,
         outputTapes: const [],
@@ -2349,6 +2800,12 @@ class TmSimulator {
 
   // ── Cache key that covers all tapes + all head positions ────────────────
 
+  // Mirrors TmConfig.key's shape (nodeId + per-tape "headPos:tapeContentKey"
+  // pairs) but is deliberately a separate method rather than reusing
+  // config.key directly — this key is scoped to caching _executeBlackBoxDsl
+  // results for one specific `node`, so the node id is prefixed to keep
+  // results for different black-box nodes from ever colliding even if two
+  // black boxes happened to see identical tape states.
   String _buildBlackBoxCacheKey(NodeData node, TmConfig config) {
     final parts = <String>[node.id];
     for (int i = 0; i < config.tapes.length; i++) {
@@ -2359,6 +2816,11 @@ class TmSimulator {
 
   // ── Run the inner DSL machine against the full outer config ─────────────
 
+  // Runs one black box's inner DSL program (whichever automaton kind it
+  // describes) against the outer TM's current tapes, and reports back
+  // per-tape trimmed output tokens plus each tape's resulting head position
+  // — the raw ingredients _rebuildConfigFromBlackBoxResult needs to splice
+  // the result back into the outer TmConfig.
   ({
     bool accepted,
     List<List<String>> outputTapes,
@@ -2402,6 +2864,9 @@ class TmSimulator {
         for (int i = 0; i < outerTapeCount; i++) {
           final t = tapeToInput(i);
           outTapes.add(t.tokens);
+          // Tape 1's head jumps to the end (the whole input was consumed by
+          // the inner NFA); every other tape is untouched, so its head
+          // stays exactly where it started (t.headRel).
           outHeads.add(i == 0 ? t.tokens.length : t.headRel);
         }
         return (accepted: true, outputTapes: outTapes, outputHeadPositions: outHeads);
@@ -2415,6 +2880,8 @@ class TmSimulator {
         if (sim.finalResult() != PdaSimResult.accept) {
           return (accepted: false, outputTapes: const [], outputHeadPositions: const []);
         }
+        // Same "tape 1 fully consumed, everything else untouched" rule as
+        // the NFA case above.
         final outTapes = <List<String>>[];
         final outHeads = <int>[];
         for (int i = 0; i < outerTapeCount; i++) {
@@ -2471,13 +2938,18 @@ class TmSimulator {
               readHeadPos: innerHead,
             );
           }
+          // Directly mutate steps[0] in place (rather than going through
+          // rebuild() again) since we only need to patch the already-built
+          // initial snapshot's single config with the seeded extra tapes.
           sim.steps[0] = TmStepSnapshot(
             configs: [updated],
             usedLineIds: sim.steps[0].usedLineIds,
           );
         }
 
-        // Run to completion.
+        // Run to completion — a black box is opaque to the outer machine, so
+        // only the final verdict and tapes matter, not the inner machine's
+        // own step-by-step history.
         while (sim.computeNext()) {}
 
         if (sim.result != TmResult.accept) {
@@ -2493,6 +2965,10 @@ class TmSimulator {
               break;
             }
           }
+          // Defensive fallback: sim.result already confirmed acceptance, so
+          // a halt-accept config should always be found above — but if
+          // somehow none was (e.g. acceptance came from a plain, non-halt
+          // accept state instead), fall back to whatever config is present.
           haltConfig ??= sim.steps.last.configs.firstOrNull;
         }
         if (haltConfig == null) {
@@ -2539,6 +3015,10 @@ class TmSimulator {
 
   // ── Rebuild the outer TmConfig from inner-machine output ────────────────
 
+  // Splices the black box's per-tape output (from _executeBlackBoxDsl) back
+  // into a fresh TmConfig, preserving everything about `originalConfig`
+  // (node id, usedLineId, any tapes the inner machine didn't touch) except
+  // the tapes that were actually rewritten.
   TmConfig _rebuildConfigFromBlackBoxResult(
     ({
       bool accepted,
@@ -2578,6 +3058,12 @@ class TmSimulator {
   }
 
   /// True if at least one non-halted configuration has an enabled transition.
+  // Deliberately structured as a "dry run" that mirrors computeNext()'s own
+  // traversal (same black-box handling, same per-alternative checks) but
+  // returns `true` the instant ANY branch finds a fireable transition,
+  // without actually building/appending a new TmStepSnapshot — this is what
+  // lets isHaltedOrStuck ask "could this machine take a step?" without
+  // mutating `steps`.
   bool get canAdvance {
     if (steps.isEmpty) return false;
     final current = steps.last;
@@ -2648,6 +3134,9 @@ class TmSimulator {
             // N-tape path: check all non-wildcard, non-epsilon reads.
             if (compound.transitions != null) {
               bool allMatch = true;
+              // Starts at i=1, not 0: transitions[0] is the primary tape,
+              // already checked above via `t` — this loop only needs to
+              // verify the remaining (secondary+) tapes.
               for (int i = 1; i < compound.transitions!.length; i++) {
                 final s = compound.transitions![i];
                 if (s.isWildcard || s.isEpsilon || s.tapeIndex < 1 || s.tapeIndex > effectiveConfig.tapes.length) continue;
@@ -2659,6 +3148,7 @@ class TmSimulator {
               }
               if (!allMatch) continue;
             } else {
+              // Classic 2-tape bN-marker path: just the one secondary transition.
               final s = compound.secondary!;
               if (s.tapeIndex < 1 ||
                   s.tapeIndex > effectiveConfig.tapes.length) {
@@ -2674,6 +3164,9 @@ class TmSimulator {
             }
           }
 
+          // Every applicable read check above passed (or was skipped as
+          // wildcard/epsilon) without hitting a `continue` — this
+          // alternative is fireable, so the machine as a whole can advance.
           return true;
         }
       }
@@ -2685,6 +3178,12 @@ class TmSimulator {
   ///
   /// Returns true if a new step snapshot was appended.
   /// Returns false if the machine is halted/stuck (halt reached or no moves).
+  // Every currently-live config gets its turn: halted configs are carried
+  // forward as-is, live configs try every outgoing line/alternative (NTM
+  // branching — one config can spawn multiple next-configs), and any config
+  // whose node has no fireable transition simply doesn't appear in
+  // `nextConfigs` (implicit reject for that branch, no explicit bookkeeping
+  // needed).
   bool computeNext() {
     if (steps.isEmpty) return false;
     final current = steps.last;
@@ -2697,6 +3196,10 @@ class TmSimulator {
 
     final nextConfigs = <TmConfig>[];
     final nextLines = <String>{};
+    // Dedup set across ALL branches this round (not per-config) — two
+    // different starting configs that happen to converge on the exact same
+    // resulting (node, tapes, heads) triple only need to be represented
+    // once in nextConfigs.
     final seenKeys = <String>{};
 
     for (final config in current.configs) {
@@ -2714,6 +3217,9 @@ class TmSimulator {
 
       final effectiveConfig = _applyBlackBox(node, config);
       if (effectiveConfig == null) {
+        // Black box rejected (or malformed) — this branch dies; nothing
+        // added to nextConfigs, matching every other "branch dies" case in
+        // this loop (no explicit dead-branch bookkeeping needed).
         continue;
       }
 
@@ -2840,6 +3346,12 @@ class TmSimulator {
             final extendedTape = extended.tape;
             final extraShift = extended.shift;
 
+            // Both the post-move head position AND the pre-move (read) head
+            // position need the SAME extra left-shift applied, since a left
+            // extension shifts every existing absolute index uniformly —
+            // otherwise readHeadPos (used purely for UI display of "what was
+            // just read") would drift out of sync with the tape's new
+            // indexing after this extension.
             final adjustedHeadPos = newHeadPos + extraShift;
             final adjustedReadPos = readPosPreMove + extraShift;
 
@@ -2866,6 +3378,12 @@ class TmSimulator {
     // so the machine properly halts. Acceptance is determined from the current
     // live configuration set (see [noMovesTerminal]).
     if (nextConfigs.isEmpty) {
+      // NOTE: despite the comment above saying "append an empty snapshot",
+      // no snapshot is actually appended here — `steps` is simply left as-is
+      // and `noMovesTerminal` is set instead, which is what `result` and
+      // `isHaltedOrStuck` actually key off of to treat this as a halt. The
+      // comment describes an earlier implementation strategy that no longer
+      // matches the code.
       noMovesTerminal = true;
       return false;
     }
@@ -2892,6 +3410,9 @@ class TmSimulator {
     String lineId,
   ) {
     // ── N-tape path (compact shorthand aXRa1Lb2S…) ──────────────────────
+    // Delegates entirely to _applyNTapeTransition, which already knows how
+    // to check every tape's read (per `behavior`) and apply every write/move
+    // atomically — nothing further to do on this path.
     if (compound.transitions != null) {
       return _applyNTapeTransition(
         compound.transitions!, config, targetNodeId, lineId,
@@ -2919,6 +3440,9 @@ class TmSimulator {
     }
 
     // ── For b2 (parallelRead): also check secondary read ───────────────
+    // b1 (crossWrite) deliberately skips this check — its whole point is
+    // that the secondary tape is written unconditionally, without regard to
+    // what's currently under its head.
     if (compound.behavior == TmMultiBehavior.parallelRead && !s.isWildcard && !s.isEpsilon) {
       final sIdx  = s.tapeIndex - 1;
       final sTape = config.tapes[sIdx];
@@ -2954,10 +3478,18 @@ class TmSimulator {
         usedLineId: lineId, nodeId: targetNodeId,
       );
     } else {
+      // Primary tape sits out (epsilon): only retarget the node/line,
+      // leave every tape completely untouched.
       next = next.retarget(nodeId: targetNodeId, usedLineId: lineId);
     }
 
     // ── Apply secondary write + move (same epsilon skip as above) ────────
+    // Applied AFTER the primary (via `next.withTape`, building on the
+    // already-updated `next` rather than the original `config`), so if
+    // both operations somehow targeted the same tape, the secondary's
+    // write/move would win — consistent with the "later entries overwrite
+    // earlier ones on the same tape" rule documented on
+    // _applyNTapeTransition below.
     if (!s.isEpsilon) {
       final sIdx    = s.tapeIndex - 1;
       final sTapeOrig = config.tapes[sIdx];
@@ -3001,6 +3533,10 @@ class TmSimulator {
     TmMultiBehavior behavior = TmMultiBehavior.crossWrite,
   }) {
     // ── Phase 1: read checks ─────────────────────────────────────────────
+    // Every tape's read is validated BEFORE any write is applied — this two-
+    // phase structure (check everything, then mutate everything) is what
+    // makes the whole multi-tape transition atomic: a read failing on tape 3
+    // must not leave tapes 1-2 partially written.
     for (int i = 0; i < transitions.length; i++) {
       final t = transitions[i];
       if (t.isEpsilon || t.isWildcard) continue;
@@ -3033,6 +3569,10 @@ class TmSimulator {
       if (t.tapeIndex < 1 || t.tapeIndex > config.tapes.length) continue;
       final tapeIdx = t.tapeIndex - 1;
 
+      // Reads from origTapes/origHeads (the pre-mutation snapshot), NOT from
+      // newTapes/newHeads — every tape's write/move is computed relative to
+      // its state at the START of this phase, so two transitions targeting
+      // different tapes never see each other's in-progress changes.
       final origTape = origTapes[tapeIdx];
       final origHead = origHeads[tapeIdx];
 
@@ -3093,6 +3633,8 @@ class TmSimulator {
     final applyCount = bb.tapeCount.clamp(0, config.tapes.length);
 
     // ── Phase 1: check all non-wildcard reads (only for tapes we will apply) ──
+    // Same "check everything, then mutate everything" two-phase structure as
+    // _applyNTapeTransition above, for the same atomicity reason.
     for (int ti = 0; ti < applyCount; ti++) {
       final op = bb.ops[ti];
       if (op.isWildcard) continue;
@@ -3149,6 +3691,9 @@ class TmSimulator {
       final adjRead = readPos + extraShift;
 
       // Mutate next in-place for this tape slot.
+      // (Rebuilds the three parallel lists and a new TmConfig each
+      // iteration rather than mutating in place — consistent with every
+      // other config/tape type in this file being treated as immutable.)
       final newTapes = List<TmTape>.from(next.tapes);
       final newHeads = List<int>.from(next.headPositions);
       final newReadHeads = List<int>.from(next.readHeadPositions);
@@ -3181,8 +3726,25 @@ class TmSimulator {
   }
 
   // ── Tokenizer ─────────────────────────────────────────────────────────
+  //
+  // NOTE: this simulator's own tokenize()/resolveCommand() pair (which used
+  // to live here) has been removed in favor of the shared _tokenize() /
+  // _resolveCommand() functions defined near the top of this file — see the
+  // "SHARED TOKENIZER" section comment for why the three simulators'
+  // previously-duplicated copies had drifted and were unified. rebuild()
+  // above calls the shared _tokenize() directly with
+  // nullEscapeToken: kBlank. The one TM-specific helper that remains here,
+  // _trimTapeTokens, isn't part of that shared tokenizer contract — it
+  // trims an already-built TmTape's blank cells rather than tokenizing raw
+  // input text — so it stays local to this class.
 
-    List<String> _trimTapeTokens(TmTape? tape) {
+  // Strips leading/trailing blank cells from a tape and returns the
+  // remaining content as a plain token list (blank cells become '' rather
+  // than the literal kBlank glyph, matching how AutomataSimulator/
+  // PdaSimulator represent blanks internally — see _tmOutputTokensAndHead's
+  // matching normalization step in AutomataSimulator for the FA-side half of
+  // this convention).
+  List<String> _trimTapeTokens(TmTape? tape) {
     if (tape == null) return const <String>[];
     final normalized = tape.cells.map((c) => c == kBlank ? '' : c).toList();
     int start = 0;
@@ -3195,5 +3757,5 @@ class TmSimulator {
     }
     if (start >= end) return const <String>[];
     return normalized.sublist(start, end);
-}
+  }
 }

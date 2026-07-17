@@ -673,8 +673,6 @@ class _GradeResult {
 //  StudyModeScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Top-level practice screen that mixes regex, description, PDA, and TM
-/// challenges into a single study workflow with retry and hint support.
 class StudyModeScreen extends StatefulWidget {
   /// Called when the user taps "SANDBOX" — navigate to the free-canvas screen.
   final VoidCallback onGoToSandbox;
@@ -745,8 +743,6 @@ void _spreadOutAdjacentDuplicates(List<_AnyChallenge> queue) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Stateful controller for the study-mode experience, including challenge
-/// queueing, grading, and the UI states for drawing versus typing answers.
 class _StudyModeScreenState extends State<StudyModeScreen>
     with TickerProviderStateMixin {
   final _rng = Random();
@@ -844,7 +840,6 @@ class _StudyModeScreenState extends State<StudyModeScreen>
 
   // ── Queue management ──────────────────────────────────────────────────────
 
-  /// Builds the full shuffled challenge queue from the currently selected modes.
   void _buildQueue() {
     final all = <_AnyChallenge>[];
     // Plain regex-template challenges (description == null) back REGEX→DFA
@@ -878,7 +873,6 @@ class _StudyModeScreenState extends State<StudyModeScreen>
 
   _AnyChallenge get _current => _queue[_queueIndex];
 
-  /// Advances to the next challenge and resets the round-specific state.
   void _nextChallenge() {
     _queueIndex++;
     if (_queueIndex >= _queue.length) _buildQueue();
@@ -1044,7 +1038,7 @@ class _StudyModeScreenState extends State<StudyModeScreen>
       challenge: _current.tmChallenge!,
     );
     if (grade.correct) return const _GradeResult.correct();
-    return _GradeResult.wrong(studyTmFailureMessage(grade.failedCase!));
+    return _GradeResult.wrong(studyTmFailureMessage(grade));
   }
 
   // ── Tutorial library ─────────────────────────────────────────────────────
@@ -2228,7 +2222,6 @@ class _ChallengeCard extends StatelessWidget {
 //  The player draws; we read the FA out via callback.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Embedded drawing surface for regex-to-DFA practice rounds.
 class _DfaDrawingArea extends StatefulWidget {
   final _Challenge challenge;
   final bool submitted;
@@ -2349,7 +2342,6 @@ class _DfaDrawingAreaState extends State<_DfaDrawingArea> {
 //  Regex input area  (DFA → REGEX mode)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Text-entry panel for DFA-to-regex practice rounds.
 class _RegexInputArea extends StatelessWidget {
   final _Challenge challenge;
   final TextEditingController controller;

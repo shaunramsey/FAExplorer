@@ -37,6 +37,9 @@ import 'widgets/responsive_layout.dart';
 //  Layout constants
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Base (unscaled) sizes — every screen actually gets these multiplied by a
+// responsive scale factor via _LevelMapLayout.scaled() below, so the map
+// shrinks/grows sensibly across phone/tablet/desktop widths.
 const double _kNodeW = 148.0; // node card width
 const double _kNodeH = 88.0; // node card height
 const double _kColGap = 220.0; // horizontal gap between column centres
@@ -50,16 +53,24 @@ const double _kSidePad = 120.0; // left/right canvas padding
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
 // ─────────────────────────────────────────────────────────────────────────────
+// (Colours are pulled from AppThemeNotifier/AppThemeData throughout this
+// file rather than hardcoded here — this section header is a leftover from
+// an earlier version where the palette lived in this file directly.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Position helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
 
-
-
-
+// The map's vertical extent is simply the full screen height — there's no
+// separate "canvas is taller than the viewport" scroll dimension; only
+// horizontal scrolling is supported (see the SingleChildScrollView further
+// down), so canvas height always exactly matches what's visible.
 double _canvasHeight(List<GameLevel> levels, double screenH) => screenH;
 
+// Canvas width is derived FROM the computed node positions (the widest node's
+// centre X + half its width + padding) rather than being a fixed constant —
+// so the scrollable width automatically grows to fit however many columns
+// the dependency graph ends up needing.
 double _canvasWidthFromPositions(
   Map<String, Offset> positions, {
   double nodeW = _kNodeW,
@@ -69,6 +80,10 @@ double _canvasWidthFromPositions(
   return maxX + nodeW / 2 + sidePad;
 }
 
+// Bundles every layout constant above into one object, scaled by a single
+// responsive factor — passing this one object around (rather than each
+// constant individually) keeps every layout/drawing function's signature
+// manageable.
 class _LevelMapLayout {
   final double nodeW;
   final double nodeH;
@@ -104,6 +119,12 @@ class _LevelMapLayout {
   }
 }
 
+/// Computes an (x, y) position for every level, arranged as a horizontal
+/// layered graph: each level's column ("layer") is determined by its
+/// dependency depth, and within a column, levels are stacked vertically and
+/// ordered to roughly line up with their prerequisites' average Y position
+/// (a simple barycenter heuristic) so edges cross each other as little as
+/// possible.
 Map<String, Offset> _computePositionsFromDeps(
   List<GameLevel> levels,
   double canvasH,
@@ -113,21 +134,27 @@ Map<String, Offset> _computePositionsFromDeps(
   // rendered here and the startup validation can never disagree about what
   // a "layer" is.
   final layerById = computeLevelLayers(levels);
+
+  // Flattens any UnlockRule (including nested RequireExpression trees) down
+  // to the flat list of level ids it depends on — used purely to compute
+  // each level's barycenter below, not for unlock evaluation itself (that's
+  // UnlockRule.isSatisfied, called elsewhere).
   List<String> extractLevelDependencies(GameLevel level) {
-  List<String> extract(UnlockRule rule) {
-    if (rule is AlwaysUnlocked) return [];
-    if (rule is RequireLevel) return [rule.levelId];
-    if (rule is RequireAll) return rule.levelIds;
-    if (rule is RequireAny) return rule.levelIds;
-    if (rule is RequireExpression) {
-      return rule.children.expand(extract).toList();
+    List<String> extract(UnlockRule rule) {
+      if (rule is AlwaysUnlocked) return [];
+      if (rule is RequireLevel) return [rule.levelId];
+      if (rule is RequireAll) return rule.levelIds;
+      if (rule is RequireAny) return rule.levelIds;
+      if (rule is RequireExpression) {
+        return rule.children.expand(extract).toList();
+      }
+      return [];
     }
-    return [];
+
+    return extract(level.unlockRule);
   }
 
-  return extract(level.unlockRule);
-}
-
+  // Group every level into its column (layer index), per computeLevelLayers.
   final Map<int, List<GameLevel>> cols = {};
   for (final l in levels) {
     final c = layerById[l.id] ?? 0;
@@ -139,35 +166,52 @@ Map<String, Offset> _computePositionsFromDeps(
     final colIdx = entry.key;
     final members = [...entry.value];
 
-members.sort((a, b) {
-  double barycenter(GameLevel level) {
-    final deps = extractLevelDependencies(level);
+    // Sort members within this column by "barycenter": the average Y
+    // position of each level's prerequisites (falling back to the level's
+    // own authored `y` hint when it has no resolvable deps). This is the
+    // classic layered-graph-drawing heuristic for minimizing edge crossings
+    // — levels whose prerequisites cluster near the top tend to end up near
+    // the top of their own column too.
+    members.sort((a, b) {
+      double barycenter(GameLevel level) {
+        final deps = extractLevelDependencies(level);
 
-    if (deps.isEmpty) {
-      return level.y;
-    }
+        if (deps.isEmpty) {
+          return level.y;
+        }
 
-    double sum = 0;
-    int count = 0;
+        double sum = 0;
+        int count = 0;
 
-    for (final depId in deps) {
-      final dep = kLevelById[depId];
-      if (dep != null) {
-        sum += dep.y;
-        count++;
+        for (final depId in deps) {
+          final dep = kLevelById[depId];
+          if (dep != null) {
+            sum += dep.y;
+            count++;
+          }
+        }
+
+        return count == 0 ? level.y : sum / count;
       }
-    }
 
-    return count == 0 ? level.y : sum / count;
-  }
+      return barycenter(a).compareTo(barycenter(b));
+    });
 
-  return barycenter(a).compareTo(barycenter(b));
-});
+    // Column X is simply sidePad + colIdx columns of colGap width — evenly
+    // spaced, left to right.
     final cx = layout.sidePad + colIdx * layout.colGap;
     final count = members.length;
+    // Vertical space actually available for node centres, after reserving
+    // room for the top bar and the bottom legend.
     final usableH = canvasH - layout.topPad - layout.botPad - layout.legendH;
+    // Use the ideal rowGap unless there isn't enough usableH to fit every
+    // member at that spacing — in a tall column, shrink the gap so all
+    // members still fit rather than overflowing the canvas.
     final gap = count > 1 ? min(layout.rowGap, usableH / (count - 1)) : 0.0;
     final totalSpan = count > 1 ? gap * (count - 1) : 0.0;
+    // Center the whole stack of nodes vertically within usableH (rather than
+    // always starting from the top), so a short column doesn't look
+    // top-heavy inside a tall canvas.
     final topOffset = count > 1
         ? layout.topPad + (usableH - totalSpan) / 2.0
         : layout.topPad + usableH / 2.0;
@@ -202,6 +246,14 @@ class LevelSelectScreen extends StatefulWidget {
 }
 
 class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProviderStateMixin {
+  // Three independent animation controllers driving different visual
+  // effects, all merged into one Listenable (see build() below) so a single
+  // AnimatedBuilder repaints in response to any of them:
+  //   _pulseCtrl — slow breathing glow on unlocked/completed node cards and
+  //                on "missing prereq" blocking edges.
+  //   _flowCtrl  — the little dot that continuously travels along
+  //                active/bright edges, suggesting "progress flowing."
+  //   _entryCtrl — one-shot entrance animation played once on first build.
   late final AnimationController _pulseCtrl;
   late final AnimationController _flowCtrl;
   late final AnimationController _entryCtrl;
@@ -236,11 +288,16 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     _flowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
     _entryCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..forward();
 
+    // Mirror the scroll offset into _scrollFraction so the top-bar Slider
+    // stays in sync when the user pans the canvas by touch/trackpad rather
+    // than by dragging the slider itself.
     _scrollCtrl.addListener(() {
       if (!_scrollCtrl.hasClients) return;
       final max = _scrollCtrl.position.maxScrollExtent;
       if (max <= 0) return;
       final fraction = (_scrollCtrl.offset / max).clamp(0.0, 1.0);
+      // Only setState when the fraction actually moved a meaningful amount
+      // — avoids a setState() storm on every sub-pixel scroll delta.
       if ((fraction - _scrollFraction).abs() > 0.001) {
         setState(() => _scrollFraction = fraction);
       }
@@ -266,6 +323,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   void _loadCompleted() {
     setState(() {
       _completed = widget.progressStore.loadCompletedLevels(_difficulty);
+      // Union of hard + easy completions — a level completed on EITHER
+      // difficulty should count toward unlocking anything that depends on
+      // it, regardless of which difficulty the player is currently viewing.
       _completedAny = widget.progressStore.loadCompletedLevels(LevelDifficulty.hard)
         ..addAll(widget.progressStore.loadCompletedLevels(LevelDifficulty.easy));
     });
@@ -279,6 +339,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   static const _kCodeUnlockAll = 'UNLOCK_ALL';
   static const _kCodeLockAll   = 'LOCK_ALL';
 
+  // Handles raw physical keyboard input anywhere on this screen (desktop/web
+  // "type a cheat code" entry point — mobile instead uses the long-press
+  // dialog, see _showCheatDialog below).
   void _onCheatKey(KeyEvent event) {
     if (event is! KeyDownEvent) return;
     final ch = event.character;
@@ -325,6 +388,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   }
 
   Future<void> _cheatUnlockAll() async {
+    // Marks every level complete on BOTH difficulties (not just the one
+    // currently selected) so switching the difficulty toggle afterward
+    // still shows everything unlocked/completed either way.
     for (final level in kAllLevels) {
       await widget.progressStore.markCompleted(level.id, LevelDifficulty.hard);
       await widget.progressStore.markCompleted(level.id, LevelDifficulty.easy);
@@ -341,6 +407,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     _showCheatToast('Progress reset — all levels locked', const Color(0xFFFFB300));
   }
 
+  // Small transient toast (SnackBar) confirming a cheat code was applied,
+  // styled to look like a terminal/console message consistent with the
+  // "cheat code" theme.
   void _showCheatToast(String message, Color color) {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -368,6 +437,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
   }
 
   /// Opens the cheat-code dialog (triggered by long-pressing the title on mobile).
+  // Mobile/touch equivalent of the physical-keyboard listener above — since
+  // touch devices have no reliable "type anywhere" keyboard capture, a
+  // long-press on the title opens an explicit text-entry dialog instead.
   void _showCheatDialog() {
     final ctrl = TextEditingController();
     final theme = AppThemeNotifier.read(context);
@@ -443,6 +515,7 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     ).then((_) => ctrl.dispose());
   }
 
+  // ── Small state-query helpers used throughout build() and child widgets ──
   bool _isUnlocked(GameLevel l) => l.unlockRule.isSatisfied(_completedAny);
   bool _isCompleted(String id) => _completed.contains(id);
   bool _isCompletedHard(String id) =>
@@ -497,6 +570,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
         ),
       );
     }
+    // The pushed screen may have marked the level complete — reload so
+    // badges/unlocks reflect it the moment the player returns, but only if
+    // this State is still mounted (the await above can outlive it).
     if (!mounted) return;
     _reload();
   }
@@ -515,6 +591,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     final screenH = screenSize.height;
     final layout = _LevelMapLayout.scaled(levelMapLayoutScale(context));
     final canvasH = _canvasHeight(kAllLevels, screenH);
+    // Positions are recomputed on every build (cheap — just arithmetic over
+    // kAllLevels, no layout pass) rather than cached, so completing a level
+    // and reloading progress can never leave stale positions behind.
     final positions = _computePositionsFromDeps(kAllLevels, canvasH, layout);
     final canvasW = _canvasWidthFromPositions(
       positions,
@@ -526,6 +605,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
     final completedPuzzles = _completed.intersection(puzzleLevels.map((l) => l.id).toSet()).length;
 
     return Focus(
+      // Wraps the whole screen so physical keyboard input (the cheat-code
+      // listener) is captured regardless of which child widget technically
+      // has focus.
       focusNode: _cheatFocus,
       autofocus: true,
       onKeyEvent: (_, event) {
@@ -544,6 +626,9 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
 
           // ── Scrollable canvas (horizontal only) ───────────────────────
           AnimatedBuilder(
+            // Merging all three controllers into one Listenable means this
+            // single builder repaints on every tick of pulse, flow, OR entry
+            // — rather than needing three separate AnimatedBuilders.
             animation: Listenable.merge([_pulseCtrl, _flowCtrl, _entryCtrl]),
             builder: (context, _) {
               final entryVal = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut).value;
@@ -619,6 +704,10 @@ class _LevelSelectScreenState extends State<LevelSelectScreen> with TickerProvid
                 difficulty: _difficulty,
                 onDifficultyChanged: (d) {
                   setState(() => _difficulty = d);
+                  // Switching difficulty changes which completion set
+                  // `_completed` reflects (badges/progress counter), so
+                  // reload it right away rather than waiting for the next
+                  // unrelated rebuild.
                   _loadCompleted();
                 },
                 onTitleLongPress: _showCheatDialog,
@@ -715,7 +804,10 @@ class _TopBar extends StatelessWidget {
 
                 const SizedBox(width: 12),
 
-                // Progress
+                // Progress — "completed / total" label plus a thin bar,
+                // scoped to puzzle levels only (tutorials are excluded from
+                // both numbers so the bar reflects actual puzzle-solving
+                // progress).
                 Row(
                   children: [
                     Text(
@@ -747,6 +839,9 @@ class _TopBar extends StatelessWidget {
                 ),
                 MainMenuButton(onPressed: onMenu),
                 const SizedBox(width: 4),
+                // Study button is optional (onStudy may be null when this
+                // screen is embedded somewhere that doesn't offer Study
+                // Mode) — only rendered when a callback was actually given.
                 if (onStudy != null) ...[
                   TextButton(
                     onPressed: onStudy,
@@ -779,6 +874,9 @@ class _TopBar extends StatelessWidget {
           ),
 
           // ── Scroll slider ──────────────────────────────────────────────
+          // A manual horizontal-pan control mirroring the canvas's own
+          // scroll position (kept in sync both ways — see
+          // _LevelSelectScreenState's ScrollController listener above).
           Padding(
             padding: const EdgeInsets.only(left: 12, right: 12, bottom: 4),
             child: Row(
@@ -815,6 +913,9 @@ class _TopBar extends StatelessWidget {
 //  Node Card
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The visual card representing one level on the map: tag chip, title,
+// completion badges, and an unlock hint — with a pulsing glow whose
+// intensity/color depends on the level's unlocked/completed state.
 class _NodeCard extends StatelessWidget {
   final GameLevel level;
   final bool unlocked;
@@ -842,6 +943,9 @@ class _NodeCard extends StatelessWidget {
     return AnimatedBuilder(
       animation: pulseAnim,
       builder: (_, _) {
+        // Glow intensity: strongest+widest breathing range for completed
+        // cards, a subtler breathing range for merely-unlocked cards, and
+        // none at all for locked cards.
         final glowOpacity = completed
             ? 0.35 + pulseAnim.value * 0.25
             : unlocked
@@ -884,6 +988,11 @@ class _NodeCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    // Status icon: filled/check for completed, outline for
+                    // merely unlocked, lock for locked — and a different
+                    // icon pair (school vs check) specifically for tutorial
+                    // levels, so tutorials read as "read this" rather than
+                    // "solve this."
                     if (completed)
                       Icon(
                         level.isTutorial ? Icons.school : Icons.check_circle,
@@ -899,6 +1008,7 @@ class _NodeCard extends StatelessWidget {
                     else
                       Icon(Icons.lock_outline, color: theme.textDim, size: 11),
                     const SizedBox(width: 4),
+                    // Tag chip (DFA/NFA/PDA/TM/etc.) — dimmed when locked.
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
@@ -917,6 +1027,8 @@ class _NodeCard extends StatelessWidget {
                     ),
                     const Spacer(),
                     // ── Dual-difficulty completion badges ────────────────
+                    // Tutorials have no difficulty split (there's nothing
+                    // to "solve"), so badges are only shown for puzzle levels.
                     if (!level.isTutorial)
                       _CompletionBadges(
                         completedHard: completedHard,
@@ -982,6 +1094,9 @@ class _DifficultyToggle extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        // Iterates LevelDifficulty.values directly rather than hardcoding
+        // two GestureDetectors, so a future third difficulty tier would
+        // render automatically without touching this widget.
         children: LevelDifficulty.values.map((d) {
           final selected = d == current;
           const easyColor = Color(0xFF4CAF50);
@@ -1037,6 +1152,9 @@ class _CompletionBadges extends StatelessWidget {
 
     const size = 14.0;
 
+    // Both difficulties completed: overlap the two badges side by side in a
+    // slightly-wider-than-one-badge box (size + 6, not size * 2) so they
+    // visually cluster rather than spreading apart.
     if (completedHard && completedEasy) {
       return SizedBox(
         width: size + 6,
@@ -1054,6 +1172,9 @@ class _CompletionBadges extends StatelessWidget {
   }
 }
 
+// Simple green circular checkmark — deliberately plain/cheap to build,
+// contrasting with the much fancier hand-painted gear badge below (Hard
+// mode gets the more elaborate "trophy-like" treatment).
 class _EasyBadge extends StatelessWidget {
   const _EasyBadge({required this.size});
   final double size;
@@ -1079,6 +1200,10 @@ class _HardBadge extends StatelessWidget {
   }
 }
 
+// Hand-painted gold gear/star badge for Hard-mode completions — built
+// entirely from Canvas primitives (no image asset) so it scales crisply at
+// any size and can pick up theme-independent gold tones that don't need to
+// track the app's color scheme.
 class _HardBadgePainter extends CustomPainter {
   static const _gold = Color(0xFFFFB300);
   static const _goldDeep = Color(0xFFE65100);
@@ -1089,7 +1214,9 @@ class _HardBadgePainter extends CustomPainter {
     final cy = size.height / 2;
     final r = min(cx, cy);
 
-    // Gear teeth
+    // Gear teeth: six small rounded rectangles, each drawn at the origin
+    // then rotated+translated into place around the circle — canvas.save/
+    // restore isolates each tooth's transform from the next.
     final toothPaint = Paint()..color = _gold..style = PaintingStyle.fill;
     for (var i = 0; i < 6; i++) {
       final angle = (i / 6) * 2 * pi;
@@ -1106,10 +1233,11 @@ class _HardBadgePainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Outer filled circle
+    // Outer filled circle (the gear's body, beneath the teeth already drawn).
     canvas.drawCircle(Offset(cx, cy), r * 0.68, Paint()..color = _gold..style = PaintingStyle.fill);
 
-    // Inner dark disc
+    // Inner dark disc — a radial gradient from deep gold to slightly more
+    // transparent deep gold, giving a subtle embossed/depth look.
     canvas.drawCircle(
       Offset(cx, cy),
       r * 0.50,
@@ -1119,7 +1247,9 @@ class _HardBadgePainter extends CustomPainter {
         ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.50)),
     );
 
-    // Six-pointed star
+    // Six-pointed star: alternates between outer and inner radius for each
+    // of the 12 points (2 per star point) around the circle, starting at
+    // -π/2 (straight up) so the star sits upright.
     const starPoints = 6;
     final outerR = r * 0.33;
     final innerR = r * 0.17;
@@ -1138,10 +1268,12 @@ class _HardBadgePainter extends CustomPainter {
     starPath.close();
     canvas.drawPath(starPath, Paint()..color = _gold..style = PaintingStyle.fill);
 
-    // Centre dot
+    // Centre dot — a small highlight to finish the badge.
     canvas.drawCircle(Offset(cx, cy), r * 0.09, Paint()..color = Colors.white.withValues(alpha: 0.9));
   }
 
+  // Static badge, nothing about it ever changes between rebuilds — never
+  // worth repainting.
   @override
   bool shouldRepaint(_HardBadgePainter _) => false;
 }
@@ -1157,6 +1289,10 @@ class _UnlockHint extends StatelessWidget {
 
   const _UnlockHint({required this.level, required this.unlocked, required this.completed});
 
+  // Produces a short, card-sized label describing what's still needed to
+  // unlock this level — mirrors _LockedSheet._requiredTitles/_extractIds
+  // below but returns a compact single string instead of a full list,
+  // since card space is much tighter than the bottom sheet's.
   String _shortHint() {
     final rule = level.unlockRule;
     if (rule is AlwaysUnlocked) return 'AVAILABLE';
@@ -1198,6 +1334,8 @@ class _UnlockHint extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(color: tagColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(3)),
         child: Text(
+          // Tutorials are "read," puzzle levels are "played" — small wording
+          // difference to set the right expectation before tapping.
           level.isTutorial ? 'TAP TO READ' : 'TAP TO PLAY',
           style: GoogleFonts.sourceCodePro(
             color: tagColor.withValues(alpha: 0.9),
@@ -1209,6 +1347,7 @@ class _UnlockHint extends StatelessWidget {
       );
     }
 
+    // Locked: show the short prerequisite hint from _shortHint() above.
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1237,6 +1376,9 @@ class _UnlockHint extends StatelessWidget {
 //  Locked bottom sheet
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Full-detail modal shown when tapping a locked level — unlike the compact
+// _UnlockHint on the card itself, this lists every individual prerequisite
+// by name and clarifies whether ALL or ANY of them are required.
 class _LockedSheet extends StatelessWidget {
   final GameLevel level;
   final Color tagColor;
@@ -1245,6 +1387,12 @@ class _LockedSheet extends StatelessWidget {
 
   List<String> _requiredTitles() => _extractIds(level.unlockRule).map((id) => kLevelById[id]?.title ?? id).toList();
 
+  // Same UnlockRule-flattening logic as
+  // _computePositionsFromDeps.extractLevelDependencies and
+  // _EdgePainter._extractDeps — three independent copies of essentially the
+  // same tree-walk exist in this file because each call site needs a
+  // slightly different return shape/context; not consolidated into one
+  // shared helper.
   List<String> _extractIds(UnlockRule rule) {
     if (rule is AlwaysUnlocked) return [];
     if (rule is RequireLevel) return [rule.levelId];
@@ -1256,6 +1404,11 @@ class _LockedSheet extends StatelessWidget {
     return [];
   }
 
+  // Whether the top-level rule wants ALL listed prerequisites (vs. ANY one
+  // of them) — used purely to word the sheet's heading correctly ("COMPLETE
+  // ALL OF" vs "COMPLETE ANY ONE OF"). Defaults to true (AND) for any rule
+  // shape not explicitly recognized, which also happens to be correct for
+  // RequireLevel (a single dependency, where AND/OR is moot).
   bool _isAnd() {
     final rule = level.unlockRule;
     if (rule is RequireAll) return true;
@@ -1282,6 +1435,10 @@ class _LockedSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Small "grabber" bar, purely decorative — signals this is a
+          // draggable bottom sheet even though drag-to-dismiss isn't
+          // actually wired up beyond the default showModalBottomSheet
+          // behavior.
           Center(
             child: Container(
               width: 36,
@@ -1291,6 +1448,7 @@ class _LockedSheet extends StatelessWidget {
             ),
           ),
 
+          // Header row: lock icon, level title, tag chip.
           Row(
             children: [
               Icon(Icons.lock, color: theme.textDim, size: 18),
@@ -1328,6 +1486,9 @@ class _LockedSheet extends StatelessWidget {
 
           const SizedBox(height: 16),
 
+          // Prerequisite list, or a reassuring "always available" message
+          // for the (here, unreachable in practice since this sheet only
+          // shows for LOCKED levels) empty-deps case.
           if (titles.isEmpty)
             Text('This level is always available.', style: GoogleFonts.sourceCodePro(color: theme.textMid, fontSize: 13))
           else ...[
@@ -1362,6 +1523,7 @@ class _LockedSheet extends StatelessWidget {
 
           const SizedBox(height: 20),
 
+          // Dismiss button — full width for an easy, obvious tap target.
           SizedBox(
             width: double.infinity,
             child: TextButton(
@@ -1395,6 +1557,8 @@ class _LockedSheet extends StatelessWidget {
 //  Legend — updated to show new edge states
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Fixed footer strip explaining every node-state icon, tag color, and edge
+// style used on the map — a static key/legend, not interactive.
 class _Legend extends StatelessWidget {
   const _Legend();
 
@@ -1402,6 +1566,10 @@ class _Legend extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.watch<AppThemeNotifier>();
     final d = theme.data;
+    // (id, color, label) triples for every tag — the id isn't actually used
+    // below (only color/label are read via the `(_, color, label)` pattern
+    // in the `for` loop), kept here mainly for readability/documentation of
+    // which tag each row corresponds to.
     final tags = [
       ('intro', d.tagIntro, 'Intro'),
       ('dfa', d.tagDfa, 'DFA'),
@@ -1416,6 +1584,9 @@ class _Legend extends StatelessWidget {
       bottom: 0,
       child: Container(
         height: _kLegendH + 8,
+        // Fades from transparent at the top to nearly-opaque background at
+        // the bottom, so the legend readably sits over whatever part of the
+        // map scrolls underneath it without a hard visual seam.
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -1431,6 +1602,8 @@ class _Legend extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Wrap(
+              // Wrap (rather than a fixed Row) lets the legend reflow onto
+              // multiple lines on narrow screens instead of overflowing.
               alignment: WrapAlignment.center,
               spacing: 16,
               runSpacing: 6,
@@ -1452,6 +1625,8 @@ class _Legend extends StatelessWidget {
                   color: theme.textDim,
                 ),
 
+                // Vertical divider between the node-state group and the
+                // tag-color group.
                 Container(width: 1, height: 14, color: theme.borderMid),
 
                 // ── Tag colours ────────────────────────────────────────
@@ -1469,6 +1644,11 @@ class _Legend extends StatelessWidget {
                 Container(width: 1, height: 14, color: theme.borderMid),
 
                 // ── Edge state indicators ──────────────────────────────
+                // Five states, thickest/brightest-to-dimmest, mirroring the
+                // classification logic in _EdgePainter._drawEdgesFor below
+                // (each swatch's stroke width here roughly matches that
+                // state's actual on-canvas stroke width, so the legend
+                // "looks like" the real edges).
                 _LegendItem(
                   icon: Container(
                     width: 18,
@@ -1535,6 +1715,11 @@ class _DashedLine extends StatelessWidget {
   }
 }
 
+// Draws a simple fixed-pattern dashed horizontal line (4px dash, 3px gap)
+// — used only by the legend's "Missing prereq" swatch above. The real
+// dashed edges on the canvas use the more flexible _dashPath() helper on
+// _EdgePainter further down, which can dash an arbitrary bezier Path rather
+// than just a straight line.
 class _DashPainter extends CustomPainter {
   final Color color;
   const _DashPainter({required this.color});
@@ -1548,7 +1733,7 @@ class _DashPainter extends CustomPainter {
     double x = 0;
     while (x < size.width) {
       canvas.drawLine(Offset(x, size.height / 2), Offset(min(x + 4, size.width), size.height / 2), paint);
-      x += 7;
+      x += 7; // 4px dash + 3px gap
     }
   }
 
@@ -1556,6 +1741,7 @@ class _DashPainter extends CustomPainter {
   bool shouldRepaint(_DashPainter old) => old.color != color;
 }
 
+// One "swatch + label" row used throughout _Legend above.
 class _LegendItem extends StatelessWidget {
   final Widget icon;
   final String label;
@@ -1583,6 +1769,9 @@ class _LegendItem extends StatelessWidget {
 //  Background grid painter
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Faint fixed-spacing grid drawn behind everything else, purely for visual
+// texture (evokes a "circuit board" / neural-net aesthetic) — not aligned
+// to node positions or scroll offset in any way.
 class _GridPainter extends CustomPainter {
   const _GridPainter({required this.gridColor});
 
@@ -1631,6 +1820,11 @@ class _PathData {
 //  Edge painter
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Draws every prerequisite edge on the map: classifies each edge into one of
+// five visual states based on completion/unlock status, routes a path that
+// avoids passing through unrelated node cards, then draws a glow layer, the
+// main stroke (dashed for OR-rules or "blocking" edges), an optional
+// traveling flow-dot, and an arrowhead.
 class _EdgePainter extends CustomPainter {
   final AppThemeData theme;
   final List<GameLevel> levels;
@@ -1663,6 +1857,9 @@ class _EdgePainter extends CustomPainter {
 
   // ── Rule helpers ───────────────────────────────────────────────────────────
 
+  // Same UnlockRule-flattening as _computePositionsFromDeps and
+  // _LockedSheet — see the note on _LockedSheet._extractIds above for why
+  // this isn't consolidated into one shared function.
   List<String> _extractDeps(UnlockRule rule) {
     if (rule is AlwaysUnlocked) return [];
     if (rule is RequireLevel) return [rule.levelId];
@@ -1674,6 +1871,10 @@ class _EdgePainter extends CustomPainter {
     return [];
   }
 
+  // Whether `rule`'s top level is an OR (any-of) rather than an AND
+  // (all-of) — used to decide whether every edge INTO this level should be
+  // drawn lightly dashed (an OR rule means completing just one edge's
+  // source is enough, so no single edge is strictly "required").
   bool _isOrRule(UnlockRule rule) {
     if (rule is RequireAny) return true;
     if (rule is RequireExpression) return !rule.isAnd;
@@ -1682,6 +1883,9 @@ class _EdgePainter extends CustomPainter {
 
   // ── Main per-level edge drawing ────────────────────────────────────────────
 
+  // Draws every incoming prerequisite edge for `dest` (one call per level in
+  // paint() above covers the whole graph, since every edge is defined by
+  // its destination's unlockRule).
   void _drawEdgesFor(Canvas canvas, GameLevel dest) {
     final destPos = positions[dest.id];
     if (destPos == null) return;
@@ -1710,6 +1914,9 @@ class _EdgePainter extends CustomPainter {
       final srcCompleted = completed.contains(srcId);
 
       // ── Classify this edge ──────────────────────────────────────────────
+      // Five mutually-exclusive states, checked in priority order (most
+      // "positive" first). Each sets color/stroke-width/glow/dash together,
+      // since they always travel as a unit for a given state.
 
       Color edgeColor;
       double strokeW;
@@ -1717,26 +1924,38 @@ class _EdgePainter extends CustomPainter {
       bool blockingDash; // extra-visible dashes for the "missing prereq" state
 
       if (srcCompleted && destCompleted) {
+        // Both ends done: the brightest, thinnest "fully settled" line.
         edgeColor = theme.edgeBright.withValues(alpha: 0.90);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
       } else if (srcCompleted && destUnlocked) {
+        // Source done, destination now playable (but not yet completed):
+        // active/encouraging color.
         edgeColor = theme.edgeActive.withValues(alpha: 0.95);
         strokeW = 1.0;
         drawGlow = true;
         blockingDash = false;
       } else if (srcCompleted && isAlmostUnlocked) {
+        // THIS prereq is satisfied, but dest is still locked because of a
+        // SIBLING prereq — amber, to distinguish "your part is done" from
+        // "you're actually unblocked."
         edgeColor = theme.edgeAlmost;
         strokeW = 3.0;
         drawGlow = true;
         blockingDash = false;
       } else if (!srcCompleted && isAlmostUnlocked) {
+        // THIS is the specific still-missing prereq blocking an
+        // otherwise-almost-ready level — the thickest, pulsing, dashed
+        // "pay attention to me" state, deliberately the loudest visual on
+        // the whole map.
         edgeColor = theme.edgeBlocking.withValues(alpha: 0.55 + pulseValue * 0.45);
         strokeW = 4.0;
         drawGlow = true;
         blockingDash = true;
       } else {
+        // Default/fallback: neither end has any special status yet — a
+        // plain dim line.
         edgeColor = theme.edgeDim.withValues(alpha: 0.95);
         strokeW = 3.5;
         drawGlow = false;
@@ -1745,13 +1964,17 @@ class _EdgePainter extends CustomPainter {
 
       // ── Build path, routing around intermediate nodes ───────────────────
 
+      // Anchor the edge to the outer edge of each node card (half-width in
+      // from centre), not the raw centre-to-centre line, so it visually
+      // touches the card boundary rather than running underneath the card.
       final src = Offset(srcPos.dx + _kNodeW / 2, srcPos.dy);
       final dst = Offset(destPos.dx - _kNodeW / 2, destPos.dy);
       final intermediate = _getIntermediatePositions(srcId, dest.id, src.dx, dst.dx);
       final pathData = _buildEdgePath(src, dst, intermediate);
 
       // ── Glow layer ──────────────────────────────────────────────────────
-
+      // A wide, heavily blurred, low-alpha stroke drawn UNDER the crisp main
+      // line, giving active/bright/blocking edges a soft neon halo.
       if (drawGlow) {
         canvas.drawPath(
           pathData.path,
@@ -1780,6 +2003,12 @@ class _EdgePainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round,
       );
+      // Extra "warning pip" for the blocking state: a soft red glow dot
+      // riding along the SAME animated position as the flow dot below,
+      // drawn on top of the dashed line to make the missing prereq edge
+      // even harder to miss. Iterates every contour of drawPath (a dashed
+      // path has many short contours, one per dash segment) and drops one
+      // dot per contour at the same fractional-length position.
       if (!srcCompleted && isAlmostUnlocked) {
         for (final metric in drawPath.computeMetrics()) {
           final t = (flowValue * metric.length);
@@ -1798,8 +2027,15 @@ class _EdgePainter extends CustomPainter {
       }
 
       // ── Flow dot (only active/bright edges with simple bezier path) ─────
-
+      // A single small dot traveling continuously along the edge, only for
+      // "positive" states (bright/active) and only on simple (single-bezier,
+      // non-routed) paths — routed multi-segment paths don't get a flow dot
+      // since _cubicPoint below only samples one bezier segment, not the
+      // full two-segment routed path.
       if (pathData.isSimple && entryValue >= 1.0 && (srcCompleted && destUnlocked || srcCompleted && destCompleted)) {
+        // Offsetting `t` by a hash of srcId (mod 1.0) staggers each edge's
+        // dot to a different phase, so all the dots on screen don't move in
+        // perfect unison.
         final t = (flowValue + srcId.hashCode * 0.37) % 1.0;
         final pt = _cubicPoint(src, pathData.ctrl1!, pathData.ctrl2!, dst, t);
         canvas.drawCircle(pt, destCompleted ? 3.5 : 3.0, Paint()..color = edgeColor.withValues(alpha: 0.95));
@@ -1824,6 +2060,9 @@ class _EdgePainter extends CustomPainter {
       final id = entry.key;
       if (id == srcId || id == destId) continue;
       final p = entry.value;
+      // Small 5px insets on both sides avoid flagging nodes that sit almost
+      // exactly at src/dst's own X (e.g. same-column siblings) as
+      // "intermediate."
       if (p.dx > srcX + 5 && p.dx < dstX - 5) {
         result.add(p);
       }
@@ -1841,6 +2080,10 @@ class _EdgePainter extends CustomPainter {
 
     // ── Bezier sampler ──────────────────────────────────────────────────────
     // Approximate a cubic bezier with [steps] sample points.
+    // Used below purely for collision-testing (samplesHitNodes) — the
+    // actual rendered path is still the exact analytic bezier drawn via
+    // Path.cubicTo, this discretized version is only for the geometric
+    // "does this route avoid every intermediate node" check.
     List<Offset> sampleCubic(Offset p0, Offset p1, Offset p2, Offset p3, {int steps = 120}) {
       final pts = <Offset>[];
       for (int i = 0; i <= steps; i++) {
@@ -1853,6 +2096,11 @@ class _EdgePainter extends CustomPainter {
     // ── Node-avoidance check ─────────────────────────────────────────────────
     // Returns true if any sample point in [pts] falls inside a node card
     // (with padding), ignoring the src and dst nodes themselves.
+    // (srcNodeCenter/dstNodeCenter reconstruct each node's actual CENTRE
+    // from the edge-anchor points src/dst, which are offset by half the
+    // node width — see _drawEdgesFor's `src`/`dst` construction above —
+    // purely so the exclusion check below can identify and skip testing
+    // against the edge's own two endpoint nodes.)
     final srcNodeCenter = Offset(src.dx - _kNodeW / 2, src.dy);
     final dstNodeCenter = Offset(dst.dx + _kNodeW / 2, dst.dy);
 
@@ -1860,6 +2108,9 @@ class _EdgePainter extends CustomPainter {
       for (final entry in positions.entries) {
         final p = entry.value;
         if ((p - srcNodeCenter).distance < 8 || (p - dstNodeCenter).distance < 8) continue;
+        // Padded well beyond the actual card size (+120 on each dimension)
+        // so a route has to clear a generous buffer around every card, not
+        // just graze past its literal edge.
         final rect = Rect.fromCenter(
           center: p,
           width: _kNodeW + 120,
@@ -1873,6 +2124,10 @@ class _EdgePainter extends CustomPainter {
     }
 
     // ── Adjacent-column: simple S-curve ─────────────────────────────────────
+    // Cheap path for the common case (src and dst are in neighboring, or
+    // near-neighboring, columns): a single symmetric cubic bezier with
+    // horizontal control points, no node-avoidance search needed since
+    // adjacent columns rarely have anything sitting directly between them.
     if (dst.dx - src.dx <= _kColGap * 4) {
       final ctrl1 = Offset(src.dx + ctrlDist, src.dy);
       final ctrl2 = Offset(dst.dx - ctrlDist, dst.dy);
@@ -1890,6 +2145,10 @@ class _EdgePainter extends CustomPainter {
     // ── Multi-column: arc through a horizontal bypass lane ──────────────────
     // Build a rich candidate list: fixed lanes + per-node offsets.
     final usableBottom = canvasH - _kBotPad - _kLegendH;
+    // A grab-bag of candidate horizontal "lanes" (Y coordinates) to route
+    // through: a few fixed lanes near the top and bottom of the canvas
+    // (leaving room to bypass most rows of nodes entirely), plus proportional
+    // fractions of canvas height for good general coverage.
     final candidateYs = <double>[
       _kTopPad + 362,
       _kTopPad + 50,
@@ -1903,7 +2162,10 @@ class _EdgePainter extends CustomPainter {
       usableBottom - 18,
     ];
 
-    // Also offer lanes that sit just above/below each intermediate node.
+    // Also offer lanes that sit just above/below each intermediate node —
+    // often the tightest-fitting valid route hugs directly alongside the
+    // very node it needs to avoid, rather than detouring all the way to a
+    // fixed far lane.
     for (final p in intermediate) {
       candidateYs.add(p.dy - _kNodeH / 2 - 36);
       candidateYs.add(p.dy + _kNodeH / 2 + 36);
@@ -1920,37 +2182,49 @@ class _EdgePainter extends CustomPainter {
 
     const maxDeviation = 220.0;
 
-for (final y in candidateYs) {
-  if ((y - midY).abs() > maxDeviation) {
-    continue;
-  }{
-      // Two cubic bezier segments meeting at (midX, y).
-      final c1 = Offset(src.dx + halfCtrl, src.dy);
-      final c2 = Offset(midX - 60, y);
-      final c3 = Offset(midX + 60, y);
-      final c4 = arrowFrom;
+    // Try each candidate lane, closest-to-straight-line first, and use the
+    // first one whose sampled path doesn't intersect any node card.
+    for (final y in candidateYs) {
+      if ((y - midY).abs() > maxDeviation) {
+        // Lane deviates too far from the natural line to be worth trying —
+        // skip rather than produce an oddly circuitous route.
+        continue;
+      }
+      {
+        // Two cubic bezier segments meeting at (midX, y): src -> (midX, y)
+        // -> dst, forming a shallow "over/under" arc through the chosen
+        // lane rather than one single bezier (which couldn't easily be bent
+        // to pass through an arbitrary intermediate point).
+        final c1 = Offset(src.dx + halfCtrl, src.dy);
+        final c2 = Offset(midX - 60, y);
+        final c3 = Offset(midX + 60, y);
+        final c4 = arrowFrom;
 
-      final seg1 = sampleCubic(src, c1, c2, Offset(midX, y));
-      final seg2 = sampleCubic(Offset(midX, y), c3, c4, dst);
+        final seg1 = sampleCubic(src, c1, c2, Offset(midX, y));
+        final seg2 = sampleCubic(Offset(midX, y), c3, c4, dst);
 
-      if (!samplesHitNodes([...seg1, ...seg2])) {
-        return _PathData(
-          path: Path()
-            ..moveTo(src.dx, src.dy)
-            ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, midX, y)
-            ..cubicTo(c3.dx, c3.dy, c4.dx, c4.dy, dst.dx, dst.dy),
-          isSimple: false,
-          arrowFrom: arrowFrom,
-        );
+        if (!samplesHitNodes([...seg1, ...seg2])) {
+          return _PathData(
+            path: Path()
+              ..moveTo(src.dx, src.dy)
+              ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, midX, y)
+              ..cubicTo(c3.dx, c3.dy, c4.dx, c4.dy, dst.dx, dst.dy),
+            isSimple: false,
+            arrowFrom: arrowFrom,
+          );
+        }
       }
     }
-}
 
-    // Absolute fallback: route hard above all nodes.
+    // Absolute fallback: every candidate lane hit at least one node — route
+    // hard above all nodes at the vertical midpoint, clamped to stay within
+    // the canvas's usable vertical band. This can still visually clip a
+    // node in pathological layouts, but guarantees SOME path is always
+    // returned rather than the function failing to produce an edge at all.
     final fallbackY = midY.clamp(
-  _kTopPad + 40,
-  canvasH - _kBotPad - _kLegendH - 40,
-);
+      _kTopPad + 40,
+      canvasH - _kBotPad - _kLegendH - 40,
+    );
     return _PathData(
       path: Path()
         ..moveTo(src.dx, src.dy)
@@ -1963,6 +2237,9 @@ for (final y in candidateYs) {
 
   // ── Drawing primitives ─────────────────────────────────────────────────────
 
+  // Standard cubic bezier point formula (De Casteljau / Bernstein basis form)
+  // — evaluates the curve at parameter t ∈ [0, 1] for both simple-path flow
+  // dots and the node-avoidance sampler above.
   Offset _cubicPoint(Offset p0, Offset p1, Offset p2, Offset p3, double t) {
     final mt = 1 - t;
     return Offset(
@@ -1971,11 +2248,15 @@ for (final y in candidateYs) {
     );
   }
 
+  // Draws a solid triangular arrowhead at `to`, oriented along the
+  // direction from `from` to `to`.
   void _drawArrow(Canvas canvas, Offset from, Offset to, Color color, double w) {
     if ((to - from).distance < 1.0) return; // guard: no direction
     const len = 12.0;
     const wing = 7.0;
     final angle = atan2(to.dy - from.dy, to.dx - from.dx);
+    // Pull the tip back 2px from the exact target point so the arrowhead's
+    // point doesn't visually poke past the node card's edge.
     final tip = Offset(to.dx - cos(angle) * 2, to.dy - sin(angle) * 2);
     canvas.drawPath(
       Path()
@@ -1989,6 +2270,11 @@ for (final y in candidateYs) {
     );
   }
 
+  // Converts a solid Path into a dashed Path by walking each contour
+  // ("metric") and alternately extracting dash-length and skipping
+  // gap-length sub-segments — works for any path shape (straight, single
+  // bezier, or the two-segment routed paths above), unlike _DashPainter's
+  // fixed-straight-line-only version used in the legend.
   Path _dashPath(Path source, double dashLength, double gapLength) {
     final dashed = Path();
     for (final metric in source.computeMetrics()) {

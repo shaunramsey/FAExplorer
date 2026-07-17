@@ -10,133 +10,230 @@
 //  Level *content* (GameLevel definitions) lives separately in game_level.dart.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import 'dart:convert'; // Provides jsonEncode/jsonDecode for serializing the completed-levels set to a string for SharedPreferences.
+import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart'; // Key-value persistence API used by GameProgressStore.
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'dialogs/equivalence_dialog.dart' // Import (not re-exported) just the two types this file's own code references directly.
+import 'dialogs/equivalence_dialog.dart'
     show
-        AutomatonTypeResult, // The result object returned by AutomatonTypeChecker.check(...).
-        ViolationSeverity; // Enum distinguishing hard errors from warnings within a type-check result.
-import 'game_level.dart'; // Brings in GameLevel and LevelDifficulty, used throughout GameProgressStore.
+        AutomatonTypeResult,
+        ViolationSeverity;
+import 'game_level.dart';
 
-export 'dialogs/equivalence_dialog.dart' // Re-export selected symbols so callers of game_data.dart don't need a separate import of equivalence_dialog.dart.
+// Re-exports so callers that only need "the game progress/type-check API"
+// can `import 'game_data.dart'` alone, without also having to know that
+// these particular types actually live in dialogs/equivalence_dialog.dart.
+// Keeps the type-checking implementation swappable/relocatable without
+// breaking every import site across the game module.
+export 'dialogs/equivalence_dialog.dart'
     show
-        RequiredAutomatonType, // Enum describing what automaton type (DFA/NFA/etc.) a puzzle demands.
-        AutomatonTypeResult, // Re-exported so UI code checking a puzzle's result type doesn't need the dialog import too.
-        AutomatonViolation, // The individual violation record type.
-        ViolationSeverity; // Re-exported severity enum.
+        RequiredAutomatonType,
+        AutomatonTypeResult,
+        AutomatonViolation,
+        ViolationSeverity;
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  1. GAME PROGRESS STORE
 // ═════════════════════════════════════════════════════════════════════════════
 
-abstract final class GamePreferenceKeys { // Non-instantiable ("abstract final") holder class — purely a namespace for static key-building helpers/constants.
-  static const completedLevels = 'game_completed_levels'; // The SharedPreferences key used for Hard-difficulty completed-level IDs (also the legacy/original key name).
+/// Centralizes every SharedPreferences *key name* the game mode uses, so key
+/// strings are computed in exactly one place rather than being hand-typed
+/// (and potentially mistyped/duplicated) at each call site.
+abstract final class GamePreferenceKeys {
+  static const completedLevels = 'game_completed_levels';
 
   /// Completion key scoped to a difficulty.
   ///
   /// Hard completions use the legacy key so existing saves are honoured.
   /// Easy completions are stored under a separate key so the two difficulties
   /// track progress independently.
-  static String completedKey(LevelDifficulty difficulty) => // Given a difficulty, returns which SharedPreferences key stores its completed-IDs list.
-      difficulty == LevelDifficulty.hard // Hard difficulty keeps using the original/legacy key name for backward compatibility with existing saves.
+  static String completedKey(LevelDifficulty difficulty) =>
+      difficulty == LevelDifficulty.hard
+          // Reuses the pre-existing 'game_completed_levels' key verbatim so
+          // that a player upgrading from a version of the app that predates
+          // the Easy/Hard split doesn't lose their previously-earned
+          // completions — those old saves are implicitly "Hard" completions
+          // under the new scheme.
           ? completedLevels
-          : 'game_completed_levels_easy'; // Any other difficulty (i.e. Easy) gets its own distinct key.
+          : 'game_completed_levels_easy';
 
   /// Per-level in-progress DSL scoped to difficulty.
   ///
   /// Hard uses the legacy key so existing work-in-progress is preserved.
-  static String levelDsl(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) => // Builds the per-level, per-difficulty key for a player's in-progress automaton DSL text; difficulty defaults to Hard if omitted.
-      difficulty == LevelDifficulty.hard // Hard keeps the original naming scheme (no "_easy" suffix) so old saves still resolve.
+  static String levelDsl(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) =>
+      difficulty == LevelDifficulty.hard
           ? 'game_level_dsl_$levelId'
-          : 'game_level_dsl_${levelId}_easy'; // Easy gets a distinct key per level, suffixed with "_easy".
-} // End of GamePreferenceKeys.
+          : 'game_level_dsl_${levelId}_easy';
+}
 
-class GameProgressStore { // Wraps a SharedPreferences instance with typed, game-specific read/write methods.
-  GameProgressStore._(this._prefs); // Private named constructor — forces callers through the async `open()` factory below instead of constructing directly.
+/// Wraps a SharedPreferences instance with typed, game-specific read/write
+/// methods. One instance is created (via [open]) near app startup and
+/// shared by reference across every screen that needs progress data (see
+/// main.dart's AppGate, which owns the single instance).
+class GameProgressStore {
+  GameProgressStore._(this._prefs);
 
-  final SharedPreferences _prefs; // The underlying SharedPreferences instance this store reads/writes through.
+  final SharedPreferences _prefs;
 
-  static Future<GameProgressStore> open() async { // Async factory: obtains the SharedPreferences singleton and wraps it.
-    return GameProgressStore._(await SharedPreferences.getInstance()); // Await the platform-backed SharedPreferences instance, then construct the store around it.
-  } // End of open().
+  /// Async factory: SharedPreferences.getInstance() itself does the actual
+  /// disk I/O (reading the platform's preferences file into memory once),
+  /// after which every method below is synchronous — SharedPreferences
+  /// caches everything in memory after the initial load, it's not doing a
+  /// disk round-trip per call.
+  static Future<GameProgressStore> open() async {
+    return GameProgressStore._(await SharedPreferences.getInstance());
+  }
 
   // ── Read ──────────────────────────────────────────────────────────────────
 
   /// Loads the set of completed level IDs for [difficulty].
-  Set<String> loadCompletedLevels([LevelDifficulty difficulty = LevelDifficulty.hard]) { // Reads and decodes the completed-level-ID set for a given difficulty (Hard by default).
-    final raw = _prefs.getString(GamePreferenceKeys.completedKey(difficulty)); // Fetch the raw JSON string stored under this difficulty's key (or null if never written).
-    if (raw == null || raw.isEmpty) return {}; // No saved data yet (or an empty string) — treat as "nothing completed".
+  ///
+  /// Returns a *fresh* Set on every call (decoded from the raw JSON string
+  /// each time) — there is no in-memory cache of the decoded Set kept
+  /// between calls, so callers are free to mutate the returned Set without
+  /// corrupting this store's internal state, but repeated calls do repeat
+  /// the JSON decode work (see the performance note on
+  /// `_completedOnAnyDifficulty` further down, which calls this twice).
+  Set<String> loadCompletedLevels([LevelDifficulty difficulty = LevelDifficulty.hard]) {
+    final raw = _prefs.getString(GamePreferenceKeys.completedKey(difficulty));
+    if (raw == null || raw.isEmpty) return {};
     try {
-      final list = jsonDecode(raw) as List<dynamic>; // Parse the JSON string into a dynamically-typed list.
-      return {for (final item in list) item.toString()}; // Build a Set<String> by stringifying every element (set-comprehension syntax), so any JSON scalar type still lands as a String.
+      final list = jsonDecode(raw) as List<dynamic>;
+      // `.toString()` on each decoded element rather than a direct cast —
+      // defensive against the stored JSON containing non-string values
+      // (shouldn't happen given _save always writes `List<String>`, but
+      // guards against manually-edited or corrupted preference data rather
+      // than throwing a cast error).
+      return {for (final item in list) item.toString()};
     } catch (_) {
-      return {}; // Malformed/corrupt stored JSON — fail safe by reporting no completions rather than crashing.
+      // Any decode failure (malformed JSON, wrong shape, etc.) degrades to
+      // "no levels completed" rather than crashing or propagating the
+      // error — a corrupted progress entry is treated the same as no
+      // progress at all, rather than for example wiping the raw string or
+      // surfacing an error to the user.
+      return {};
     }
-  } // End of loadCompletedLevels.
+  }
 
   // ── Write ─────────────────────────────────────────────────────────────────
 
-  Future<void> markCompleted(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async { // Marks a level complete on the given difficulty (defaults to Hard), with cross-difficulty propagation.
+  /// Marks [levelId] complete for [difficulty] (defaults to Hard).
+  ///
+  /// Completing on Hard also silently grants the same level's Easy
+  /// completion (see the comment inline below) — but note the reverse
+  /// (marking a level *incomplete*) does NOT symmetrically revoke that
+  /// auto-granted Easy completion; see [markIncomplete]'s doc comment for
+  /// why that asymmetry may be worth revisiting.
+  Future<void> markCompleted(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async {
     // Always write to the requested difficulty.
-    final current = loadCompletedLevels(difficulty); // Load the existing completed set for the requested difficulty.
-    current.add(levelId); // Add this level's ID to that set.
-    await _save(current, difficulty); // Persist the updated set back to SharedPreferences.
+    final current = loadCompletedLevels(difficulty);
+    current.add(levelId);
+    await _save(current, difficulty);
 
     // Completing on Hard is a strict superset of Easy — grant Easy too so the
     // player doesn't see an unearned gap in their badges.
-    if (difficulty == LevelDifficulty.hard) { // Only cascade when the level was just completed on Hard...
-      final easy = loadCompletedLevels(LevelDifficulty.easy); // ...by loading the current Easy-difficulty completed set...
-      if (!easy.contains(levelId)) { // ...and only writing if this level isn't already marked complete on Easy (avoids a redundant write).
-        easy.add(levelId); // Add the level to the Easy set too.
-        await _save(easy, LevelDifficulty.easy); // Persist the updated Easy set.
+    if (difficulty == LevelDifficulty.hard) {
+      final easy = loadCompletedLevels(LevelDifficulty.easy);
+      if (!easy.contains(levelId)) {
+        easy.add(levelId);
+        await _save(easy, LevelDifficulty.easy);
       }
+      // (`if (!easy.contains(...))` is a pure optimization to skip an
+      // unnecessary write when Easy was already completed independently —
+      // `current.add`/`_save` above are unconditional because a Set.add on
+      // an already-present element is a harmless no-op, but a SharedPreferences
+      // write is comparatively more expensive, hence guarding this one.)
     }
-  } // End of markCompleted.
+  }
 
-  Future<void> markIncomplete(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async { // Removes a level from the completed set for one specific difficulty (no cross-difficulty cascade, unlike markCompleted).
-    final current = loadCompletedLevels(difficulty); // Load the current completed set for this difficulty.
-    current.remove(levelId); // Remove the level ID if present (no-op if it wasn't there).
-    await _save(current, difficulty); // Persist the updated set.
-  } // End of markIncomplete.
+  /// Marks [levelId] incomplete for [difficulty] (defaults to Hard).
+  ///
+  /// NOTE (possible asymmetry / design gap): unlike [markCompleted], this
+  /// does NOT cascade across difficulties. Concretely: if a player
+  /// completes a level on Hard (which — per markCompleted above — also
+  /// auto-grants Easy), and then this method is called to mark that same
+  /// level incomplete on Hard, the auto-granted Easy completion is left
+  /// untouched. The player would end up in a state where the level shows
+  /// as "not completed" on Hard but still "completed" on Easy, even though
+  /// they never explicitly beat it on Easy — the Easy badge was only ever
+  /// earned indirectly via the Hard completion that's now being revoked.
+  /// Whether this is the intended behavior (progress is sticky / never
+  /// silently taken away) or an oversight (the two methods should mirror
+  /// each other) isn't obvious from this file alone — worth confirming
+  /// against how/why markIncomplete is actually invoked elsewhere in the
+  /// app (e.g. is it only used for a "redo this level" flow, where leaving
+  /// the Easy badge alone is actually desirable?).
+  Future<void> markIncomplete(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async {
+    final current = loadCompletedLevels(difficulty);
+    current.remove(levelId);
+    await _save(current, difficulty);
+  }
 
   /// Resets all progress for both difficulties.
-  Future<void> resetAll() async { // Wipes completed-level data for both Hard and Easy.
-    await _prefs.remove(GamePreferenceKeys.completedKey(LevelDifficulty.hard)); // Delete the Hard-difficulty completed-levels key entirely.
-    await _prefs.remove(GamePreferenceKeys.completedKey(LevelDifficulty.easy)); // Delete the Easy-difficulty completed-levels key entirely.
-  } // End of resetAll. Note: does not touch per-level DSL keys (levelDsl) — only completion status.
+  ///
+  /// NOTE (possible gap): this clears the two completed-levels keys, but
+  /// does NOT clear any per-level in-progress DSL saved via
+  /// [saveLevelDsl]/[GamePreferenceKeys.levelDsl] (keys of the form
+  /// `game_level_dsl_<id>` / `game_level_dsl_<id>_easy`). Those keys are
+  /// per-level (one SharedPreferences key per level ID, per difficulty), so
+  /// clearing "all of them" would require this method to know the full set
+  /// of level IDs that might have a saved draft — which it doesn't have
+  /// direct access to here (that list lives in game_level.dart). Practical
+  /// effect: after a player uses whatever UI flow calls resetAll()
+  /// (presumably something like a "reset progress" settings action), their
+  /// completion badges are cleared, but reopening a level they'd previously
+  /// worked on will still silently restore their old in-progress automaton
+  /// draft rather than starting from a blank canvas. If "reset" is meant to
+  /// be a full wipe, this is a real gap; if per-level drafts are
+  /// intentionally meant to survive a progress reset, this is fine as-is —
+  /// worth clarifying which behavior is intended.
+  Future<void> resetAll() async {
+    await _prefs.remove(GamePreferenceKeys.completedKey(LevelDifficulty.hard));
+    await _prefs.remove(GamePreferenceKeys.completedKey(LevelDifficulty.easy));
+  }
 
   // ── Per-level DSL (work-in-progress) ─────────────────────────────────────
 
-  String? loadLevelDsl(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) => // Reads back a player's saved in-progress automaton DSL text for a level/difficulty, or null if none saved.
-      _prefs.getString(GamePreferenceKeys.levelDsl(levelId, difficulty)); // Direct SharedPreferences string lookup using the composed key.
+  /// Loads a previously-saved in-progress automaton DSL string for
+  /// [levelId]/[difficulty], or null if the player never saved a draft
+  /// (or already cleared it via [clearLevelDsl]).
+  String? loadLevelDsl(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) =>
+      _prefs.getString(GamePreferenceKeys.levelDsl(levelId, difficulty));
 
-  Future<void> saveLevelDsl(String levelId, String dsl, [LevelDifficulty difficulty = LevelDifficulty.hard]) async { // Persists a player's current in-progress DSL text for a level/difficulty.
-    await _prefs.setString(GamePreferenceKeys.levelDsl(levelId, difficulty), dsl); // Write the DSL string under the composed per-level-per-difficulty key.
-  } // End of saveLevelDsl.
+  Future<void> saveLevelDsl(String levelId, String dsl, [LevelDifficulty difficulty = LevelDifficulty.hard]) async {
+    await _prefs.setString(GamePreferenceKeys.levelDsl(levelId, difficulty), dsl);
+  }
 
-  Future<void> clearLevelDsl(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async { // Deletes any saved in-progress DSL for a level/difficulty (e.g. once the level is solved and no longer "in progress").
-    await _prefs.remove(GamePreferenceKeys.levelDsl(levelId, difficulty)); // Remove the key entirely.
-  } // End of clearLevelDsl.
+  Future<void> clearLevelDsl(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) async {
+    await _prefs.remove(GamePreferenceKeys.levelDsl(levelId, difficulty));
+  }
 
-  Future<void> _save(Set<String> ids, LevelDifficulty difficulty) async { // Private helper shared by markCompleted/markIncomplete: serializes and writes a completed-ID set.
+  /// Shared write helper: encodes a Set of level IDs as a JSON array string
+  /// and writes it under the appropriate difficulty-scoped key.
+  /// `ids.toList()` is used because JSON arrays don't have a canonical
+  /// "Set" encoding via jsonEncode — Sets aren't directly encodable, so
+  /// this converts to a List first (order is whatever Dart's Set iteration
+  /// order happens to produce, which is insertion order for a standard
+  /// LinkedHashSet — not alphabetical/sorted — but order doesn't matter
+  /// here since callers only ever check membership, never rely on
+  /// position).
+  Future<void> _save(Set<String> ids, LevelDifficulty difficulty) async {
     await _prefs.setString(
-      GamePreferenceKeys.completedKey(difficulty), // Key depends on which difficulty is being saved.
-      jsonEncode(ids.toList()), // Convert the Set to a List (Sets aren't directly JSON-encodable) then to a JSON string.
+      GamePreferenceKeys.completedKey(difficulty),
+      jsonEncode(ids.toList()),
     );
-  } // End of _save.
+  }
 
   // ── Derived queries ───────────────────────────────────────────────────────
 
-  bool isCompleted(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) => // True if `levelId` is completed on exactly the given difficulty (default Hard).
-      loadCompletedLevels(difficulty).contains(levelId); // Load that difficulty's set and check membership.
+  bool isCompleted(String levelId, [LevelDifficulty difficulty = LevelDifficulty.hard]) =>
+      loadCompletedLevels(difficulty).contains(levelId);
 
   /// A level is considered "completed" for unlock purposes if it has been beaten
   /// on either difficulty (easy or hard).
-  bool isCompletedOnAnyDifficulty(String levelId) => // True if the level is completed on Hard OR Easy.
-      isCompleted(levelId, LevelDifficulty.hard) || // Check Hard completion first...
-      isCompleted(levelId, LevelDifficulty.easy); // ...then Easy completion (short-circuiting `||` skips the second check if the first is true).
+  bool isCompletedOnAnyDifficulty(String levelId) =>
+      isCompleted(levelId, LevelDifficulty.hard) ||
+      isCompleted(levelId, LevelDifficulty.easy);
 
   /// Returns the union of completed level IDs across both difficulties.
   ///
@@ -145,20 +242,40 @@ class GameProgressStore { // Wraps a SharedPreferences instance with typed, game
   /// e.g. "N levels completed" on the mode-select screen — so Easy-only
   /// progress isn't invisible. This mirrors the union [isUnlocked] already
   /// uses for unlock-rule evaluation.
-  Set<String> loadCompletedLevelsAnyDifficulty() => _completedOnAnyDifficulty(); // Public wrapper exposing the private union helper below, for player-facing totals.
+  Set<String> loadCompletedLevelsAnyDifficulty() => _completedOnAnyDifficulty();
 
-  bool isUnlocked(GameLevel level) => // Whether a given level's unlock prerequisites are currently satisfied.
-      level.unlockRule.isSatisfied(_completedOnAnyDifficulty()); // Delegate to the level's own unlock-rule object, passing in the union of completed IDs across both difficulties.
+  /// True when [level]'s unlock prerequisites are satisfied by the
+  /// player's combined (Hard ∪ Easy) completion set.
+  ///
+  /// NOTE (minor perf consideration, not a correctness bug): each call to
+  /// `isUnlocked` re-decodes both difficulty's JSON from SharedPreferences
+  /// from scratch via `_completedOnAnyDifficulty()` (which itself calls
+  /// `loadCompletedLevels` twice). If this is called once per level while
+  /// rendering a long level-select list (e.g. inside a ListView.builder's
+  /// itemBuilder, once per visible item, on every rebuild), that's
+  /// O(visible levels) redundant JSON decodes per frame rather than one
+  /// shared decode reused across all of them. Not wrong, just something to
+  /// watch if the level list grows large or level-select re-renders
+  /// frequently — callers rendering many levels at once may want to call
+  /// `loadCompletedLevelsAnyDifficulty()` themselves once and pass the
+  /// result down, rather than calling `isUnlocked` per level.
+  bool isUnlocked(GameLevel level) =>
+      level.unlockRule.isSatisfied(_completedOnAnyDifficulty());
 
   /// Returns the union of all completed IDs across both difficulties.
   /// Used for unlock-rule evaluation so either completion counts.
-  Set<String> _completedOnAnyDifficulty() => // Private helper computing the set union of Hard-completed and Easy-completed IDs.
-      loadCompletedLevels(LevelDifficulty.hard) // Start from the Hard-difficulty completed set...
-        ..addAll(loadCompletedLevels(LevelDifficulty.easy)); // ...then cascade-mutate it by adding all Easy-difficulty completed IDs too (cascade returns the same, now-merged set).
+  Set<String> _completedOnAnyDifficulty() =>
+      // loadCompletedLevels(hard) returns a *fresh* Set each call (see its
+      // doc comment above), so mutating it in place via the cascade
+      // (`..addAll(...)`) is safe — it isn't aliased to anything this store
+      // keeps internally, it's just a throwaway Set being built up and
+      // returned.
+      loadCompletedLevels(LevelDifficulty.hard)
+        ..addAll(loadCompletedLevels(LevelDifficulty.easy));
 
   /// Returns the unlock rule description for a locked level.
-  String unlockHint(GameLevel level) => level.unlockRule.describe(); // Human-readable text explaining what's needed to unlock this level, delegated to the level's unlock-rule object.
-} // End of GameProgressStore.
+  String unlockHint(GameLevel level) => level.unlockRule.describe();
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  2. PUZZLE TYPE VALIDATION
@@ -199,33 +316,45 @@ class GameProgressStore { // Wraps a SharedPreferences instance with typed, game
 ///   final msg = buildTypeErrorMessage(typeResult);
 ///   if (msg != null) showErrorBanner(msg);
 ///
-TypeCheckDisplayMessage? buildTypeErrorMessage(AutomatonTypeResult result) { // Converts a raw type-check result into a nullable, UI-ready display message.
-  if (result.isCorrectType) return null; // No violations at all — nothing to show, so return null (caller treats this as "check passed").
+TypeCheckDisplayMessage? buildTypeErrorMessage(AutomatonTypeResult result) {
+  // Early-out: nothing to display when the automaton already satisfies the
+  // puzzle's required type. Keeps every call site from having to
+  // separately check `result.isCorrectType` itself.
+  if (result.isCorrectType) return null;
 
-  // Separate hard errors from warnings.
-  final errors = result.violations // Start from the full list of violations...
-      .where((v) => v.severity == ViolationSeverity.error) // ...keep only the ones flagged as hard errors...
-      .toList(); // ...and materialize into a List.
-  final warnings = result.violations // Same source list again...
-      .where((v) => v.severity == ViolationSeverity.warning) // ...but keep only the soft-warning-severity ones this time...
-      .toList(); // ...materialized into its own List.
+  // Separate hard errors from warnings. `errors` block progression (an
+  // actual DFA-determinism violation, e.g. an ε-transition where none is
+  // allowed); `warnings` are softer, non-blocking notes (see `onlyWarnings`
+  // below) — e.g. a DFA that's technically valid but has a missing
+  // transition for some symbol, which is still "a DFA" but incomplete.
+  final errors = result.violations
+      .where((v) => v.severity == ViolationSeverity.error)
+      .toList();
+  final warnings = result.violations
+      .where((v) => v.severity == ViolationSeverity.warning)
+      .toList();
 
   return TypeCheckDisplayMessage(
-    headline: result.primaryMessage, // Top-line summary text taken straight from the check result.
-    errors: errors.map((v) => v.message).toList(), // Extract just the human-readable message string from each error violation.
-    warnings: warnings.map((v) => v.message).toList(), // Extract just the human-readable message string from each warning violation.
+    headline: result.primaryMessage,
+    errors: errors.map((v) => v.message).toList(),
+    warnings: warnings.map((v) => v.message).toList(),
     // IDs for optional UI highlighting of offending states / transitions.
-    affectedStateIds: // Collect every violation's affected state ID (if any) into a deduplicated Set for the canvas to highlight.
-        result.violations.map((v) => v.affectedStateId).whereType<String>().toSet(), // map() may yield nulls; whereType<String>() filters those out before deduplicating via toSet().
-    affectedLineIds: // Same idea, but for transition-line IDs instead of state IDs.
-        result.violations.map((v) => v.affectedLineId).whereType<String>().toSet(), // Filters out null affectedLineId entries, then dedupes into a Set.
+    // `.whereType<String>()` both filters out any violation that has no
+    // affected-state/line ID (a null `affectedStateId`/`affectedLineId`)
+    // AND narrows the type from `String?` to `String` in one step — a
+    // concise idiom for "collect the non-null values" without an explicit
+    // null check inside a `.where()`.
+    affectedStateIds:
+        result.violations.map((v) => v.affectedStateId).whereType<String>().toSet(),
+    affectedLineIds:
+        result.violations.map((v) => v.affectedLineId).whereType<String>().toSet(),
   );
-} // End of buildTypeErrorMessage.
+}
 
 /// Plain-data class the UI layer consumes.  No Flutter dependency — convert
 /// to your preferred widget / dialog in the presentation layer.
-class TypeCheckDisplayMessage { // Immutable, framework-agnostic value object describing a type-check failure for display purposes.
-  const TypeCheckDisplayMessage({ // Const constructor — all fields required, no defaults.
+class TypeCheckDisplayMessage {
+  const TypeCheckDisplayMessage({
     required this.headline,
     required this.errors,
     required this.warnings,
@@ -235,34 +364,43 @@ class TypeCheckDisplayMessage { // Immutable, framework-agnostic value object de
 
   /// Short banner text, e.g. "Your automaton is an NFA, but this puzzle
   /// requires a DFA."
-  final String headline; // Top-level summary shown as a banner/toast.
+  final String headline;
 
   /// Each item is one bullet explaining a hard error (~-transition, duplicate
   /// transition for a symbol, multiple start states).
-  final List<String> errors; // List of hard-error bullet strings.
+  final List<String> errors;
 
   /// Each item is one bullet for a soft warning (missing transition).
-  final List<String> warnings; // List of soft-warning bullet strings.
+  final List<String> warnings;
 
   /// State node IDs that could be highlighted red in the graph canvas.
-  final Set<String> affectedStateIds; // IDs of graph nodes implicated by any violation, for optional highlighting.
+  final Set<String> affectedStateIds;
 
   /// Transition line IDs that could be highlighted red in the graph canvas.
-  final Set<String> affectedLineIds; // IDs of graph transition lines implicated by any violation, for optional highlighting.
+  final Set<String> affectedLineIds;
 
   /// True when there are only warnings and no hard errors — the player is
   /// close but their DFA is incomplete rather than outright nondeterministic.
-  bool get onlyWarnings => errors.isEmpty && warnings.isNotEmpty; // Derived getter: true only when there are zero hard errors but at least one warning.
+  bool get onlyWarnings => errors.isEmpty && warnings.isNotEmpty;
 
+  /// Debug/log-friendly rendering: headline, then one indented bullet line
+  /// per error (✗) and warning (⚠). Not used for the actual in-app UI
+  /// (that's built from the individual `headline`/`errors`/`warnings`
+  /// fields directly by whatever widget consumes this class) — this is a
+  /// convenience for print-debugging or log output.
   @override
-  String toString() { // Debug/log-friendly rendering of the whole message (headline + bulleted errors/warnings).
-    final buffer = StringBuffer()..writeln(headline); // Start a StringBuffer, immediately writing the headline as its first line (cascade keeps `buffer` as the result).
-    for (final e in errors) { // For every hard-error message...
-      buffer.writeln('  ✗ $e'); // ...append it as an indented bullet prefixed with a cross mark.
+  String toString() {
+    final buffer = StringBuffer()..writeln(headline);
+    for (final e in errors) {
+      buffer.writeln('  ✗ $e');
     }
-    for (final w in warnings) { // For every warning message...
-      buffer.writeln('  ⚠ $w'); // ...append it as an indented bullet prefixed with a warning triangle.
+    for (final w in warnings) {
+      buffer.writeln('  ⚠ $w');
     }
-    return buffer.toString().trim(); // Render the buffer to a String and trim any trailing newline/whitespace before returning.
-  } // End of toString.
-} // End of TypeCheckDisplayMessage.
+    // `.trim()` removes the final trailing newline `writeln` leaves behind
+    // after the last bullet, so callers that print this (e.g. `print(msg)`,
+    // which itself appends a newline) don't end up with a visible blank
+    // line at the end.
+    return buffer.toString().trim();
+  }
+}

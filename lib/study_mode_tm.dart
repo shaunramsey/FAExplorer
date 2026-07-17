@@ -466,7 +466,7 @@ StudyTmChallenge _tmCrossingDep(Random rng) {
   final m0 = mults[0], m1 = mults[1], m2 = mults[2], m3 = mults[3];
 
   String blockTerm(String sym, int m, String counter) =>
-      m == 1 ? '$sym^$counter' : '$sym^(${m}$counter)';
+      m == 1 ? '$sym^$counter' : '$sym^($m$counter)';
   String countPhrase(int m, String counter) =>
       m == 1 ? counter : '$m·$counter';
 
@@ -602,8 +602,21 @@ const int kStudyTmMaxSteps = 5000;
 class StudyTmGradeResult {
   final bool correct;
   final StudyTmTestCase? failedCase;
-  const StudyTmGradeResult.correct() : correct = true, failedCase = null;
-  const StudyTmGradeResult.failed(this.failedCase) : correct = false;
+
+  /// The machine's actual (blank-trimmed) tape output for [failedCase], when
+  /// the failure was specifically an output mismatch on an
+  /// [StudyTmTestCase.expectedOutput] check (i.e. the machine *did* accept,
+  /// but left the wrong thing on the tape). Null for every other kind of
+  /// failure (wrong accept/reject, or never halted) and always null when
+  /// [correct] is true.
+  final String? actualOutput;
+
+  const StudyTmGradeResult.correct()
+      : correct = true,
+        failedCase = null,
+        actualOutput = null;
+  const StudyTmGradeResult.failed(this.failedCase, {this.actualOutput})
+      : correct = false;
 }
 
 StudyTmGradeResult gradeStudyTm({
@@ -632,8 +645,47 @@ StudyTmGradeResult gradeStudyTm({
     if (accepted != tc.expected) {
       return StudyTmGradeResult.failed(tc);
     }
+    // Output-checking challenges (currently just addConstant): accepting
+    // isn't enough on its own — e.g. a machine that accepts unconditionally
+    // without ever touching the tape would pass every accept/reject check
+    // above while leaving N unchanged instead of N + k. So whenever this
+    // test case names an expectedOutput, the tape's final contents have to
+    // match it exactly too.
+    if (accepted && tc.expectedOutput != null) {
+      // sim.currentTape reads through the UI "step" cursor (see
+      // TmSimulator._snapshotAt), which defaults to -1 (the *initial* tape)
+      // and is never advanced by computeNext() — only the UI scrubber
+      // normally moves it. Point it at the final snapshot before reading,
+      // or this would silently compare against the untouched input tape.
+      sim.step = sim.maxStep;
+      final actual = _tmOutputString(sim);
+      if (actual != tc.expectedOutput) {
+        return StudyTmGradeResult.failed(tc, actualOutput: actual);
+      }
+    }
   }
   return const StudyTmGradeResult.correct();
+}
+
+/// Reads [sim]'s current tape and trims leading/trailing blank cells, the
+/// same convention automata_dialogs.dart's (private, otherwise-unreachable
+/// from here) `_tmOutputString` uses for its transform-preview output.
+/// Duplicated locally rather than exported from there to keep that file's
+/// helper private.
+String _tmOutputString(TmSimulator sim) {
+  final tape = sim.currentTape;
+  if (tape == null) return '';
+  final cells = tape.cells.map((c) => c == kBlank ? '' : c).toList();
+  int start = 0;
+  int end = cells.length;
+  while (start < end && cells[start].isEmpty) {
+    start++;
+  }
+  while (end > start && cells[end - 1].isEmpty) {
+    end--;
+  }
+  if (start >= end) return '';
+  return cells.sublist(start, end).join();
 }
 
 // ── Widgets ──────────────────────────────────────────────────────────────────
@@ -790,18 +842,31 @@ class StudyTmTestCaseStrip extends StatelessWidget {
         Text('accept: ',
             style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim)),
         ...challenge.acceptExamples.map((s) => chip(s, true)),
-        const SizedBox(width: 10),
-        Text('reject: ',
-            style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim)),
-        ...challenge.rejectExamples.map((s) => chip(s, false)),
+        if (challenge.rejectExamples.isNotEmpty) ...[
+          const SizedBox(width: 10),
+          Text('reject: ',
+              style: GoogleFonts.courierPrime(fontSize: 11, color: theme.textDim)),
+          ...challenge.rejectExamples.map((s) => chip(s, false)),
+        ],
       ],
     );
   }
 }
 
-String studyTmFailureMessage(StudyTmTestCase tc) {
+String studyTmFailureMessage(StudyTmGradeResult grade) {
+  final tc = grade.failedCase!;
   final inputDisplay =
       tc.input.isEmpty ? '~ (empty string)' : '"${tc.input}"';
+
+  // Output mismatch: the machine accepted (so the accept/reject check below
+  // would have passed), but left the wrong thing on the tape.
+  if (tc.expectedOutput != null && grade.actualOutput != null) {
+    final gotDisplay =
+        grade.actualOutput!.isEmpty ? '(empty)' : '"${grade.actualOutput}"';
+    return 'Input $inputDisplay: your machine accepted, but the tape '
+        'shows $gotDisplay — expected "${tc.expectedOutput}"';
+  }
+
   final expected = tc.expected ? 'ACCEPT' : 'REJECT';
   final got = tc.expected ? 'REJECT' : 'ACCEPT';
   return 'Input $inputDisplay: expected $expected but got $got';
