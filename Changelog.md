@@ -1,3 +1,8 @@
+# July 17th, 2026
+* Last day of commits for SU 2026
+* A markdown file was created to pass on the work to a future student
+* All of the files now have detailed comments in them to explain what everything does
+
 # July 13th, 2026
 * Added in more levels to tm study mode
 * Added in comments to multiple files to better explain code 
